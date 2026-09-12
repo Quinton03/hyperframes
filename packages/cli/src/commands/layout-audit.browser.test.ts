@@ -1462,8 +1462,7 @@ describe("layout-audit.browser coordinate-frame findings", () => {
     expect(issues.some((issue) => issue.code === "canvas_overflow")).toBe(true);
   });
 
-  it("flags connector paths drawn in a foreign frame and passes anchored ones", () => {
-    document.body.innerHTML = `
+  const foreignFrameDom = `
       <div id="root" data-composition-id="main" data-width="1920" data-height="1080">
         <div id="n1"></div>
         <div id="n2"></div>
@@ -1474,18 +1473,20 @@ describe("layout-audit.browser coordinate-frame findings", () => {
         </svg>
       </div>
     `;
-    installGeometry(
-      {
-        root: rect({ left: 0, top: 0, width: 1920, height: 1080 }),
-        n1: rect({ left: 900, top: 500, width: 160, height: 160 }),
-        n2: rect({ left: 300, top: 200, width: 160, height: 160 }),
-        "connector-svg": rect({ left: 80, top: 227, width: 1740, height: 830 }),
-      },
-      {
-        n1: { backgroundColor: "rgb(30, 40, 50)" },
-        n2: { backgroundColor: "rgb(30, 40, 50)" },
-      },
-    );
+  const foreignFrameRects = {
+    root: rect({ left: 0, top: 0, width: 1920, height: 1080 }),
+    n1: rect({ left: 900, top: 500, width: 160, height: 160 }),
+    n2: rect({ left: 300, top: 200, width: 160, height: 160 }),
+    "connector-svg": rect({ left: 80, top: 227, width: 1740, height: 830 }),
+  };
+  const foreignFrameStyles = {
+    n1: { backgroundColor: "rgb(30, 40, 50)" },
+    n2: { backgroundColor: "rgb(30, 40, 50)" },
+  };
+
+  it("flags connector paths drawn in a foreign frame and passes anchored ones", () => {
+    document.body.innerHTML = foreignFrameDom;
+    installGeometry(foreignFrameRects, foreignFrameStyles);
     // Screen CTM translates svg user space by the svg's offset (80, 227): the detached path's
     // start (980, 580) renders at (1060, 807) — 147px below #n1's box — while the anchored
     // path's start (900, 353) renders at (980, 580), inside #n1.
@@ -1498,6 +1499,19 @@ describe("layout-audit.browser coordinate-frame findings", () => {
     expect(issues[0]).toMatchObject({ severity: "warning", selector: "#detached" });
     expect(issues[0]?.message).toContain("user-space coordinates would attach");
     expect(issues[0]?.fixHint).toContain("invert getScreenCTM");
+  });
+
+  it("does not flag a paste-bug connector still hidden behind its dash offset", () => {
+    document.body.innerHTML = foreignFrameDom;
+    // The fixture above, with #detached fully dash-hidden — draw-on entrance not yet advanced.
+    installGeometry(foreignFrameRects, {
+      ...foreignFrameStyles,
+      detached: { strokeDasharray: "100", strokeDashoffset: "100" },
+    });
+    installConnectorGeometry({ e: 80, f: 227 });
+    installAuditScript();
+
+    expect(runAudit().filter((issue) => issue.code === "connector_detached")).toEqual([]);
   });
 
   it("skips svgs and paths without connector intent", () => {
