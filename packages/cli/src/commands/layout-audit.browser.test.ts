@@ -1514,6 +1514,46 @@ describe("layout-audit.browser coordinate-frame findings", () => {
     expect(runAudit().filter((issue) => issue.code === "connector_detached")).toEqual([]);
   });
 
+  // The dash gate reads the whole pattern: only a stroke whose visible window sits inside one
+  // gap is hidden. Dashed patterns, a bare `0` (renders solid) and `none` all paint; a
+  // zero-length dash paints only as a round/square cap (`0 4` is dotted with round caps and
+  // invisible with the default butt cap). Path length is 100 (installConnectorGeometry);
+  // `50 100` at offset 40 leaves exactly 10% painted — the tolerance boundary — while offset 30
+  // shows 20% and fires.
+  it.each([
+    { dasharray: "0 4", offset: "0", count: 0 },
+    { dasharray: "0 4", offset: "0", linecap: "round", count: 1 },
+    { dasharray: "0, 4", offset: "0", linecap: "square", count: 1 },
+    { dasharray: "0px, 999999px", offset: "-99.999px", count: 0 },
+    { dasharray: "0 400", offset: "0", linecap: "round", count: 1 },
+    { dasharray: "0 400", offset: "1", linecap: "round", count: 0 },
+    { dasharray: "4 0", offset: "0", count: 1 },
+    { dasharray: "0", offset: "0", count: 1 },
+    { dasharray: "none", offset: "0", count: 1 },
+    { dasharray: "100px", offset: "100px", count: 0 },
+    { dasharray: "100", offset: "-100", count: 0 },
+    { dasharray: "50 100", offset: "50", count: 0 },
+    { dasharray: "50 100", offset: "40", count: 0 },
+    { dasharray: "50 100", offset: "30", count: 1 },
+  ])(
+    "stroke-dasharray $dasharray, dashoffset $offset, linecap $linecap → $count connector_detached",
+    ({ dasharray, offset, linecap, count }) => {
+      document.body.innerHTML = foreignFrameDom;
+      installGeometry(foreignFrameRects, {
+        ...foreignFrameStyles,
+        detached: {
+          strokeDasharray: dasharray,
+          strokeDashoffset: offset,
+          ...(linecap ? { strokeLinecap: linecap } : {}),
+        },
+      });
+      installConnectorGeometry({ e: 80, f: 227 });
+      installAuditScript();
+
+      expect(runAudit().filter((issue) => issue.code === "connector_detached")).toHaveLength(count);
+    },
+  );
+
   it("skips svgs and paths without connector intent", () => {
     document.body.innerHTML = `
       <div id="root" data-composition-id="main" data-width="1920" data-height="1080">
