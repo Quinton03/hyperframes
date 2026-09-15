@@ -342,13 +342,10 @@
         parsePx(style.borderBottomWidth) +
         parsePx(style.borderLeftWidth) >
       0;
-    const hasRadius =
-      parsePx(style.borderTopLeftRadius) +
-        parsePx(style.borderTopRightRadius) +
-        parsePx(style.borderBottomRightRadius) +
-        parsePx(style.borderBottomLeftRadius) >
-      0;
-    return hasBackground || hasImage || hasBorder || hasRadius;
+    // Paint here means background colour, background image or border width only. A border-radius
+    // shapes the box without painting it, so a transparent, borderless, rounded box is not an
+    // overflow constraint. box-shadow, outline and filters are deliberately not read either.
+    return hasBackground || hasImage || hasBorder;
   }
 
   function clipsOverflowValue(value) {

@@ -15,8 +15,8 @@ interface RectInput {
   height: number;
 }
 
-// `installGeometry` paints `#bubble` white with 28px corners, both of which `hasPaint` counts
-// as paint. This strips it back to geometry only (padding stays) so a test can add one source.
+// `installGeometry` paints `#bubble` white with 28px corners. This strips both back to geometry
+// only (padding stays) so a test can add one paint or non-paint source at a time.
 const UNPAINTED_BUBBLE: Partial<CSSStyleDeclaration> = {
   backgroundColor: "rgba(0, 0, 0, 0)",
   borderTopLeftRadius: "0px",
@@ -420,7 +420,6 @@ describe("layout-audit.browser", () => {
     ["rgb(255, 255, 0)", { backgroundColor: "rgb(255, 255, 0)" }],
     ["a url() background image", { backgroundImage: 'url("bubble.png")' }],
     ["a single border side", { borderLeftWidth: "1px" }],
-    ["a border-radius", { borderTopLeftRadius: "28px" }],
   ])("still flags overflow inside a non-clipping box whose only paint is %s", (_label, paint) => {
     document.body.innerHTML = `
       <div id="root" data-composition-id="main" data-width="640" data-height="360">
@@ -442,25 +441,44 @@ describe("layout-audit.browser", () => {
     expect(found[0]?.selector).toBe("#bubble");
   });
 
-  it("does not treat a padded but unpainted, non-clipping box as its own constraint", () => {
-    document.body.innerHTML = `
-      <div id="root" data-composition-id="main" data-width="640" data-height="360">
-        <div id="bubble">Enterprise plan includes unlimited renders</div>
-      </div>
-    `;
-    installGeometry(
-      {
-        root: rect({ left: 0, top: 0, width: 640, height: 360 }),
-        bubble: rect({ left: 40, top: 60, width: 200, height: 40 }),
-        text: rect({ left: 40, top: 65, width: 520, height: 30 }),
-      },
-      // Padding alone is geometry, not paint. The text then measures against the root, where it fits.
-      { bubble: UNPAINTED_BUBBLE },
-    );
-    installAuditScript();
+  // The same padded box with no paint source, or with only a property `hasPaint` does not read,
+  // is not its own constraint: the text measures against the root, where it fits. A border-radius
+  // shapes the box without painting it; box-shadow and outline are a declared non-read (a card
+  // whose only silhouette is a shadow is measured against its ancestor).
+  it.each<[string, Partial<CSSStyleDeclaration>]>([
+    ["no paint source", {}],
+    ["a border-radius", { borderTopLeftRadius: "28px" }],
+    ["a box-shadow", { boxShadow: "rgba(0, 0, 0, 0.4) 0px 4px 12px 0px" }],
+    ["an outline", { outlineWidth: "2px", outlineStyle: "solid", outlineColor: "rgb(0, 0, 0)" }],
+  ])(
+    "does not treat a padded, non-clipping box as its own constraint with %s",
+    (_label, nonPaint) => {
+      document.body.innerHTML = `
+        <div id="root" data-composition-id="main" data-width="640" data-height="360">
+          <div id="bubble">Enterprise plan includes unlimited renders</div>
+        </div>
+      `;
+      installGeometry(
+        {
+          root: rect({ left: 0, top: 0, width: 640, height: 360 }),
+          bubble: rect({ left: 40, top: 60, width: 200, height: 40 }),
+          text: rect({ left: 40, top: 65, width: 520, height: 30 }),
+        },
+        { bubble: { ...UNPAINTED_BUBBLE, ...nonPaint } },
+      );
+      installAuditScript();
 
-    expect(runAudit().some((issue) => issue.code === "text_box_overflow")).toBe(false);
-  });
+      expect(runAudit().some((issue) => issue.code === "text_box_overflow")).toBe(false);
+    },
+  );
+
+  // Declared blind spot, kept declared: `colorAlpha` matches only `rgb()`/`rgba()`, so a
+  // background computed to a non-sRGB serialisation with a zero alpha — `oklch(0.5 0.1 200 / 0)`,
+  // `color(display-p3 1 0 0 / 0)`, `lab(50 0 0 / 0)` — reads as opaque and the padded box
+  // becomes its own constraint although it renders nothing. Widening the parse is a separate change.
+  it.todo(
+    "does not treat a padded, non-clipping box whose only paint is a transparent non-sRGB background as its own constraint",
+  );
 
   it("does not flag glyph-ink vertical spill within the font-metric band on a non-clipping box", () => {
     // A painted, non-clipping caption-word-like box whose glyph ink (text rect) exceeds its snug
