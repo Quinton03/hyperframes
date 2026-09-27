@@ -763,24 +763,16 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
     },
 
     async installRegistryBlock(opts) {
-      const { resolveItemWithDependencies } = await import("../registry/resolver.js");
-      const { installItem } = await import("../registry/installer.js");
-      const { gateRegistryItemsCompatibility } = await import("../registry/compatibility.js");
-      // Resolve transitive registryDependencies and install them first so a
-      // block that depends on other registry items installs completely.
-      const items = await resolveItemWithDependencies(opts.blockName);
-      // Compatibility-gate the whole set before writing anything (same gate as
-      // `hyperframes add`), so an incompatible block or dep aborts cleanly.
-      const warnings = gateRegistryItemsCompatibility(items);
-      for (const warning of warnings) {
+      const { addToProject } = await import("../commands/add.js");
+      const { result, item } = await addToProject({
+        name: opts.blockName,
+        projectDir: opts.project.dir,
+        skipClipboard: true,
+      });
+      for (const warning of result.warnings) {
         process.stderr.write(`hyperframes:registry ${warning}\n`);
       }
-      const written: string[] = [];
-      for (const dep of items) {
-        const result = await installItem(dep, { destDir: opts.project.dir });
-        written.push(...result.written);
-      }
-      const item = items[items.length - 1]!;
+      const written = result.written;
 
       rewriteWrittenToHostViewport(opts.project.dir, written);
 

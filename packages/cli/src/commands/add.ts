@@ -312,6 +312,13 @@ export function describeInstallFailure(err: unknown, registry?: string): string 
 }
 
 export async function runAdd(opts: RunAddArgs): Promise<RunAddResult> {
+  return (await addToProject(opts)).result;
+}
+
+/** The one install path for a catalog item, shared by `add` and Studio; `item` is the requested item as installed. */
+export async function addToProject(
+  opts: RunAddArgs,
+): Promise<{ result: RunAddResult; item: RegistryItem }> {
   const projectDir = resolve(opts.projectDir);
 
   // 1. Load (or write default) project config.
@@ -406,7 +413,7 @@ export async function runAdd(opts: RunAddArgs): Promise<RunAddResult> {
     warnings.push(`--vars ignored (not declared by ${item.name}): ${variablesUnknown.join(", ")}`);
   }
 
-  return {
+  const result: RunAddResult = {
     ok: true,
     name: item.name,
     type: item.type,
@@ -419,6 +426,7 @@ export async function runAdd(opts: RunAddArgs): Promise<RunAddResult> {
     variablesApplied,
     warnings,
   };
+  return { result, item: itemForInstall };
 }
 
 // ── Command ─────────────────────────────────────────────────────────────────
