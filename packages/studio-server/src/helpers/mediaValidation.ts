@@ -55,10 +55,12 @@ export function validateUploadedMedia(
     return { ok: false, reason: "ffprobe failed to read the media file" };
   }
 
+  return checkStreams(String(result.stdout || "{}"), isVideo, isAudio);
+}
+
+function checkStreams(stdout: string, isVideo: boolean, isAudio: boolean): MediaCheck {
   try {
-    const parsed = JSON.parse(String(result.stdout || "{}")) as {
-      streams?: Array<{ codec_type?: string }>;
-    };
+    const parsed = JSON.parse(stdout) as { streams?: Array<{ codec_type?: string }> };
     const streams = parsed.streams ?? [];
     const hasVideo = streams.some((stream) => stream.codec_type === "video");
     const hasAudio = streams.some((stream) => stream.codec_type === "audio");

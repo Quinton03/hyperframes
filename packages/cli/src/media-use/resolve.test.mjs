@@ -756,30 +756,24 @@ test("--analyze refuses a HYPERFRAMES_FFPROBE_PATH that cannot run instead of re
   );
 });
 
-test(
-  "--doctor names a configured ffprobe that exists but does not run",
-  { skip: process.platform === "win32" },
-  () => {
-    const dir = mkdtempSync(join(tmpdir(), "mu-doctor-bad-ff-"));
-    const broken = join(dir, "ffprobe");
-    writeFileSync(broken, "#!/bin/sh\nexit 3\n");
-    chmodSync(broken, 0o755);
-    try {
-      const result = spawnResolve(["--doctor", "--json"], {
-        env: { HYPERFRAMES_FFPROBE_PATH: broken },
-      });
-      const check = JSON.parse(result.stdout.trim()).checks.find(
-        (c) => c.name === "ffprobe on PATH",
-      );
-      assert.deepEqual(
-        [check.ok, check.detail, check.fix],
-        [false, `"${broken}" did not run`, "fix or unset the variable that names it"],
-      );
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  },
-);
+test("--doctor names a configured ffprobe that exists but does not run", () => {
+  const dir = mkdtempSync(join(tmpdir(), "mu-doctor-bad-ff-"));
+  const broken = join(dir, "ffprobe");
+  writeFileSync(broken, "#!/bin/sh\nexit 3\n");
+  chmodSync(broken, 0o755);
+  try {
+    const result = spawnResolve(["--doctor", "--json"], {
+      env: { HYPERFRAMES_FFPROBE_PATH: broken },
+    });
+    const check = JSON.parse(result.stdout.trim()).checks.find((c) => c.name === "ffprobe on PATH");
+    assert.deepEqual(
+      [check.ok, check.detail, check.fix],
+      [false, `"${broken}" did not run`, "fix or unset the variable that names it"],
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("one-line output format matches contract", () => {
   setup();
