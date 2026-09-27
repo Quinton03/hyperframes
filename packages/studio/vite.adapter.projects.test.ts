@@ -211,7 +211,7 @@ describe("dynamic preview ownership", () => {
 });
 
 describe("Studio's dev server and the catalog", () => {
-  it("leaves installing to hyperframes preview, which installs as add does", async () => {
+  it("answers every install with a 501 that points to hyperframes preview", async () => {
     const { data, app } = fixture();
     mkdirSync(join(data, "demo"));
     writeFileSync(join(data, "demo", "index.html"), "A");
