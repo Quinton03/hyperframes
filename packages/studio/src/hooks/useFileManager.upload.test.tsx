@@ -70,6 +70,6 @@ it("says which uploads were added without a media check, and why", async () => {
   );
 
   expect(added).toEqual(["clip.mp4"]);
-  expect(showToast).toHaveBeenCalledWith(`Added clip.mp4, ${reason}`);
+  expect(showToast).toHaveBeenCalledWith(`Added clip.mp4, ${reason}`, "info");
   act(() => root.unmount());
 });

@@ -212,7 +212,7 @@ export function useFileManager({
           }
           if (data.unchecked?.length) {
             const names = data.unchecked.map((entry: { name: string }) => entry.name).join(", ");
-            showToast(`Added ${names}, ${data.unchecked[0].reason}`);
+            showToast(`Added ${names}, ${data.unchecked[0].reason}`, "info");
           }
           await refreshFileTree();
           setRefreshKey((k) => k + 1);
