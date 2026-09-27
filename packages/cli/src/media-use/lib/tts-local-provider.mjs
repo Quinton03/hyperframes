@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ffprobeBinary } from "./ff-binaries.mjs";
 import { resolveSpawnCommand } from "../../audio/scripts/lib/tts.mjs";
 
 // Local voiceover via the packaged Kokoro-82M TTS (the `hyperframes tts` CLI),
@@ -16,7 +17,7 @@ import { resolveSpawnCommand } from "../../audio/scripts/lib/tts.mjs";
 function probeDurationSeconds(file) {
   try {
     const out = execFileSync(
-      "ffprobe",
+      ffprobeBinary(),
       ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", "--", file],
       { encoding: "utf8", timeout: 15000 },
     );

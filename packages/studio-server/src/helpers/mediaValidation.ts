@@ -35,8 +35,7 @@ export function validateUploadedMedia(
   }
 
   const ffprobe =
-    findFfBinary("ffprobe", { configuredMustExist: true }) ??
-    (runner === defaultRunner ? undefined : "ffprobe");
+    findFfBinary("ffprobe") ?? (runner === defaultRunner ? undefined : "ffprobe");
   if (!ffprobe) return { ok: true, unchecked: FFPROBE_MISSING };
   const result = runner(
     ffprobe,
@@ -45,7 +44,10 @@ export function validateUploadedMedia(
   );
 
   if (result.error?.code === "ENOENT") {
-    return { ok: true, unchecked: FFPROBE_MISSING };
+    return {
+      ok: true,
+      unchecked: `not checked: ffprobe was not found at "${ffprobe}". Install FFmpeg or set HYPERFRAMES_FFPROBE_PATH.`,
+    };
   }
   if (result.status !== 0) {
     return { ok: false, reason: "ffprobe failed to read the media file" };

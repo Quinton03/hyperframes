@@ -2298,7 +2298,6 @@ async function processUploadedFiles(
       invalid.push({ name: finalName, reason: validation.reason });
       continue;
     }
-    if (validation.unchecked) unchecked.push({ name: finalName, reason: validation.unchecked });
 
     // Reading the upload yields: another request can claim the selected name.
     // Only exclusive creation authorizes a write; retry collisions without
@@ -2329,6 +2328,7 @@ async function processUploadedFiles(
     }
     const relativePath = subDir ? join(subDir, finalName) : finalName;
     uploaded.push(relativePath);
+    if (validation.unchecked) unchecked.push({ name: finalName, reason: validation.unchecked });
     if (isAudioFile(finalName)) {
       generateWaveformCache(projectDir, relativePath).catch(() => {});
     }

@@ -83,11 +83,12 @@ describe("validateUploadedMedia", () => {
     });
 
     it("says the upload was not checked when the ffprobe it names is missing", () => {
-      process.env.HYPERFRAMES_FFPROBE_PATH = join(dir, "missing-ffprobe");
+      const missing = join(dir, "missing-ffprobe");
+      process.env.HYPERFRAMES_FFPROBE_PATH = missing;
 
       expect(validateUploadedMedia("/tmp/test.mp4")).toEqual({
         ok: true,
-        unchecked: expect.stringMatching(/HYPERFRAMES_FFPROBE_PATH/),
+        unchecked: expect.stringContaining(`not found at "${missing}"`),
       });
     });
   });

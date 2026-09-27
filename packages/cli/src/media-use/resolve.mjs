@@ -33,6 +33,7 @@ import { heygenAuthMethod } from "../audio/scripts/lib/heygen.mjs";
 import { buildCube, paramsFromIntent } from "./lib/cube-build.mjs";
 import { validateCubeFile } from "./lib/cube-validate.mjs";
 import { analyzeMediaGrade, formatMeasuredNote } from "./lib/grade-analyzer.mjs";
+import { ffmpegBinary, ffprobeBinary } from "./lib/ff-binaries.mjs";
 import {
   freezeLibraryLut,
   isLibraryLutOfflineMiss,
@@ -218,7 +219,10 @@ if (args.analyze) {
     console.error(`error: --for file not found: ${mediaPath}`);
     process.exit(2);
   }
-  const analysis = analyzeMediaGrade(mediaPath);
+  const analysis = analyzeMediaGrade(mediaPath, {
+    ffmpegPath: ffmpegBinary(),
+    ffprobePath: ffprobeBinary(),
+  });
   if (args.json) {
     console.log(JSON.stringify({ ok: true, type: "grade-analysis", ...analysis }));
   } else {
@@ -594,7 +598,10 @@ function mergeSmartAdjust(block) {
   const mediaPath = resolve(args.for);
   // Clear upfront error beats an ffmpeg "No such file" stack on a typo'd path.
   if (!existsSync(mediaPath)) throw new Error(`--for file not found: ${mediaPath}`);
-  const analysis = analyzeMediaGrade(mediaPath);
+  const analysis = analyzeMediaGrade(mediaPath, {
+    ffmpegPath: ffmpegBinary(),
+    ffprobePath: ffprobeBinary(),
+  });
   console.error(formatMeasuredNote(mediaPath, analysis.measured));
   return {
     ...block,
@@ -1060,7 +1067,7 @@ function runDoctor() {
     checks.push(heygenAuthCheck());
   }
 
-  const ffmpegProbe = runCommand(process.env.HYPERFRAMES_FFMPEG_PATH?.trim() || "ffmpeg", [
+  const ffmpegProbe = runCommand(ffmpegBinary(), [
     "-version",
   ]);
   checks.push({
@@ -1070,7 +1077,7 @@ function runDoctor() {
     fix: ffmpegProbe.status === 0 ? "" : "brew install ffmpeg",
   });
 
-  const ffprobeProbe = runCommand(process.env.HYPERFRAMES_FFPROBE_PATH?.trim() || "ffprobe", [
+  const ffprobeProbe = runCommand(ffprobeBinary(), [
     "-version",
   ]);
   checks.push({
