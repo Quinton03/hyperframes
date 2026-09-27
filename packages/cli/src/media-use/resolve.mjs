@@ -1067,9 +1067,7 @@ function runDoctor() {
     checks.push(heygenAuthCheck());
   }
 
-  const ffmpegProbe = runCommand(ffmpegBinary(), [
-    "-version",
-  ]);
+  const ffmpegProbe = runCommand(ffmpegBinary(), ["-version"]);
   checks.push({
     name: "ffmpeg on PATH",
     ok: ffmpegProbe.status === 0,
@@ -1077,9 +1075,7 @@ function runDoctor() {
     fix: ffmpegProbe.status === 0 ? "" : "brew install ffmpeg",
   });
 
-  const ffprobeProbe = runCommand(ffprobeBinary(), [
-    "-version",
-  ]);
+  const ffprobeProbe = runCommand(ffprobeBinary(), ["-version"]);
   checks.push({
     name: "ffprobe on PATH",
     ok: ffprobeProbe.status === 0,

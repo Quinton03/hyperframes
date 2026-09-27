@@ -34,8 +34,7 @@ export function validateUploadedMedia(
     return { ok: true };
   }
 
-  const ffprobe =
-    findFfBinary("ffprobe") ?? (runner === defaultRunner ? undefined : "ffprobe");
+  const ffprobe = findFfBinary("ffprobe") ?? (runner === defaultRunner ? undefined : "ffprobe");
   if (!ffprobe) return { ok: true, unchecked: FFPROBE_MISSING };
   const result = runner(
     ffprobe,
