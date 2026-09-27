@@ -33,20 +33,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("says which uploads were added without a media check, and why", async () => {
-  const reason =
-    "not checked: ffprobe was not found. Install FFmpeg or set HYPERFRAMES_FFPROBE_PATH.";
+async function uploadClip(response: Record<string, unknown>) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async () =>
       Response.json(
-        {
-          ok: true,
-          files: ["clip.mp4"],
-          skipped: [],
-          invalid: [],
-          unchecked: [{ name: "clip.mp4", reason }],
-        },
+        { ok: true, files: [], skipped: [], invalid: [], ...response },
         { status: 201 },
       ),
     ),
@@ -64,12 +56,29 @@ it("says which uploads were added without a media check, and why", async () => {
   }
   const root = createRoot(document.createElement("div"));
   await act(async () => root.render(<Probe />));
-
   const added = await act(() =>
     captured.manager!.uploadProjectFiles([new File(["x"], "clip.mp4")]),
   );
+  act(() => root.unmount());
+  return { added, showToast };
+}
+
+it("says which uploads were added without a media check, and why", async () => {
+  const reason =
+    "not checked: ffprobe was not found. Install FFmpeg or set HYPERFRAMES_FFPROBE_PATH.";
+  const { added, showToast } = await uploadClip({
+    files: ["clip.mp4"],
+    unchecked: [{ name: "clip.mp4", reason }],
+  });
 
   expect(added).toEqual(["clip.mp4"]);
   expect(showToast).toHaveBeenCalledWith(`Added clip.mp4, ${reason}`, "info");
-  act(() => root.unmount());
+});
+
+it("says why an upload was not added", async () => {
+  const reason = 'HYPERFRAMES_FFPROBE_PATH names "/x/ffprobe", which cannot run: fix it or unset it';
+  const { added, showToast } = await uploadClip({ invalid: [{ name: "clip.mp4", reason }] });
+
+  expect(added).toEqual([]);
+  expect(showToast).toHaveBeenCalledWith(`Not added: clip.mp4, ${reason}`);
 });

@@ -1067,21 +1067,7 @@ function runDoctor() {
     checks.push(heygenAuthCheck());
   }
 
-  const ffmpegProbe = runCommand(ffmpegBinary(), ["-version"]);
-  checks.push({
-    name: "ffmpeg on PATH",
-    ok: ffmpegProbe.status === 0,
-    detail: ffmpegProbe.status === 0 ? firstLine(ffmpegProbe.stdout) : "ffmpeg not found",
-    fix: ffmpegProbe.status === 0 ? "" : "brew install ffmpeg",
-  });
-
-  const ffprobeProbe = runCommand(ffprobeBinary(), ["-version"]);
-  checks.push({
-    name: "ffprobe on PATH",
-    ok: ffprobeProbe.status === 0,
-    detail: ffprobeProbe.status === 0 ? firstLine(ffprobeProbe.stdout) : "ffprobe not found",
-    fix: ffprobeProbe.status === 0 ? "" : "brew install ffmpeg",
-  });
+  checks.push(ffDoctorCheck("ffmpeg", ffmpegBinary), ffDoctorCheck("ffprobe", ffprobeBinary));
 
   const nodeOk = !versionLessThan(process.versions.node, MIN_NODE_VERSION);
   checks.push({
@@ -1145,6 +1131,23 @@ function printMap(label, values) {
     return;
   }
   for (const [key, value] of entries) console.log(`  ${key}: ${value}`);
+}
+
+function ffDoctorCheck(name, binary) {
+  let bin;
+  try {
+    bin = binary();
+  } catch (err) {
+    return { name: `${name} on PATH`, ok: false, detail: err.message, fix: "fix or unset that variable" };
+  }
+  const probe = runCommand(bin, ["-version"]);
+  const ok = probe.status === 0;
+  return {
+    name: `${name} on PATH`,
+    ok,
+    detail: ok ? firstLine(probe.stdout) : `${name} not found`,
+    fix: ok ? "" : "brew install ffmpeg",
+  };
 }
 
 function runCommand(bin, argv) {

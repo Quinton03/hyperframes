@@ -15,9 +15,10 @@ import { resolveSpawnCommand } from "../../audio/scripts/lib/tts.mjs";
 // re-implemented here. ffprobe reads the duration back for the ledger.
 
 function probeDurationSeconds(file) {
+  const ffprobe = ffprobeBinary();
   try {
     const out = execFileSync(
-      ffprobeBinary(),
+      ffprobe,
       ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", "--", file],
       { encoding: "utf8", timeout: 15000 },
     );

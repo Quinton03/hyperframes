@@ -708,6 +708,28 @@ test("--doctor checks the ffmpeg and ffprobe that HYPERFRAMES_FFMPEG_PATH and HY
   }
 });
 
+test("--doctor fails a HYPERFRAMES_FFPROBE_PATH that cannot run and says to fix or unset it", () => {
+  const missing = join(tmpdir(), "mu-doctor-no-ffprobe", "ffprobe");
+  const result = spawnResolve(["--doctor", "--json"], { env: { HYPERFRAMES_FFPROBE_PATH: missing } });
+  const report = JSON.parse(result.stdout.trim());
+  const check = report.checks.find((c) => c.name === "ffprobe on PATH");
+  assert.equal(report.ok, false);
+  assert.deepEqual(
+    [check.ok, check.detail, check.fix],
+    [false, `HYPERFRAMES_FFPROBE_PATH names "${missing}", which cannot run: fix it or unset it.`, "fix or unset that variable"],
+  );
+});
+
+test("--analyze refuses a HYPERFRAMES_FFPROBE_PATH that cannot run instead of reporting unknown", () => {
+  const missing = join(tmpdir(), "mu-analyze-no-ffprobe", "ffprobe");
+  const result = spawnResolve(["--analyze", "--type", "grade", "--for", RESOLVE_CLI, "--json"], {
+    env: { HYPERFRAMES_FFPROBE_PATH: missing },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /HYPERFRAMES_FFPROBE_PATH names ".*mu-analyze-no-ffprobe.*fix it or unset it/);
+  assert.doesNotMatch(result.stdout, /"ok":true/);
+});
+
 test("one-line output format matches contract", () => {
   setup();
   const record = makeRecord({ provenance: { prompt: "format test", provider: "test" } });

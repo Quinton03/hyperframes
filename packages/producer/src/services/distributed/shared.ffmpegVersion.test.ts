@@ -27,6 +27,8 @@ describe.skipIf(process.platform === "win32")("readFfmpegVersion", () => {
     dir = mkdtempSync(join(tmpdir(), "hf-ffmpeg-version-"));
     process.env.HYPERFRAMES_FFMPEG_PATH = join(dir, "no-ffmpeg-here");
 
-    await expect(readFfmpegVersion()).rejects.toThrow(/no-ffmpeg-here.*HYPERFRAMES_FFMPEG_PATH/);
+    const failure = readFfmpegVersion();
+    await expect(failure).rejects.toThrow(/no-ffmpeg-here.*HYPERFRAMES_FFMPEG_PATH/);
+    await expect(failure).rejects.toHaveProperty("code", "ENOENT");
   });
 });

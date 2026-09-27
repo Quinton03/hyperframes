@@ -208,7 +208,7 @@ export function useFileManager({
           }
           if (data.invalid?.length) {
             const names = data.invalid.map((entry: { name: string }) => entry.name).join(", ");
-            showToast(`Unsupported media skipped: ${names}`);
+            showToast(`Not added: ${names}, ${data.invalid[0].reason}`);
           }
           if (data.unchecked?.length) {
             const names = data.unchecked.map((entry: { name: string }) => entry.name).join(", ");

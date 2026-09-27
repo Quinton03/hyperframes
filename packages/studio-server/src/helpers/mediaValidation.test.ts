@@ -82,13 +82,13 @@ describe("validateUploadedMedia", () => {
       expect(runner).toHaveBeenCalledWith(ffprobe, expect.any(Array), expect.anything());
     });
 
-    it("says the upload was not checked when the ffprobe it names is missing", () => {
+    it("rejects the upload, naming the setting, when the ffprobe it names cannot run", () => {
       const missing = join(dir, "missing-ffprobe");
       process.env.HYPERFRAMES_FFPROBE_PATH = missing;
 
       expect(validateUploadedMedia("/tmp/test.mp4")).toEqual({
-        ok: true,
-        unchecked: expect.stringContaining(`not found at "${missing}"`),
+        ok: false,
+        reason: expect.stringContaining(`HYPERFRAMES_FFPROBE_PATH names "${missing}"`),
       });
     });
   });

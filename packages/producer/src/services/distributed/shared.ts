@@ -345,8 +345,11 @@ export async function readFfmpegVersion(): Promise<string> {
     }));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    throw new Error(
-      `ffmpeg not found at "${binary}": install FFmpeg or set HYPERFRAMES_FFMPEG_PATH.`,
+    throw Object.assign(
+      new Error(`ffmpeg not found at "${binary}": install FFmpeg or set HYPERFRAMES_FFMPEG_PATH.`, {
+        cause: error,
+      }),
+      { code: "ENOENT" },
     );
   }
   const firstLine = stdout.split(/\r?\n/)[0]?.trim() ?? "";

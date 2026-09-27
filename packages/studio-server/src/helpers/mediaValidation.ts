@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { findFfBinary } from "@hyperframes/parsers/ff-binaries";
+import { FFPROBE_PATH_ENV, findFfBinary } from "@hyperframes/parsers/ff-binaries";
 
 const VIDEO_EXT = /\.(mp4|webm|mov|mkv|avi|m4v|mxf|mts|m2ts|ts)$/i;
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac)$/i;
@@ -42,11 +42,14 @@ export function validateUploadedMedia(
     { windowsHide: true },
   );
 
-  if (result.error?.code === "ENOENT") {
+  if (result.error && process.env[FFPROBE_PATH_ENV]?.trim()) {
     return {
-      ok: true,
-      unchecked: `not checked: ffprobe was not found at "${ffprobe}". Install FFmpeg or set HYPERFRAMES_FFPROBE_PATH.`,
+      ok: false,
+      reason: `${FFPROBE_PATH_ENV} names "${ffprobe}", which cannot run: fix it or unset it`,
     };
+  }
+  if (result.error?.code === "ENOENT") {
+    return { ok: true, unchecked: FFPROBE_MISSING };
   }
   if (result.status !== 0) {
     return { ok: false, reason: "ffprobe failed to read the media file" };
