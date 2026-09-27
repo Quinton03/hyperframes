@@ -145,7 +145,12 @@ const entity = args.entity || null;
 
 if (args.adopt) {
   const { adoptExistingAssets } = await import("./lib/adopt.mjs");
-  const adopted = adoptExistingAssets(projectDir);
+  let adopted;
+  try {
+    adopted = adoptExistingAssets(projectDir);
+  } catch (err) {
+    exitError(err.message);
+  }
   if (args.json) {
     console.log(JSON.stringify({ ok: true, adopted: adopted.length, assets: adopted }));
   } else if (adopted.length === 0) {
@@ -219,10 +224,15 @@ if (args.analyze) {
     console.error(`error: --for file not found: ${mediaPath}`);
     process.exit(2);
   }
-  const analysis = analyzeMediaGrade(mediaPath, {
-    ffmpegPath: ffmpegBinary(),
-    ffprobePath: ffprobeBinary(),
-  });
+  let analysis;
+  try {
+    analysis = analyzeMediaGrade(mediaPath, {
+      ffmpegPath: ffmpegBinary(),
+      ffprobePath: ffprobeBinary(),
+    });
+  } catch (err) {
+    exitError(err.message);
+  }
   if (args.json) {
     console.log(JSON.stringify({ ok: true, type: "grade-analysis", ...analysis }));
   } else {
@@ -1138,15 +1148,23 @@ function ffDoctorCheck(name, binary) {
   try {
     bin = binary();
   } catch (err) {
-    return { name: `${name} on PATH`, ok: false, detail: err.message, fix: "fix or unset that variable" };
+    return {
+      name: `${name} on PATH`,
+      ok: false,
+      detail: err.message,
+      fix: "fix or unset that variable",
+    };
   }
   const probe = runCommand(bin, ["-version"]);
-  const ok = probe.status === 0;
+  if (probe.status === 0) {
+    return { name: `${name} on PATH`, ok: true, detail: firstLine(probe.stdout), fix: "" };
+  }
+  const configured = bin !== name;
   return {
     name: `${name} on PATH`,
-    ok,
-    detail: ok ? firstLine(probe.stdout) : `${name} not found`,
-    fix: ok ? "" : "brew install ffmpeg",
+    ok: false,
+    detail: configured ? `"${bin}" did not run` : `${name} not found`,
+    fix: configured ? "fix or unset the variable that names it" : "brew install ffmpeg",
   };
 }
 

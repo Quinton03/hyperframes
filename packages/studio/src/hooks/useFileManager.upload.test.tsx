@@ -75,10 +75,16 @@ it("says which uploads were added without a media check, and why", async () => {
   expect(showToast).toHaveBeenCalledWith(`Added clip.mp4, ${reason}`, "info");
 });
 
-it("says why an upload was not added", async () => {
-  const reason = 'HYPERFRAMES_FFPROBE_PATH names "/x/ffprobe", which cannot run: fix it or unset it';
-  const { added, showToast } = await uploadClip({ invalid: [{ name: "clip.mp4", reason }] });
+it("says why each upload was not added", async () => {
+  const { added, showToast } = await uploadClip({
+    invalid: [
+      { name: "clip.mp4", reason: "no supported video stream found" },
+      { name: "song.mp3", reason: "no supported audio stream found" },
+    ],
+  });
 
   expect(added).toEqual([]);
-  expect(showToast).toHaveBeenCalledWith(`Not added: clip.mp4, ${reason}`);
+  expect(showToast).toHaveBeenCalledWith(
+    "Not added: clip.mp4 (no supported video stream found), song.mp3 (no supported audio stream found)",
+  );
 });

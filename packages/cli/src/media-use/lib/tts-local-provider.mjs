@@ -14,8 +14,7 @@ import { resolveSpawnCommand } from "../../audio/scripts/lib/tts.mjs";
 // Delegated to the hyperframes CLI (same as transcribe / remove-background), not
 // re-implemented here. ffprobe reads the duration back for the ledger.
 
-function probeDurationSeconds(file) {
-  const ffprobe = ffprobeBinary();
+function probeDurationSeconds(ffprobe, file) {
   try {
     const out = execFileSync(
       ffprobe,
@@ -41,6 +40,7 @@ export async function localTtsGenerate(
   env = process.env,
   pathExists = existsSync,
 ) {
+  const ffprobe = ffprobeBinary();
   const outPath = join(tmpdir(), `media-use-kokoro-${process.pid}-${Date.now()}.wav`);
   const argv = ["hyperframes", "tts", intent, "--output", outPath];
   if (ctx?.voice) argv.push("--voice", ctx.voice);
@@ -87,7 +87,7 @@ export async function localTtsGenerate(
     metadata: {
       description: intent,
       provider: "kokoro.local",
-      duration: probeDurationSeconds(outPath),
+      duration: probeDurationSeconds(ffprobe, outPath),
       provenance: { engine: "kokoro-82m", prompt: intent },
     },
   };

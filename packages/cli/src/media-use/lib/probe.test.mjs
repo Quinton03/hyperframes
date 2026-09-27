@@ -62,7 +62,21 @@ test("probe refuses an HYPERFRAMES_FFPROBE_PATH that cannot run instead of repor
   const configured = process.env.HYPERFRAMES_FFPROBE_PATH;
   process.env.HYPERFRAMES_FFPROBE_PATH = join(tmpdir(), "no-ffprobe-here", "ffprobe");
   try {
-    assert.throws(() => probe("clip.wav"), /HYPERFRAMES_FFPROBE_PATH names ".*no-ffprobe-here.*fix it or unset it/);
+    assert.throws(
+      () => probe("clip.wav"),
+      /HYPERFRAMES_FFPROBE_PATH names ".*no-ffprobe-here.*fix it or unset it/,
+    );
+  } finally {
+    if (configured === undefined) delete process.env.HYPERFRAMES_FFPROBE_PATH;
+    else process.env.HYPERFRAMES_FFPROBE_PATH = configured;
+  }
+});
+
+test("probe refuses an HYPERFRAMES_FFPROBE_PATH that names a folder", () => {
+  const configured = process.env.HYPERFRAMES_FFPROBE_PATH;
+  process.env.HYPERFRAMES_FFPROBE_PATH = tmpdir();
+  try {
+    assert.throws(() => probe("clip.wav"), /HYPERFRAMES_FFPROBE_PATH names .*fix it or unset it/);
   } finally {
     if (configured === undefined) delete process.env.HYPERFRAMES_FFPROBE_PATH;
     else process.env.HYPERFRAMES_FFPROBE_PATH = configured;

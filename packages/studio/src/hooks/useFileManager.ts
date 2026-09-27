@@ -207,8 +207,10 @@ export function useFileManager({
             showToast(`Skipped (too large): ${data.skipped.join(", ")}`);
           }
           if (data.invalid?.length) {
-            const names = data.invalid.map((entry: { name: string }) => entry.name).join(", ");
-            showToast(`Not added: ${names}, ${data.invalid[0].reason}`);
+            const why = data.invalid
+              .map((entry: { name: string; reason: string }) => `${entry.name} (${entry.reason})`)
+              .join(", ");
+            showToast(`Not added: ${why}`);
           }
           if (data.unchecked?.length) {
             const names = data.unchecked.map((entry: { name: string }) => entry.name).join(", ");

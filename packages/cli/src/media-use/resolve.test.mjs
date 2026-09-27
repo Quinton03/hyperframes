@@ -514,6 +514,22 @@ test("--adopt registers existing assets/ files", () => {
   cleanup();
 });
 
+test("--adopt stops, adopting nothing, when HYPERFRAMES_FFPROBE_PATH cannot run", () => {
+  setup();
+  mkdirSync(join(tmp, "assets/bgm"), { recursive: true });
+  writeFileSync(join(tmp, "assets/bgm/track.mp3"), "fake mp3");
+
+  const result = spawnResolve(["--adopt", "--project", tmp, "--json"], {
+    env: { HYPERFRAMES_FFPROBE_PATH: join(tmp, "no-ffprobe") },
+  });
+  assert.equal(result.status, 1);
+  const report = JSON.parse(result.stdout.trim());
+  assert.equal(report.ok, false);
+  assert.match(report.error, /HYPERFRAMES_FFPROBE_PATH names .*no-ffprobe.*fix it or unset it/);
+  assert.equal(readManifest(tmp).length, 0);
+  cleanup();
+});
+
 test("--adopt skips already-registered assets", () => {
   setup();
   mkdirSync(join(tmp, "assets/bgm"), { recursive: true });
@@ -710,13 +726,19 @@ test("--doctor checks the ffmpeg and ffprobe that HYPERFRAMES_FFMPEG_PATH and HY
 
 test("--doctor fails a HYPERFRAMES_FFPROBE_PATH that cannot run and says to fix or unset it", () => {
   const missing = join(tmpdir(), "mu-doctor-no-ffprobe", "ffprobe");
-  const result = spawnResolve(["--doctor", "--json"], { env: { HYPERFRAMES_FFPROBE_PATH: missing } });
+  const result = spawnResolve(["--doctor", "--json"], {
+    env: { HYPERFRAMES_FFPROBE_PATH: missing },
+  });
   const report = JSON.parse(result.stdout.trim());
   const check = report.checks.find((c) => c.name === "ffprobe on PATH");
   assert.equal(report.ok, false);
   assert.deepEqual(
     [check.ok, check.detail, check.fix],
-    [false, `HYPERFRAMES_FFPROBE_PATH names "${missing}", which cannot run: fix it or unset it.`, "fix or unset that variable"],
+    [
+      false,
+      `HYPERFRAMES_FFPROBE_PATH names "${missing}", which cannot run: fix it or unset it.`,
+      "fix or unset that variable",
+    ],
   );
 });
 
@@ -725,10 +747,39 @@ test("--analyze refuses a HYPERFRAMES_FFPROBE_PATH that cannot run instead of re
   const result = spawnResolve(["--analyze", "--type", "grade", "--for", RESOLVE_CLI, "--json"], {
     env: { HYPERFRAMES_FFPROBE_PATH: missing },
   });
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /HYPERFRAMES_FFPROBE_PATH names ".*mu-analyze-no-ffprobe.*fix it or unset it/);
-  assert.doesNotMatch(result.stdout, /"ok":true/);
+  assert.equal(result.status, 1);
+  const report = JSON.parse(result.stdout.trim());
+  assert.equal(report.ok, false);
+  assert.match(
+    report.error,
+    /HYPERFRAMES_FFPROBE_PATH names ".*mu-analyze-no-ffprobe.*fix it or unset it/,
+  );
 });
+
+test(
+  "--doctor names a configured ffprobe that exists but does not run",
+  { skip: process.platform === "win32" },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "mu-doctor-bad-ff-"));
+    const broken = join(dir, "ffprobe");
+    writeFileSync(broken, "#!/bin/sh\nexit 3\n");
+    chmodSync(broken, 0o755);
+    try {
+      const result = spawnResolve(["--doctor", "--json"], {
+        env: { HYPERFRAMES_FFPROBE_PATH: broken },
+      });
+      const check = JSON.parse(result.stdout.trim()).checks.find(
+        (c) => c.name === "ffprobe on PATH",
+      );
+      assert.deepEqual(
+        [check.ok, check.detail, check.fix],
+        [false, `"${broken}" did not run`, "fix or unset the variable that names it"],
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
 test("one-line output format matches contract", () => {
   setup();
