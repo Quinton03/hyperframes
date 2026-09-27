@@ -209,6 +209,7 @@ export function StudioApp({ readOnlyPreview = false, readOnlyPreviewReason }: St
       refreshFileTree: fileManager.refreshFileTree,
       reloadPreview,
       showToast,
+      dismissToast,
     },
     previewIframeRef,
     setRightCollapsed: panelLayout.setRightCollapsed,
