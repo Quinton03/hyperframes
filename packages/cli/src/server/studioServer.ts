@@ -7,10 +7,10 @@
 
 import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync, unlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { resolve, join, basename } from "node:path";
+import { resolve, join, basename, relative } from "node:path";
 import { readBundleFile } from "./readBundleFile.js";
 import {
   createProjectWatcher,
@@ -755,11 +755,14 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
 
     async listRegistryCatalog() {
       const { listRegistryItems, loadAllItems } = await import("../registry/resolver.js");
-      const entries = await listRegistryItems();
+      const { loadProjectConfig } = await import("../utils/projectConfig.js");
+      // The same registry `add` installs from, so the panel lists what can be installed.
+      const options = { baseUrl: loadProjectConfig(projectDir).registry };
+      const entries = await listRegistryItems(undefined, options);
       const blockAndComponentEntries = entries.filter(
         (e) => e.type === "hyperframes:block" || e.type === "hyperframes:component",
       );
-      return loadAllItems(blockAndComponentEntries);
+      return loadAllItems(blockAndComponentEntries, options);
     },
 
     async installRegistryBlock(opts) {
@@ -776,11 +779,9 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
 
       rewriteWrittenToHostViewport(opts.project.dir, written);
 
-      const relativePaths = written.map((abs) => {
-        const rel = abs.startsWith(opts.project.dir) ? abs.slice(opts.project.dir.length + 1) : abs;
-        return rel;
-      });
-      return { written: relativePaths, block: item };
+      // The installer returns resolved paths, so a project opened through a symlink is resolved too.
+      const root = realpathSync(opts.project.dir);
+      return { written: written.map((abs) => relative(root, abs)), block: item };
     },
   };
 
