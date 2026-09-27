@@ -1060,7 +1060,7 @@ function runDoctor() {
     checks.push(heygenAuthCheck());
   }
 
-  const ffmpegProbe = runCommand("ffmpeg", ["-version"]);
+  const ffmpegProbe = runCommand(process.env.HYPERFRAMES_FFMPEG_PATH?.trim() || "ffmpeg", ["-version"]);
   checks.push({
     name: "ffmpeg on PATH",
     ok: ffmpegProbe.status === 0,
@@ -1068,7 +1068,7 @@ function runDoctor() {
     fix: ffmpegProbe.status === 0 ? "" : "brew install ffmpeg",
   });
 
-  const ffprobeProbe = runCommand("ffprobe", ["-version"]);
+  const ffprobeProbe = runCommand(process.env.HYPERFRAMES_FFPROBE_PATH?.trim() || "ffprobe", ["-version"]);
   checks.push({
     name: "ffprobe on PATH",
     ok: ffprobeProbe.status === 0,

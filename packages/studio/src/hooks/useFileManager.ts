@@ -210,6 +210,10 @@ export function useFileManager({
             const names = data.invalid.map((entry: { name: string }) => entry.name).join(", ");
             showToast(`Unsupported media skipped: ${names}`);
           }
+          if (data.unchecked?.length) {
+            const names = data.unchecked.map((entry: { name: string }) => entry.name).join(", ");
+            showToast(`Added ${names}, ${data.unchecked[0].reason}`);
+          }
           await refreshFileTree();
           setRefreshKey((k) => k + 1);
           return Array.isArray(data.files) ? data.files : [];

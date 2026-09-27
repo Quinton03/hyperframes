@@ -2232,6 +2232,7 @@ async function processUploadedFiles(
   const uploaded: string[] = [];
   const skipped: string[] = [];
   const invalid: Array<{ name: string; reason: string }> = [];
+  const unchecked: Array<{ name: string; reason: string }> = [];
 
   // @types/node v25 narrows the ambient `FormData.entries()` to
   // `[string, string]` in workspaces where another dep declares an
@@ -2296,6 +2297,7 @@ async function processUploadedFiles(
       invalid.push({ name: finalName, reason: validation.reason });
       continue;
     }
+    if (validation.unchecked) unchecked.push({ name: finalName, reason: validation.unchecked });
 
     // Reading the upload yields: another request can claim the selected name.
     // Only exclusive creation authorizes a write; retry collisions without
@@ -2331,7 +2333,7 @@ async function processUploadedFiles(
     }
   }
 
-  return { uploaded, skipped, invalid };
+  return { uploaded, skipped, invalid, unchecked };
 }
 
 // ── Route registration ──────────────────────────────────────────────────────
@@ -3258,7 +3260,13 @@ export function registerFileRoutes(api: Hono, adapter: StudioApiAdapter): void {
       const result = await processUploadedFiles(formData, targetDir, project.dir);
 
       return c.json(
-        { ok: true, files: result.uploaded, skipped: result.skipped, invalid: result.invalid },
+        {
+          ok: true,
+          files: result.uploaded,
+          skipped: result.skipped,
+          invalid: result.invalid,
+          unchecked: result.unchecked,
+        },
         201,
       );
     },

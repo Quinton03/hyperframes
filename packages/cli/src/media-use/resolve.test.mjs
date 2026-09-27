@@ -688,6 +688,23 @@ test("--doctor --json reports dependency checks and top-level ok requires ffmpeg
   assert.equal(result.status, strictOk ? 0 : 1);
 });
 
+test("--doctor checks the ffmpeg and ffprobe that HYPERFRAMES_FFMPEG_PATH and HYPERFRAMES_FFPROBE_PATH name", () => {
+  const dir = mkdtempSync(join(tmpdir(), "mu-doctor-ff-"));
+  const fake = join(dir, "fake-ff");
+  writeFileSync(fake, "#!/bin/sh\necho 'ffmpeg version 9.9-fake'\n");
+  chmodSync(fake, 0o755);
+  try {
+    const result = spawnResolve(["--doctor", "--json"], {
+      env: { HYPERFRAMES_FFMPEG_PATH: fake, HYPERFRAMES_FFPROBE_PATH: fake },
+    });
+    const byName = new Map(JSON.parse(result.stdout.trim()).checks.map((c) => [c.name, c]));
+    for (const name of ["ffmpeg on PATH", "ffprobe on PATH"])
+      assert.deepEqual([byName.get(name).ok, byName.get(name).detail], [true, "ffmpeg version 9.9-fake"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("one-line output format matches contract", () => {
   setup();
   const record = makeRecord({ provenance: { prompt: "format test", provider: "test" } });
