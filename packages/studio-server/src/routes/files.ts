@@ -2227,6 +2227,7 @@ async function processUploadedFiles(
   uploaded: string[];
   skipped: string[];
   invalid: Array<{ name: string; reason: string }>;
+  unchecked: Array<{ name: string; reason: string }>;
 }> {
   const MAX_UPLOAD_BYTES = 500 * 1024 * 1024; // 500 MB per file
   const uploaded: string[] = [];

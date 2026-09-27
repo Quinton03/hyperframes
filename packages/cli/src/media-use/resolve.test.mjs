@@ -699,7 +699,10 @@ test("--doctor checks the ffmpeg and ffprobe that HYPERFRAMES_FFMPEG_PATH and HY
     });
     const byName = new Map(JSON.parse(result.stdout.trim()).checks.map((c) => [c.name, c]));
     for (const name of ["ffmpeg on PATH", "ffprobe on PATH"])
-      assert.deepEqual([byName.get(name).ok, byName.get(name).detail], [true, "ffmpeg version 9.9-fake"]);
+      assert.deepEqual(
+        [byName.get(name).ok, byName.get(name).detail],
+        [true, "ffmpeg version 9.9-fake"],
+      );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
