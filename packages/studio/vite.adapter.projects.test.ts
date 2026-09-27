@@ -209,3 +209,21 @@ describe("dynamic preview ownership", () => {
     expect(previewChangeOwner(owners, join(realpathSync(dir), "index.html.tmp"))).toBeNull();
   });
 });
+
+describe("Studio's dev server and the catalog", () => {
+  it("leaves installing to hyperframes preview, which installs as add does", async () => {
+    const { data, app } = fixture();
+    mkdirSync(join(data, "demo"));
+    writeFileSync(join(data, "demo", "index.html"), "A");
+
+    const response = await app.request("http://localhost/projects/demo/registry/install", {
+      method: "POST",
+      body: JSON.stringify({ blockName: "ai-chat-reveal" }),
+    });
+
+    expect(response.status).toBe(501);
+    expect(await response.json()).toEqual({
+      error: "Installing catalog items needs hyperframes preview",
+    });
+  });
+});
