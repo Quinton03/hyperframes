@@ -115,7 +115,8 @@ export interface DomEditZOrder {
   ) => void;
 }
 
-const enabled: DomEditZOrder["enabled"] = (sel, action) => isZOrderActionEnabled(sel.element, action);
+const enabled: DomEditZOrder["enabled"] = (sel, action) =>
+  isZOrderActionEnabled(sel.element, action);
 
 // The canvas menu's z-order (write, undo, timeline lane mirror) for any caller inside DomEditProvider.
 export function useDomEditZOrder(): DomEditZOrder {
