@@ -183,6 +183,9 @@ export { DomEditProvider, useDomEditSelectionContext } from "./contexts/DomEditC
 export { PreviewReadOnlyProvider } from "./components/editor/previewReadOnlyContext";
 export { ConnectedDomEditOverlay } from "./components/editor/ConnectedDomEditOverlay";
 export type { ConnectedDomEditOverlayProps } from "./components/editor/ConnectedDomEditOverlay";
+export { useDomEditZOrder } from "./components/editor/useDomEditZOrder";
+export type { DomEditZOrder } from "./components/editor/useDomEditZOrder";
+export type { ZOrderAction } from "./components/editor/canvasContextMenuZOrder";
 export type { DomEditCapabilities, DomEditSelection } from "./components/editor/domEditingTypes";
 export { useDomStyleCommit } from "./hooks/useDomStyleCommit";
 export type { UseDomStyleCommitOptions } from "./hooks/useDomStyleCommit";

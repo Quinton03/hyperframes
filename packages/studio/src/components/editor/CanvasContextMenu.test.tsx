@@ -3,7 +3,7 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installReactActEnvironment, makeSelection } from "../../hooks/domSelectionTestHarness";
-import { resolveZIndexEntries } from "./ConnectedDomEditOverlay";
+import { resolveZIndexEntries } from "./useDomEditZOrder";
 import { useElementLifecycleOps } from "../../hooks/useElementLifecycleOps";
 import { makeLifecycleOpsParams } from "../../hooks/elementLifecycleOpsTestUtils";
 import type { DomEditPatchBatch } from "../../hooks/domEditCommitTypes";

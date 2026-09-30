@@ -9,13 +9,17 @@ import {
   PreviewReadOnlyProvider,
   useDomEditSelectionContext,
   useDomEditSession,
+  useDomEditZOrder,
   usePreviewPersistence,
   type ConnectedDomEditOverlayProps,
   type DomEditCapabilities,
   type DomEditSelection,
+  type DomEditZOrder,
   type UseDomEditSessionParams,
   type UsePreviewPersistenceParams,
+  type ZOrderAction,
 } from "@hyperframes/studio";
+import { makeSelection } from "./hooks/domSelectionTestHarness";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -65,5 +69,51 @@ describe("DOM editing package exports", () => {
     const canvas = el.querySelector('[aria-label="Composition canvas"]');
     expect(canvas?.className).toContain("pointer-events-none");
     await act(async () => root.unmount());
+  });
+
+  it("gives a host the canvas menu's z-order: enabled, then one step through the session's commit", async () => {
+    const parent = document.createElement("div");
+    const back = document.createElement("div");
+    back.id = "back";
+    const front = document.createElement("div");
+    front.id = "front";
+    parent.append(back, front);
+    document.body.append(parent);
+    const commitZ = vi.fn(() => Promise.resolve());
+    const session = {
+      handleDomZIndexReorderCommit: commitZ,
+    } as unknown as Parameters<typeof DomEditProvider>[0]["value"];
+    let zOrder: DomEditZOrder | undefined;
+    function Probe() {
+      zOrder = useDomEditZOrder();
+      return null;
+    }
+    const el = document.createElement("div");
+    document.body.append(el);
+    const root = createRoot(el);
+    await act(async () =>
+      root.render(
+        <DomEditProvider value={session}>
+          <Probe />
+        </DomEditProvider>,
+      ),
+    );
+    const sel = makeSelection("Back", back);
+    const toFront: ZOrderAction = "bring-to-front";
+    expect(zOrder?.enabled(sel, "send-to-back")).toBe(false);
+    expect(zOrder?.enabled(sel, toFront)).toBe(true);
+    expect(zOrder?.apply(sel, "send-to-back")).toBe(false);
+    expect(commitZ).not.toHaveBeenCalled();
+    await act(async () => {
+      expect(zOrder?.apply(sel, toFront)).toBe(true);
+    });
+    expect(commitZ).toHaveBeenCalledTimes(1);
+    expect(commitZ).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ element: back, id: "back" })]),
+      expect.stringContaining(toFront),
+      toFront,
+    );
+    await act(async () => root.unmount());
+    parent.remove();
   });
 });
