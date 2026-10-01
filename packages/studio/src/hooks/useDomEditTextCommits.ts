@@ -108,8 +108,13 @@ export function useDomEditTextCommits({
     persistDomEditOperations,
   });
 
+  // One property, or a map saved as one patch and one undo step.
   const handleDomStyleCommitForSelection = useCallback(
-    (selection: DomEditSelection, property: string, value: string): Promise<DomEditCommitOutcome> =>
+    (
+      selection: DomEditSelection,
+      property: string | Record<string, string>,
+      value = "",
+    ): Promise<DomEditCommitOutcome> =>
       commitDomStyles(
         {
           activeCompPath,
@@ -121,7 +126,7 @@ export function useDomEditTextCommits({
           resync: refreshDomEditSelectionFromPreview,
         },
         selection,
-        { [property]: value },
+        typeof property === "string" ? { [property]: value } : property,
       ),
     [
       activeCompPath,
