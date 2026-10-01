@@ -80,9 +80,7 @@ function describeZIndexElement(element: HTMLElement): string {
     : element.tagName.toLowerCase();
 }
 
-// Resolve z-index patches into commit entries; a sibling with no stable
-// id/selector can't be written to source, so it is returned as `dropped` for
-// the revert-on-reload warning. Exported so tests can drive the menu → commit path.
+// Patches as commit entries; a sibling with no id or selector is `dropped` and reverts on reload.
 export function resolveZIndexEntries(
   sel: DomEditSelection,
   patches: ReadonlyArray<{ element: HTMLElement; zIndex: number }>,
@@ -118,7 +116,7 @@ export interface DomEditZOrder {
 const enabled: DomEditZOrder["enabled"] = (sel, action) =>
   isZOrderActionEnabled(sel.element, action);
 
-// The canvas menu's z-order (write, undo, timeline lane mirror) for any caller inside DomEditProvider.
+// The canvas menu's z-order (write, undo, lane mirror) for any caller in DomEditProvider.
 export function useDomEditZOrder(): DomEditZOrder {
   const { handleDomZIndexReorderCommit } = useDomEditActionsContext();
   const mirrorZOrderToTimeline = useCanvasZOrderTimelineMirror();
@@ -127,9 +125,7 @@ export function useDomEditZOrder(): DomEditZOrder {
     (sel, patches, action, crossed) => {
       const { entries, dropped } = resolveZIndexEntries(sel, patches);
       if (dropped.length > 0) {
-        // These siblings can't be written to source. Apply their live z
-        // anyway so the resolved stacking order renders coherently — it
-        // just reverts to the prior order on the next reload.
+        // Not writable to source: their live z still applies, so the order renders, until a reload.
         for (const patch of dropped) patch.element.style.zIndex = String(patch.zIndex);
         console.warn(
           "[studio] z-index reorder: dropping sibling(s) with no stable id/selector " +
@@ -138,8 +134,7 @@ export function useDomEditZOrder(): DomEditZOrder {
         );
       }
       if (entries.length === 0) return;
-      // One coalesce key for the z persist AND the lane mirror folds both into one undo entry;
-      // passed explicitly so the mirror shares it by construction, not by formula duplication.
+      // One coalesce key for the z write and the lane mirror: one undo entry.
       const coalesceKey = zReorderCoalesceKey(entries, action);
       // One serialized z→lane transaction: the mirror runs only AFTER a durable z commit and
       // no second gesture interleaves (see runZLaneGesture). A failed z commit has already
