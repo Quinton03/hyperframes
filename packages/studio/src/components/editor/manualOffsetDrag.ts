@@ -146,12 +146,12 @@ function getRectCenter(element: HTMLElement): Point | null {
     return null;
   }
 
-  let point = {
-    x: rect.left + rect.width / 2,
-    y: rect.top + rect.height / 2,
-  };
+  const point = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  return toTopScreenPoint(element.ownerDocument, point);
+}
 
-  let win: Window | null = element.ownerDocument.defaultView;
+export function toTopScreenPoint(doc: Document, point: Point): Point | null {
+  let win: Window | null = doc.defaultView;
   while (win) {
     const frameElement = getFrameElement(win);
     if (!frameElement) break;
@@ -166,7 +166,6 @@ function getRectCenter(element: HTMLElement): Point | null {
     };
     win = frameElement.ownerDocument.defaultView;
   }
-
   return point;
 }
 

@@ -79,6 +79,7 @@ export interface UseGsapAwareEditingParams {
     selection: DomEditSelection | null,
     mutationType: string,
     label: string,
+    toast?: boolean,
   ) => void;
   // DOM fallbacks (from useDomEditCommits)
   stageElementPositionOffset: (
@@ -200,12 +201,11 @@ export function useGsapAwareEditing({
   // Multi-select (group) drag: each member takes the single drag's writer, so a member GSAP
   // does not position is saved on itself and the rest go through the GSAP intercept.
   const handleGsapAwareGroupPathOffsetCommit = useCallback(
-    async (updates: DomEditGroupPathOffsetCommit[]) => {
+    async (updates: DomEditGroupPathOffsetCommit[], options: { refusalToast?: boolean } = {}) => {
       if (!gsapCommitMutation || updates.length === 0) return;
-      // A group drag is ONE user action: fold every member's position write into
-      // a single undo entry by forcing a shared coalesceKey (infinite window, so
-      // it survives the N sequential server round-trips) onto each commit —
-      // otherwise each member records its own entry and it takes N presses to undo.
+      const toastRefusal = options.refusalToast !== false;
+      // One user action, one undo entry: a shared coalesceKey with an infinite window survives
+      // the N sequential round trips, so N members don't take N presses to undo.
       const coalesceKey = `group-drag:${++groupDragCommitCounter}`;
       // Members are written one at a time, and a re-render re-runs the script with the OLD
       // position of every member not yet written, so they snap back until their own write
@@ -219,9 +219,8 @@ export function useGsapAwareEditing({
         deferPreviewSync: !renderOnCommit,
         previewFallbackLatch,
       });
-      // Every member writes the same file. Queue their mutations and send them as
-      // ONE request instead of one round trip per member: the server reads, parses
-      // and writes the composition once, and the preview patches once.
+      // Every member writes the same file: queue the mutations and send ONE request, so the
+      // server parses and writes the composition once and the preview patches once.
       const queued: CommitMutationCall[] = [];
       const flushQueued = async () => {
         if (queued.length === 0) return;
@@ -244,13 +243,12 @@ export function useGsapAwareEditing({
       const preflightAnimations = new Map<DomEditSelection, GsapAnimation[]>();
       // Members saved on themselves, each with its route: true for its CSS translate.
       const offsetMembers = new Map<DomEditSelection, boolean>();
-      // Editability is user-atomic: prove every member can be written before the first source
-      // mutation, so a blocked member never leaves earlier siblings partially moved. Preflights
-      // write nothing and share one in-flight parse per file, so they run together.
+      // Prove every member can be written before the first mutation, so a blocked one never leaves
+      // siblings half moved. Preflights write nothing and share one parse per file: run together.
       const preflightResults = await Promise.allSettled(
         updates.map(async ({ selection, plainTranslate }) => {
           if (plainTranslate ?? !gsapWritesPosition(selection.element)) {
-            refuseGsapTakeover(selection.element, showToast);
+            refuseGsapTakeover(selection.element, toastRefusal ? showToast : () => {});
             return void offsetMembers.set(selection, true);
           }
           const animations = await makeFetchFallback(selection, { failOnFetchError: true })();
@@ -275,6 +273,7 @@ export function useGsapAwareEditing({
           preflightFailure.selection,
           "drag",
           "Move animated layer (group)",
+          toastRefusal,
         );
         throw preflightFailure.error;
       }
