@@ -67,7 +67,7 @@ function tween(id: string, properties: Props, duration: number): GsapAnimation {
     position: 0,
     resolvedStart: 0,
     duration,
-    ...(duration === 0 ? { extras: { immediateRender: "__raw:true" } } : {}),
+    ...(duration === 0 ? { extras: { immediateRender: "__raw:true" } } : { ease: "none" }),
   } as unknown as GsapAnimation;
 }
 

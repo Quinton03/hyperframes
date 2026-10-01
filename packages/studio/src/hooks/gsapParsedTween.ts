@@ -1,0 +1,113 @@
+import type { GsapAnimation } from "@hyperframes/core/gsap-parser";
+import { resolveTweenStart } from "../utils/globalTimeCompiler";
+import type { ImplicitEndValue } from "./gsapValueAtPlayhead";
+
+// GSAP 3 internals: a property tween in a tween's `_pt` chain; CSSPlugin keeps its own under `d._pt`.
+interface PropTween {
+  p?: string;
+  s?: number;
+  c?: number;
+  d?: { _pt?: PropTween };
+  _next?: PropTween;
+}
+interface ParsedTween {
+  _pt?: PropTween;
+  _from?: boolean;
+  vars?: Record<string, unknown>;
+  parent?: { vars?: { defaults?: { ease?: unknown } } };
+  timeline?: { getChildren?: () => ParsedTween[] };
+  targets?: () => Element[];
+  startTime?: () => number;
+  duration?: () => number;
+}
+interface GsapWindow {
+  gsap?: { defaults?: () => { ease?: unknown } };
+  __timelines?: Record<string, { getChildren?: (nested: boolean) => ParsedTween[] }>;
+}
+
+// `scale` parses into the two longhands, which always share a start and end for a `scale` tween.
+const PARSED_NAME: Record<string, string> = { scale: "scaleX", rotate: "rotation" };
+
+function findPropTween(pt: PropTween | undefined, prop: string): PropTween | null {
+  for (let node = pt; node; node = node._next) {
+    if (node.p === prop && typeof node.s === "number" && typeof node.c === "number") return node;
+    const nested = findPropTween(node.d?._pt, prop);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+/** `[start, end]` of `prop` in one initialised tween; a from() tween runs its pair backwards. */
+function endsIn(tween: ParsedTween, prop: string): [number, number] | null {
+  const pt = findPropTween(tween._pt, PARSED_NAME[prop] ?? prop);
+  if (!pt) return null;
+  const pair: [number, number] = [pt.s!, pt.s! + pt.c!];
+  return tween._from ? [pair[1], pair[0]] : pair;
+}
+
+/** The live tween GSAP built from `anim`: same element, start and channels. */
+// fallow-ignore-next-line complexity
+export function findParsedTween(
+  iframe: HTMLIFrameElement | null,
+  element: Element,
+  anim: GsapAnimation,
+): ParsedTween | null {
+  const win = iframe?.contentWindow as GsapWindow | null;
+  const start = resolveTweenStart(anim);
+  if (!win?.__timelines || start == null) return null;
+  const props = Object.keys(anim.keyframes?.keyframes[0]?.properties ?? anim.properties);
+  for (const timeline of Object.values(win.__timelines)) {
+    for (const tween of timeline?.getChildren?.(true) ?? []) {
+      const targets = tween.targets?.() ?? [];
+      if (!targets.includes(element) && !targets.some((t) => element.id && t.id === element.id))
+        continue;
+      if (Math.abs((tween.startTime?.() ?? Number.NaN) - start) > 1e-3) continue;
+      const vars = tween.vars ?? {};
+      const carries = props.some((p) => p in vars) || "keyframes" in vars;
+      if (carries && (tween.duration?.() ?? 0) > 0) return tween;
+    }
+  }
+  return null;
+}
+
+/** Start and end values from GSAP's own parse of the tween, as loaded from the file. Null when
+ *  GSAP has not initialised that part of the tween yet: the caller refuses rather than guess. */
+export function parsedImplicitEndValue(tween: ParsedTween | null): ImplicitEndValue {
+  return (prop, end) => {
+    if (!tween) return null;
+    const parts = tween.timeline?.getChildren?.() ?? [];
+    const ordered = parts.length > 0 ? (end === "start" ? parts : [...parts].reverse()) : [tween];
+    for (const part of ordered) {
+      const pair = endsIn(part, prop);
+      if (pair) return end === "start" ? pair[0] : pair[1];
+      // The nearest part animating `prop` is not initialised: an earlier one would be a wrong value.
+      if (prop in (part.vars ?? {})) return null;
+    }
+    return null;
+  };
+}
+
+/** The ease GSAP resolved for a flat tween that authors none: its timeline's default, else GSAP's. */
+export function parsedTweenEase(iframe: HTMLIFrameElement | null, tween: ParsedTween | null) {
+  if (!tween) return null;
+  const win = iframe?.contentWindow as GsapWindow | null;
+  const ease =
+    tween.vars?.ease ?? tween.parent?.vars?.defaults?.ease ?? win?.gsap?.defaults?.().ease;
+  return typeof ease === "string" ? ease : null;
+}
+
+/** An array of keyframe steps at the exact percentages GSAP times them; the parse rounds them. */
+export function withExactStepTimes(anim: GsapAnimation, tween: ParsedTween | null): GsapAnimation {
+  const data = anim.keyframes;
+  const parts = tween?.timeline?.getChildren?.() ?? [];
+  const total = tween?.duration?.() ?? 0;
+  if (data?.format !== "object-array" || parts.length !== data.keyframes.length || !(total > 0))
+    return anim;
+  const ends = parts.map((part) => ((part.startTime?.() ?? 0) + (part.duration?.() ?? 0)) / total);
+  if (ends.some((end) => !Number.isFinite(end))) return anim;
+  const keyframes = data.keyframes.map((kf, i) => ({
+    ...kf,
+    percentage: Math.round(ends[i]! * 100000) / 1000,
+  }));
+  return { ...anim, keyframes: { ...data, keyframes } };
+}

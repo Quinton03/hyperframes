@@ -15,6 +15,7 @@ import { usePlayerStore } from "../player/store/playerStore";
 
 import { readAllAnimatedProperties, readGsapProperty } from "./gsapRuntimeReaders";
 import { commitGsapPositionFromDrag } from "./gsapDragPositionCommit";
+import { commitValueAtPlayhead } from "./gsapValueAtPlayhead";
 import {
   commitStaticGsapPosition,
   commitStaticGsapRotation,
@@ -22,7 +23,6 @@ import {
   computeCurrentPercentage,
   findExistingPositionWrite,
   findRotationSetAnimation,
-  materializeIfDynamic,
 } from "./gsapDragCommit";
 import { commitWholePropertyOffset } from "./gsapWholePropertyOffsetCommit";
 import { isGestureTransactionCommit } from "./gestureTransaction";
@@ -250,7 +250,8 @@ export async function tryGsapDragIntercept(
   if (animations.filter(isPosWrite).length > 1 && fetchFallbackAnimations) {
     const fresh = await fetchFallbackAnimations();
     const dupes = fresh.filter(isPosWrite);
-    if (dupes.length > 1) {
+    // Real tweens one after another are a motion, not a conflict: only holds can fight.
+    if (dupes.length > 1 && dupes.filter((a) => !isInstantHold(a)).length <= 1) {
       const keeper =
         dupes.find((a) => a.keyframes) ?? dupes.find((a) => (a.duration ?? 0) > 0) ?? dupes[0]!;
       await commitMutation(
@@ -329,12 +330,16 @@ export async function tryGsapDragIntercept(
   // current ID and avoid a stale-ID remove that creates duplicate tweens.
   if (fetchFallbackAnimations) {
     const fresh = await fetchFallbackAnimations();
-    const freshMatch = fresh.find(
-      (a) =>
-        a.targetSelector === posAnim!.targetSelector &&
-        a.propertyGroup === posAnim!.propertyGroup &&
-        isXYPositionWrite(a) === isXYPositionWrite(posAnim!),
-    );
+    const freshMatch =
+      fresh.find((a) => a.id === posAnim!.id) ??
+      pickClosestToPlayhead(
+        fresh.filter(
+          (a) =>
+            a.targetSelector === posAnim!.targetSelector &&
+            a.propertyGroup === posAnim!.propertyGroup &&
+            isXYPositionWrite(a) === isXYPositionWrite(posAnim!),
+        ),
+      );
     if (freshMatch && freshMatch.id !== posAnim.id) {
       posAnim = freshMatch;
     }
@@ -349,7 +354,7 @@ export async function tryGsapDragIntercept(
   if (options?.altKey || !autoKeyframeEnabled) {
     await commitWholePathOffset(selection, posAnim, offset, gsapPos, iframe, selector, cbs);
   } else {
-    await commitGsapPositionFromDrag(selection, posAnim, offset, gsapPos, iframe, selector, cbs);
+    return commitGsapPositionFromDrag(selection, posAnim, offset, gsapPos, iframe, cbs);
   }
   return { status: "persisted" };
 }
@@ -428,8 +433,9 @@ export async function tryGsapRotationIntercept(
       ? resolved.anim
       : null;
   if (!anim) {
-    anim =
-      workingAnimations.find((a) => animationWritesAnyProperty(a, ROTATION_CHANNEL_SET)) ?? null;
+    anim = pickClosestToPlayhead(
+      workingAnimations.filter((a) => animationWritesAnyProperty(a, ROTATION_CHANNEL_SET)),
+    );
   }
 
   // `angle` is the ABSOLUTE target rotation resolved by the gesture (gsap base +
@@ -469,42 +475,14 @@ export async function tryGsapRotationIntercept(
     return { status: "persisted" };
   }
 
-  // fallow-ignore-next-line code-duplication
-  if (anim.hasUnresolvedKeyframes || anim.hasUnresolvedSelector) {
-    const newId = await materializeIfDynamic(anim, iframe, commitMutation, selection);
-    if (newId) anim = { ...anim, id: newId };
-  } else if (!anim.keyframes) {
-    const resolvedFromValues = selector
-      ? readAllAnimatedProperties(iframe, selector, anim, "rotation")
-      : undefined;
-    await commitMutation(
-      selection,
-      { type: "convert-to-keyframes", animationId: anim.id, resolvedFromValues },
-      { label: "Convert to keyframes for rotation", skipReload: true },
-    );
-  }
-
-  const runtimeProps = readAllAnimatedProperties(iframe, selector, anim, "rotation");
-
-  const backfillDefaults: Record<string, number> = { ...runtimeProps };
-  if (!("rotation" in runtimeProps)) {
-    backfillDefaults.rotation = readGsapProperty(iframe, selector, "rotation") ?? 0;
-  }
-
-  const properties = { ...runtimeProps, rotation: newRotation };
-
-  await commitMutation(
+  return commitValueAtPlayhead(
     selection,
-    {
-      type: "add-keyframe",
-      animationId: anim.id,
-      percentage: pct,
-      properties,
-      backfillDefaults,
-    },
-    { label: `Rotate (keyframe ${pct}%)`, softReload: true },
+    anim,
+    { rotation: newRotation },
+    iframe,
+    { commitMutation, fetchAnimations: fetchFallbackAnimations },
+    { label: "Rotate" },
   );
-  return { status: "persisted" };
 }
 
 export { readRuntimeKeyframes, scanAllRuntimeKeyframes } from "./gsapRuntimeKeyframes";

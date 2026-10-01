@@ -20,11 +20,11 @@ import {
   commitStaticGsapPosition,
   commitStaticGsapRotation,
   commitStaticGsapSize,
-  commitKeyframedSizeFromResize,
   commitWholePathOffset,
   findExistingPositionWrite,
 } from "./gsapDragCommit";
 import { promoteSetToKeyframes } from "./useEnableKeyframes";
+import { commitValueAtPlayhead } from "./gsapValueAtPlayhead";
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -172,30 +172,30 @@ describe("gsapDragCommit — new-tween targets", () => {
     expect(attributedTo(writtenTargets(mutations)[0]!)).toEqual(["group-4"]);
   });
 
-  it("commitKeyframedSizeFromResize authors the new keyframe tween against one element", async () => {
+  it("a keyframe edit refuses a tween its siblings share instead of moving them all", async () => {
     const groups = mountGroupSiblings();
     const { mutations, callbacks } = recorder();
-    const animatedTween = {
+    const sharedTween = {
       id: "t1",
       targetSelector: ".group",
       method: "to",
-      properties: {},
+      properties: { width: 120 },
       resolvedStart: 0,
       duration: 2,
-      keyframes: { keyframes: [{ percentage: 0, properties: { x: 0 } }] },
+      ease: "none",
     } as unknown as GsapAnimation;
 
-    const handled = await commitKeyframedSizeFromResize(
+    const outcome = await commitValueAtPlayhead(
       classOnlySelection(groups[3]!),
-      { width: 80, height: 40 },
-      ".group",
+      sharedTween,
+      { width: 80 },
       null,
-      animatedTween,
       callbacks,
+      { label: "Resize" },
     );
 
-    expect(handled).toBe(true);
-    expect(attributedTo(writtenTargets(mutations)[0]!)).toEqual(["group-3"]);
+    expect(outcome).toMatchObject({ status: "blocked", detail: "shared-tween" });
+    expect(mutations).toEqual([]);
   });
 
   it("commitStaticGsapPosition replaces a corrupt keyframed hold against one element", async () => {

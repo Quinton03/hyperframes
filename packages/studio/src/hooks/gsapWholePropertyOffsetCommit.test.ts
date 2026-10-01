@@ -159,4 +159,57 @@ describe("commitWholePropertyOffset", () => {
       { type: "update-properties", animationId: "#box-hold", properties: { width: 300 } },
     ]);
   });
+
+  it("keeps a linear flat tween linear: its ease becomes the keyframes' easeEach", async () => {
+    // A tween-level ease leaves each percentage segment power1.inOut, so the box drifts mid-segment.
+    const anim = {
+      id: "#box-rotate",
+      targetSelector: "#box",
+      method: "to",
+      resolvedStart: 0,
+      duration: 2,
+      ease: "none",
+      properties: { rotation: 40 },
+    } as unknown as GsapAnimation;
+    const { mutations, callbacks } = recordingCallbacks();
+    await commitWholePropertyOffset(
+      selection(),
+      anim,
+      { rotation: 50 },
+      100,
+      null,
+      callbacks,
+      "Rotate",
+    );
+    expect(mutations[0]).toMatchObject({ type: "replace-with-keyframes", easeEach: "none" });
+    expect(mutations[0]).not.toHaveProperty("ease", "none");
+  });
+
+  it("keeps a keyframed tween's easeEach", async () => {
+    const anim = {
+      id: "#box-rotate",
+      targetSelector: "#box",
+      method: "to",
+      resolvedStart: 0,
+      duration: 2,
+      keyframes: {
+        easeEach: "none",
+        keyframes: [
+          { percentage: 0, properties: { rotation: 10 } },
+          { percentage: 100, properties: { rotation: 40 } },
+        ],
+      },
+    } as unknown as GsapAnimation;
+    const { mutations, callbacks } = recordingCallbacks();
+    await commitWholePropertyOffset(
+      selection(),
+      anim,
+      { rotation: 50 },
+      100,
+      null,
+      callbacks,
+      "Rotate",
+    );
+    expect(mutations[0]).toMatchObject({ easeEach: "none" });
+  });
 });

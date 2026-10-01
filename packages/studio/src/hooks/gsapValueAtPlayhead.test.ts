@@ -1,0 +1,445 @@
+// @vitest-environment happy-dom
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { GsapAnimation } from "@hyperframes/core/gsap-parser";
+import type { DomEditSelection } from "../components/editor/domEditingTypes";
+import { usePlayerStore } from "../player/store/playerStore";
+import { GSAP_EDIT_BLOCK_COPY } from "./gsapEditOutcome";
+import { liveTween, previewWith, tween } from "./gsapParsedTween.test-helpers";
+import { tryGsapResizeIntercept } from "./gsapResizeIntercept";
+import { tryGsapDragIntercept, tryGsapRotationIntercept } from "./gsapRuntimeBridge";
+import { planValueAtPlayhead, type PlayheadEdit } from "./gsapValueAtPlayhead";
+
+let el: HTMLElement;
+let selection: DomEditSelection;
+beforeEach(() => {
+  el = document.createElement("div");
+  el.id = "box";
+  document.body.append(el);
+  selection = { id: "box", selector: "#box", element: el } as DomEditSelection;
+});
+afterEach(() => {
+  el.remove();
+  usePlayerStore.setState({ currentTime: 0, activeKeyframePct: null });
+});
+
+/** Drags `#box` by `dx` from a pre-gesture GSAP position of `base`, at `time`. */
+async function drag(
+  anims: GsapAnimation[],
+  live: unknown[],
+  {
+    time,
+    base,
+    dx,
+    values = {},
+  }: { time: number; base: [number, number]; dx: number; values?: Record<string, number> },
+) {
+  usePlayerStore.setState({ currentTime: time });
+  el.setAttribute("data-hf-drag-gsap-base-x", String(base[0]));
+  el.setAttribute("data-hf-drag-gsap-base-y", String(base[1]));
+  const commitMutation = vi.fn();
+  const outcome = await tryGsapDragIntercept(
+    selection,
+    { x: dx, y: 0 },
+    anims,
+    previewWith(el, live, values),
+    commitMutation,
+    async () => anims,
+  );
+  return { outcome, mutations: commitMutation.mock.calls.map((call) => call[1]) };
+}
+
+const fromX = tween({
+  id: "#box-from-0-position",
+  method: "from",
+  properties: { x: -60 },
+  resolvedStart: 0,
+  duration: 2,
+  ease: "none",
+});
+const fromXLive = (end: number) =>
+  liveTween(
+    el,
+    { start: 0, duration: 2, vars: { x: -60, ease: "none" }, ends: { x: [-60, end] } },
+    { from: true },
+  );
+
+describe("a move on a GSAP-animated layer, at the playhead", () => {
+  it("adds a keyframe inside a from() tween and keeps its end where GSAP parsed it", async () => {
+    const { outcome, mutations } = await drag([fromX], [fromXLive(40)], {
+      time: 1,
+      base: [-10, 0],
+      dx: 30,
+    });
+    expect(outcome).toEqual({ status: "persisted" });
+    expect(mutations).toEqual([
+      expect.objectContaining({
+        type: "replace-with-keyframes",
+        animationId: "#box-from-0-position",
+        position: 0,
+        duration: 2,
+        easeEach: "none",
+        keyframes: [
+          { percentage: 0, properties: { x: -60, y: 0 } },
+          { percentage: 50, properties: { x: 20, y: 0 } },
+          { percentage: 100, properties: { x: 40, y: 0 } },
+        ],
+      }),
+    ]);
+  });
+
+  it("writes the end GSAP parsed from the file, not the dragged element's live value", async () => {
+    const { mutations } = await drag([fromX], [fromXLive(40)], {
+      time: 1,
+      base: [-10, 0],
+      dx: 30,
+      values: { x: 999 },
+    });
+    expect(mutations[0].keyframes.at(-1)).toEqual({ percentage: 100, properties: { x: 40, y: 0 } });
+  });
+
+  it("extends a to() tween back to the playhead, holding the start GSAP folded from CSS translate", async () => {
+    const toX = tween({
+      id: "#box-to-2000-position",
+      method: "to",
+      properties: { x: 60 },
+      resolvedStart: 2,
+      duration: 1,
+      ease: "none",
+    });
+    // `translate: 40px 30px` on the element: GSAP parses x from 40, not 0.
+    const live = liveTween(el, { start: 2, duration: 1, vars: { x: 60 }, ends: { x: [40, 60] } });
+    const { mutations } = await drag([toX], [live], { time: 1, base: [40, 0], dx: -20 });
+    expect(mutations).toEqual([
+      expect.objectContaining({
+        animationId: "#box-to-2000-position",
+        position: 1,
+        duration: 2,
+        easeEach: "none",
+        keyframes: [
+          { percentage: 0, properties: { x: 20, y: 0 } },
+          { percentage: 50, properties: { x: 40, y: 0 } },
+          { percentage: 100, properties: { x: 60, y: 0 } },
+        ],
+      }),
+    ]);
+  });
+
+  it("refuses, with the Code tab message, when GSAP has not parsed the tween's end yet", async () => {
+    const unparsed = liveTween(el, { start: 0, duration: 2, vars: { x: -60 } }, { from: true });
+    const { outcome, mutations } = await drag([fromX], [unparsed], {
+      time: 1,
+      base: [-10, 0],
+      dx: 30,
+    });
+    expect(outcome).toEqual({
+      status: "blocked",
+      reason: "keyframes-uneditable",
+      detail: "implicit-end-unknown",
+    });
+    expect(mutations).toEqual([]);
+    expect(GSAP_EDIT_BLOCK_COPY["keyframes-uneditable"]).toContain("Code tab");
+  });
+
+  it("adds a keyframe between two steps of a keyframes array", async () => {
+    const keys = tween({
+      id: "#box-to-0-position",
+      method: "to",
+      properties: {},
+      resolvedStart: 0,
+      duration: 3,
+      keyframes: {
+        format: "object-array",
+        keyframes: [
+          // The parse rounds the step to 66.7%; GSAP times it at 2 s of 3.
+          { percentage: 66.7, properties: { x: 60 } },
+          { percentage: 100, properties: { x: 120 } },
+        ],
+      },
+    });
+    const steps = [
+      { startTime: () => 0, duration: () => 2 },
+      { startTime: () => 2, duration: () => 1 },
+    ];
+    const live = liveTween(
+      el,
+      { start: 0, duration: 3, vars: { keyframes: [] } },
+      { parts: steps },
+    );
+    const { mutations } = await drag([keys], [live], { time: 1, base: [30, 0], dx: 10 });
+    expect(mutations.map((m) => m.type)).toEqual(["replace-with-keyframes"]);
+    // An array step eases linearly unless it says otherwise; percentage keyframes would not.
+    expect(mutations[0].keyframes).toEqual([
+      { percentage: 33.333, properties: { x: 40, y: 0 }, ease: "none" },
+      { percentage: 66.667, properties: { x: 60, y: 0 }, ease: "none" },
+      { percentage: 100, properties: { x: 120, y: 0 }, ease: "none" },
+    ]);
+  });
+
+  it("never writes x and y into a tween that only animates size", async () => {
+    const size = tween({
+      id: "#box-to-0-size",
+      propertyGroup: "size",
+      method: "to",
+      properties: {},
+      resolvedStart: 0,
+      duration: 2,
+      keyframes: {
+        format: "percentage",
+        keyframes: [{ percentage: 100, properties: { width: 300 } }],
+      },
+    });
+    const live = liveTween(el, {
+      start: 0,
+      duration: 2,
+      vars: { keyframes: { "100%": { width: 300 } } },
+    });
+    const { mutations } = await drag([size], [live], { time: 1, base: [0, 0], dx: 10 });
+    expect(mutations.some((m) => m.animationId === "#box-to-0-size")).toBe(false);
+  });
+});
+
+describe("where two tweens meet at the playhead", () => {
+  it("edits the one whose keyframe the file states there, not the one listed first", async () => {
+    const fromTo = tween({
+      id: "#box-fromTo-2000-position",
+      method: "fromTo",
+      fromProperties: { x: 0 },
+      properties: { x: 60 },
+      resolvedStart: 2,
+      duration: 1,
+      ease: "none",
+    });
+    const live = liveTween(el, { start: 2, duration: 1, vars: { x: 60 }, ends: { x: [0, 60] } });
+    const { mutations } = await drag([fromX, fromTo], [fromXLive(40), live], {
+      time: 2,
+      base: [0, 0],
+      dx: 25,
+    });
+    expect(mutations).toEqual([
+      expect.objectContaining({
+        animationId: "#box-fromTo-2000-position",
+        easeEach: "none",
+        keyframes: [
+          { percentage: 0, properties: { x: 25, y: 0 } },
+          { percentage: 100, properties: { x: 60, y: 0 } },
+        ],
+      }),
+    ]);
+  });
+});
+
+describe("a resize on a layer whose size GSAP animates, at the playhead", () => {
+  it("adds a size keyframe inside the tween at the playhead", async () => {
+    const grow = (id: string, start: number, duration: number, width: number, height: number) =>
+      tween({
+        id,
+        propertyGroup: "size",
+        method: "to",
+        properties: { width, height },
+        resolvedStart: start,
+        duration,
+        ease: "none",
+      });
+    const first = grow("#box-to-0-size", 0, 2, 300, 200);
+    const second = grow("#box-to-2000-size", 2, 1, 360, 240);
+    const live = [first, second].map((a) =>
+      liveTween(el, { start: a.resolvedStart!, duration: a.duration!, vars: a.properties }),
+    );
+    usePlayerStore.setState({ currentTime: 1 });
+    const commitMutation = vi.fn();
+    await tryGsapResizeIntercept(
+      selection,
+      { width: 330, height: 210 },
+      [first, second],
+      previewWith(el, live),
+      commitMutation,
+    );
+    expect(commitMutation.mock.calls.map((call) => call[1])).toEqual([
+      expect.objectContaining({
+        type: "replace-with-keyframes",
+        animationId: "#box-to-0-size",
+        easeEach: "none",
+        keyframes: [
+          { percentage: 50, properties: { width: 330, height: 210 } },
+          { percentage: 100, properties: { width: 300, height: 200 } },
+        ],
+      }),
+    ]);
+  });
+});
+
+describe("a resize on a layer whose scale GSAP animates, at the playhead", () => {
+  it("adds a scale keyframe inside the tween at the playhead and leaves the next tween alone", async () => {
+    const grow = (id: string, start: number, duration: number, scale: number) =>
+      tween({
+        id,
+        propertyGroup: "scale",
+        method: "to",
+        properties: { scale },
+        resolvedStart: start,
+        duration,
+        ease: "none",
+      });
+    const first = grow("#box-to-0-scale", 0, 2, 1.25);
+    const second = grow("#box-to-2000-scale", 2, 1, 1.5);
+    el.setAttribute("data-hf-studio-original-box-width", "240");
+    el.setAttribute("data-hf-studio-original-box-height", "160");
+    const live = [first, second].map((a) =>
+      liveTween(el, { start: a.resolvedStart!, duration: a.duration!, vars: a.properties }),
+    );
+    usePlayerStore.setState({ currentTime: 1 });
+    const commitMutation = vi.fn();
+    // Dropped at 1.5x the box with a live scale of 1.125, the playhead's value of the first tween.
+    await tryGsapResizeIntercept(
+      selection,
+      { width: 320, height: 213.333 },
+      [first, second],
+      previewWith(el, live, { scaleX: 1.125, scaleY: 1.125 }),
+      commitMutation,
+    );
+    const writes = commitMutation.mock.calls.map((call) => call[1]);
+    expect(writes[0]).toMatchObject({
+      type: "replace-with-keyframes",
+      animationId: "#box-to-0-scale",
+      easeEach: "none",
+      keyframes: [
+        { percentage: 50, properties: { scale: 1.5 } },
+        { percentage: 100, properties: { scale: 1.25 } },
+      ],
+    });
+    expect(writes.some((m) => m.animationId === "#box-to-2000-scale")).toBe(false);
+  });
+});
+
+describe("a rotate on a GSAP-animated layer, at the playhead", () => {
+  it("changes the keyframe two flat tweens meet at, on the tween that states it", async () => {
+    const spin = (id: string, start: number, duration: number, rotation: number) =>
+      tween({
+        id,
+        propertyGroup: "rotation",
+        method: "to",
+        properties: { rotation },
+        resolvedStart: start,
+        duration,
+        ease: "none",
+      });
+    const first = spin("#box-to-0-rotation", 0, 2, 20);
+    const second = spin("#box-to-2000-rotation", 2, 1, 40);
+    usePlayerStore.setState({ currentTime: 2 });
+    const commitMutation = vi.fn();
+    const live = [first, second].map((a) =>
+      liveTween(el, { start: a.resolvedStart!, duration: a.duration!, vars: a.properties }),
+    );
+    await tryGsapRotationIntercept(
+      selection,
+      25,
+      [first, second],
+      previewWith(el, live),
+      commitMutation,
+    );
+    expect(commitMutation.mock.calls.map((call) => call[1])).toEqual([
+      expect.objectContaining({
+        type: "replace-with-keyframes",
+        animationId: "#box-to-0-rotation",
+        position: 0,
+        duration: 2,
+        easeEach: "none",
+        keyframes: [{ percentage: 100, properties: { rotation: 25 } }],
+      }),
+    ]);
+  });
+});
+
+describe("planValueAtPlayhead", () => {
+  const plan = (edit: Partial<PlayheadEdit>) =>
+    planValueAtPlayhead({
+      anim: tween({ method: "to", properties: {}, resolvedStart: 0, duration: 4 }),
+      at: { time: 2 },
+      values: {},
+      implicitEndValue: () => null,
+      ...edit,
+    });
+  const kf = (
+    keyframes: Array<{ percentage: number; properties: Record<string, number> }>,
+    easeEach?: string,
+  ) =>
+    tween({
+      method: "to",
+      properties: {},
+      resolvedStart: 0,
+      duration: 4,
+      keyframes: { format: "percentage", keyframes, ...(easeEach && { easeEach }) },
+    });
+
+  it("changes the keyframe under the playhead and no other", () => {
+    const result = plan({
+      anim: kf([
+        { percentage: 0, properties: { x: 0 } },
+        { percentage: 50, properties: { x: 10 } },
+        { percentage: 100, properties: { x: 20 } },
+      ]),
+      values: { x: 15 },
+    });
+    expect(result.ok && result.mutation.keyframes.map((k) => k.properties.x)).toEqual([0, 15, 20]);
+  });
+
+  it("eases the new segment like the one it splits", () => {
+    const result = plan({
+      anim: kf([{ percentage: 100, properties: { x: 20 } }], "power2.in"),
+      at: { time: 1 },
+      values: { x: 5 },
+    });
+    expect(result.ok && result.mutation).toMatchObject({
+      easeEach: "power2.in",
+      keyframes: [
+        { percentage: 25, properties: { x: 5 } },
+        { percentage: 100, properties: { x: 20 } },
+      ],
+    });
+  });
+
+  it("extends past the end and keeps the authored end where it was", () => {
+    const result = plan({
+      anim: tween({
+        method: "to",
+        properties: { width: 300 },
+        resolvedStart: 0,
+        duration: 2,
+        ease: "none",
+      }),
+      at: { time: 3 },
+      values: { width: 400 },
+    });
+    expect(result.ok && result.mutation).toMatchObject({
+      position: 0,
+      duration: 3,
+      easeEach: "none",
+      keyframes: [
+        { percentage: 66.667, properties: { width: 300 } },
+        { percentage: 100, properties: { width: 400 } },
+      ],
+    });
+  });
+
+  it("splits a uniform scale into longhands for a per-axis edit", () => {
+    const result = plan({
+      anim: tween({
+        method: "to",
+        properties: { scale: 1.25 },
+        resolvedStart: 0,
+        duration: 4,
+        ease: "none",
+      }),
+      values: { scaleX: 1.5, scaleY: 1.1 },
+    });
+    expect(result.ok && result.mutation.keyframes).toEqual([
+      { percentage: 50, properties: { scaleX: 1.5, scaleY: 1.1 } },
+      { percentage: 100, properties: { scaleX: 1.25, scaleY: 1.25 } },
+    ]);
+  });
+
+  it("refuses keyframes eased as a whole, whose segment curves it cannot keep", () => {
+    const anim = { ...kf([{ percentage: 100, properties: { x: 20 } }]), ease: "power2.out" };
+    expect(plan({ anim, values: { x: 5 } })).toEqual({ ok: false, reason: "eased-keyframes" });
+  });
+});
