@@ -116,4 +116,44 @@ describe("DOM editing package exports", () => {
     await act(async () => root.unmount());
     parent.remove();
   });
+
+  it("gives a read-only preview or a detached element no z-order, and never asks the session", async () => {
+    const parent = document.createElement("div");
+    const back = document.createElement("div");
+    back.id = "back";
+    parent.append(back, document.createElement("div"));
+    document.body.append(parent);
+    const commitZ = vi.fn(() => Promise.resolve());
+    const session = {
+      handleDomZIndexReorderCommit: commitZ,
+    } as unknown as Parameters<typeof DomEditProvider>[0]["value"];
+    let zOrder: DomEditZOrder | undefined;
+    function Probe() {
+      zOrder = useDomEditZOrder();
+      return null;
+    }
+    const el = document.body.appendChild(document.createElement("div"));
+    const root = createRoot(el);
+    const mount = (readOnly: boolean) =>
+      act(async () =>
+        root.render(
+          <PreviewReadOnlyProvider readOnly={readOnly}>
+            <DomEditProvider value={session}>
+              <Probe />
+            </DomEditProvider>
+          </PreviewReadOnlyProvider>,
+        ),
+      );
+    const sel = makeSelection("Back", back);
+    await mount(true);
+    expect(zOrder?.enabled(sel, "bring-to-front")).toBe(false);
+    expect(zOrder?.apply(sel, "bring-to-front")).toBe(false);
+    expect(zOrder?.commit(sel, [{ element: back, zIndex: 1 }], "bring-to-front", null)).toBe(false);
+    await mount(false);
+    parent.remove();
+    expect(zOrder?.enabled(sel, "bring-to-front"), "a selection from before a reload").toBe(false);
+    expect(zOrder?.apply(sel, "bring-to-front")).toBe(false);
+    expect(commitZ).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
 });

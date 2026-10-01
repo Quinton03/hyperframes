@@ -19,6 +19,7 @@ export function makeLifecycleOpsParams(
     projectIdRef: { current: null },
     reloadPreview: vi.fn(),
     clearDomSelection: vi.fn(),
+    readOnlyPreview: false,
     ...overrides,
   };
 }

@@ -295,6 +295,7 @@ export function useDomEditCommits({
     onReorderShadow,
     forceReloadSdkSession,
     commitDomEditPatchBatches,
+    readOnlyPreview,
   });
 
   return {

@@ -1,7 +1,9 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useDomEditActionsContext } from "../../contexts/DomEditContext";
 import { readHfId, type DomEditSelection } from "./domEditing";
-import { buildStableSelector } from "./domEditingDom";
+import { buildStableSelector, getSelectorIndex } from "./domEditingDom";
+import { usePreviewReadOnly } from "./previewReadOnlyContext";
+import { useStudioShellContextOptional } from "../../contexts/StudioContext";
 import { deriveTimelineStoreKey } from "../../player/lib/timelineElementHelpers";
 import { zReorderCoalesceKey } from "../../hooks/useElementLifecycleOps";
 import { useCanvasZOrderTimelineMirror } from "../nle/useCanvasZOrderTimelineMirror";
@@ -51,23 +53,28 @@ function selectedZIndexEntry(sel: DomEditSelection, zIndex: number): ZIndexReord
   };
 }
 
-/** A raw iframe sibling in the selection's file; null with no id or selector (z stays live). */
+/** A raw iframe sibling in the selection's file; null with no id or selector (z stays live). Its selector index
+ * picks it among same-class siblings, the way the lane mirror keys `crossed`. */
 function siblingZIndexEntry(
   element: HTMLElement,
   zIndex: number,
   sourceFile: string,
+  activeCompPath: string | null,
 ): ZIndexReorderEntry | null {
   const id = element.id || undefined;
   const selector = buildStableSelector(element);
   if (!canTargetZIndexElement(element, id, selector)) return null;
+  const selectorIndex = id
+    ? undefined
+    : getSelectorIndex(element.ownerDocument, element, selector, sourceFile, activeCompPath);
   return {
     element,
     zIndex,
     id,
     selector,
-    selectorIndex: undefined,
+    selectorIndex,
     sourceFile,
-    key: deriveTimelineStoreKey({ domId: id, selector, sourceFile }),
+    key: deriveTimelineStoreKey({ domId: id, selector, selectorIndex, sourceFile }),
   };
 }
 
@@ -84,6 +91,7 @@ function describeZIndexElement(element: HTMLElement): string {
 export function resolveZIndexEntries(
   sel: DomEditSelection,
   patches: ReadonlyArray<{ element: HTMLElement; zIndex: number }>,
+  activeCompPath: string | null,
 ): { entries: ZIndexReorderEntry[]; dropped: Array<{ element: HTMLElement; zIndex: number }> } {
   const entries: ZIndexReorderEntry[] = [];
   const dropped: Array<{ element: HTMLElement; zIndex: number }> = [];
@@ -92,7 +100,7 @@ export function resolveZIndexEntries(
       entries.push(selectedZIndexEntry(sel, patch.zIndex));
       continue;
     }
-    const entry = siblingZIndexEntry(patch.element, patch.zIndex, sel.sourceFile);
+    const entry = siblingZIndexEntry(patch.element, patch.zIndex, sel.sourceFile, activeCompPath);
     if (entry) entries.push(entry);
     else dropped.push(patch);
   }
@@ -100,30 +108,36 @@ export function resolveZIndexEntries(
 }
 
 export interface DomEditZOrder {
-  /** False when the element is already at that end of its stacking set. */
+  /** False in a read-only preview, for an element no longer in the preview, or at that end of its stacking set. */
   enabled: (sel: DomEditSelection, action: ZOrderAction) => boolean;
-  /** Resolve and commit one step; false when it is a no-op. */
+  /** Resolve and commit one step; false when nothing is sent to be saved. */
   apply: (sel: DomEditSelection, action: ZOrderAction) => boolean;
-  /** Commit patches already resolved (the canvas menu resolves its own). */
+  /** Commit patches already resolved (the canvas menu resolves its own); false when none could be saved. */
   commit: (
     sel: DomEditSelection,
     patches: ReadonlyArray<ZOrderPatch>,
     action: ZOrderAction,
     crossed: HTMLElement | null,
-  ) => void;
+  ) => boolean;
 }
-
-const enabled: DomEditZOrder["enabled"] = (sel, action) =>
-  isZOrderActionEnabled(sel.element, action);
 
 // The canvas menu's z-order (write, undo, lane mirror) for any caller in DomEditProvider.
 export function useDomEditZOrder(): DomEditZOrder {
   const { handleDomZIndexReorderCommit } = useDomEditActionsContext();
   const mirrorZOrderToTimeline = useCanvasZOrderTimelineMirror();
+  const readOnly = usePreviewReadOnly();
+  const activeCompPath = useStudioShellContextOptional()?.activeCompPath ?? null;
+
+  const enabled = useCallback<DomEditZOrder["enabled"]>(
+    (sel, action) =>
+      !readOnly && sel.element.isConnected && isZOrderActionEnabled(sel.element, action),
+    [readOnly],
+  );
 
   const commit = useCallback<DomEditZOrder["commit"]>(
     (sel, patches, action, crossed) => {
-      const { entries, dropped } = resolveZIndexEntries(sel, patches);
+      if (readOnly) return false;
+      const { entries, dropped } = resolveZIndexEntries(sel, patches, activeCompPath);
       if (dropped.length > 0) {
         // Not writable to source: their live z still applies, so the order renders, until a reload.
         for (const patch of dropped) patch.element.style.zIndex = String(patch.zIndex);
@@ -133,7 +147,7 @@ export function useDomEditZOrder(): DomEditZOrder {
           dropped.map((patch) => describeZIndexElement(patch.element)).join(", "),
         );
       }
-      if (entries.length === 0) return;
+      if (entries.length === 0) return false;
       // One coalesce key for the z write and the lane mirror: one undo entry.
       const coalesceKey = zReorderCoalesceKey(entries, action);
       // One serialized z→lane transaction: the mirror runs only AFTER a durable z commit and
@@ -150,19 +164,20 @@ export function useDomEditZOrder(): DomEditZOrder {
             coalesceKey,
           }),
       }).catch(() => undefined);
+      return true;
     },
-    [handleDomZIndexReorderCommit, mirrorZOrderToTimeline],
+    [activeCompPath, handleDomZIndexReorderCommit, mirrorZOrderToTimeline, readOnly],
   );
 
   const apply = useCallback<DomEditZOrder["apply"]>(
     (sel, action) => {
+      // A selection from before a preview reload holds a detached element and stale z values.
+      if (!sel.element.isConnected) return false;
       const step = resolveZOrderStep(sel.element, action);
-      if (step === null) return false;
-      commit(sel, step.patches, action, step.crossed);
-      return true;
+      return step !== null && commit(sel, step.patches, action, step.crossed);
     },
     [commit],
   );
 
-  return { enabled, apply, commit };
+  return useMemo(() => ({ enabled, apply, commit }), [enabled, apply, commit]);
 }
