@@ -180,9 +180,11 @@ async function commitFlatViaKeyframes(
   if (runtime && ts !== null) {
     const { gsapLib, el, mainTl } = runtime;
     const draggedValues: Record<string, number> = {};
-    // Clearing x/y clears GSAP's whole transform, and the seek does not bring back an xPercent
-    // set outside the timeline, so the restore below carries every position channel.
-    for (const key of new Set([...Object.keys(properties), ...PROPERTY_GROUPS.position])) {
+    const channelsTheClearWipes = new Set([
+      ...Object.keys(properties),
+      ...PROPERTY_GROUPS.position,
+    ]);
+    for (const key of channelsTheClearWipes) {
       const v = Number(gsapLib.getProperty(el, key));
       if (Number.isFinite(v)) draggedValues[key] = v;
     }
