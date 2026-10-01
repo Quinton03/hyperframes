@@ -201,6 +201,8 @@ export type { DomEditZOrder } from "./components/editor/useDomEditZOrder";
 export type { ZOrderAction } from "./components/editor/canvasContextMenuZOrder";
 export type { DomEditCapabilities, DomEditSelection } from "./components/editor/domEditingTypes";
 export { useDomStyleCommit } from "./hooks/useDomStyleCommit";
+export { ColorField } from "./components/editor/propertyPanelColor";
+export { GradientField } from "./components/editor/propertyPanelFill";
 export type { UseDomStyleCommitOptions } from "./hooks/useDomStyleCommit";
 export type { DomEditCommitDeclineReason, DomEditCommitOutcome } from "./hooks/domEditCommitRunner";
 export { resolveDomEditSelection } from "./components/editor/domEditingLayers";
