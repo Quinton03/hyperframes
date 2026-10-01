@@ -71,13 +71,10 @@ interface ProgramInfo {
   advancedTexture: WebGLTexture;
   advancedSignature: string | null;
   quad: WebGLBuffer;
-  /** Compiled FRAGMENT_SHADER variants, keyed by their stage define block. */
   shaders: Map<string, MainShader>;
-  /** Stage define blocks this context failed to compile; they draw with every stage, or not at all. */
   failedStageDefines: Set<string>;
 }
 
-/** One compiled FRAGMENT_SHADER variant and the locations bound to it. */
 interface MainShader {
   program: WebGLProgram;
   position: number;
@@ -1394,10 +1391,7 @@ type FragmentShaderStage = readonly [
   active: (grading: ResolvedHfColorGrading, compare: RuntimeColorGradingCompareState) => boolean,
 ];
 
-/**
- * The grade condition under which each guarded FRAGMENT_SHADER stage changes a pixel.
- * Compiling out the rest matters on software GL, which pays for a stage even at 0.
- */
+/** Software GL pays for a stage even at 0, so each grade compiles only the stages it enables. */
 const FRAGMENT_SHADER_STAGES: readonly FragmentShaderStage[] = [
   ["HF_STAGE_BLUR", (grading) => grading.effects.blur > 0],
   ["HF_STAGE_KUWAHARA", (grading) => grading.effects.kuwahara > 0],
@@ -1426,7 +1420,6 @@ const FRAGMENT_SHADER_STAGES: readonly FragmentShaderStage[] = [
   ["HF_STAGE_COMPARE", (_grading, compare) => compare.enabled],
 ];
 
-/** The `#define` block that selects a grade's stages; also its shader cache key. */
 function fragmentShaderStageDefines(
   grading: ResolvedHfColorGrading,
   compare: RuntimeColorGradingCompareState,
@@ -1438,15 +1431,12 @@ function fragmentShaderStageDefines(
   return defines;
 }
 
-/** Every stage enabled: the shader as it was before stages could be compiled out. */
 const ALL_FRAGMENT_SHADER_STAGE_DEFINES = FRAGMENT_SHADER_STAGES.map(
   ([define]) => `#define ${define}\n`,
 ).join("");
 
-/** Studio look previews render at most this many candidate grades per batch. */
 const MAX_PREVIEW_CANDIDATES = 32;
 
-/** Holds a full preview batch, so cycling one batch's looks never recompiles. */
 const MAX_CACHED_MAIN_SHADERS = MAX_PREVIEW_CANDIDATES;
 
 const BLUR_FRAGMENT_SHADER = [
@@ -1856,7 +1846,6 @@ function createProgramInfo(canvas: HTMLCanvasElement): {
     premultipliedAlpha: false,
   });
   if (!gl) return null;
-  // Compiling the stage-free variant here makes an unusable context a creation failure.
   const baseShader = createMainShader(gl, "");
   if (!baseShader) return null;
   const resources = createMainResources(gl);
@@ -1890,7 +1879,6 @@ function createMainResources(
   return { texture, lutTexture, advancedTexture, advancedSignature: null, quad };
 }
 
-/** Binds the variant compiled for exactly the stages this grade enables. */
 function useMainShader(
   gl: WebGLRenderingContext,
   program: ProgramInfo,
@@ -1926,7 +1914,6 @@ function mainShaderFor(
     return mainShaderFor(gl, program, ALL_FRAGMENT_SHADER_STAGE_DEFINES);
   }
   if (program.shaders.size >= MAX_CACHED_MAIN_SHADERS) {
-    // Map iteration is insertion order, so the first entry is the least recently used.
     for (const [key, evicted] of program.shaders) {
       gl.deleteProgram(evicted.program);
       program.shaders.delete(key);
