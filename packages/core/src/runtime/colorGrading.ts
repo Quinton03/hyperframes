@@ -73,6 +73,8 @@ interface ProgramInfo {
   quad: WebGLBuffer;
   /** Compiled FRAGMENT_SHADER variants, keyed by their stage define block. */
   shaders: Map<string, MainShader>;
+  /** Stage define blocks this context failed to compile; they draw with every stage, or not at all. */
+  failedStageDefines: Set<string>;
 }
 
 /** One compiled FRAGMENT_SHADER variant and the locations bound to it. */
@@ -1436,6 +1438,11 @@ function fragmentShaderStageDefines(
   return defines;
 }
 
+/** Every stage enabled: the shader as it was before stages could be compiled out. */
+const ALL_FRAGMENT_SHADER_STAGE_DEFINES = FRAGMENT_SHADER_STAGES.map(
+  ([define]) => `#define ${define}\n`,
+).join("");
+
 /** Studio look previews render at most this many candidate grades per batch. */
 const MAX_PREVIEW_CANDIDATES = 32;
 
@@ -1857,10 +1864,15 @@ function createProgramInfo(canvas: HTMLCanvasElement): {
     gl.deleteProgram(baseShader.program);
     return null;
   }
-  return { gl, program: { ...resources, shaders: new Map([["", baseShader]]) } };
+  return {
+    gl,
+    program: { ...resources, shaders: new Map([["", baseShader]]), failedStageDefines: new Set() },
+  };
 }
 
-function createMainResources(gl: WebGLRenderingContext): Omit<ProgramInfo, "shaders"> | null {
+function createMainResources(
+  gl: WebGLRenderingContext,
+): Omit<ProgramInfo, "shaders" | "failedStageDefines"> | null {
   const texture = createTexture(gl);
   const lutTexture = createTexture(gl, gl.NEAREST);
   const advancedTexture = createTexture(gl, gl.NEAREST);
@@ -1885,23 +1897,34 @@ function useMainShader(
   grading: ResolvedHfColorGrading,
   compare: RuntimeColorGradingCompareState,
 ): MainShader {
-  const stageDefines = fragmentShaderStageDefines(grading, compare);
-  const cached = program.shaders.get(stageDefines);
-  // Re-inserting a hit keeps the Map in least-recently-used order for eviction.
-  if (cached) program.shaders.delete(stageDefines);
-  const shader = cached ?? compileMainShaderVariant(gl, program, stageDefines);
-  program.shaders.set(stageDefines, shader);
+  const shader = mainShaderFor(gl, program, fragmentShaderStageDefines(grading, compare));
   gl.useProgram(shader.program);
   return shader;
 }
 
-function compileMainShaderVariant(
+function mainShaderFor(
   gl: WebGLRenderingContext,
   program: ProgramInfo,
-  stageDefines: string,
+  requested: string,
 ): MainShader {
-  const shader = createMainShader(gl, stageDefines);
-  if (!shader) throw new Error("Color grading shader failed to compile");
+  const stageDefines = program.failedStageDefines.has(requested)
+    ? ALL_FRAGMENT_SHADER_STAGE_DEFINES
+    : requested;
+  if (program.failedStageDefines.has(stageDefines)) {
+    throw new Error("Color grading shader failed to compile");
+  }
+  const cached = program.shaders.get(stageDefines);
+  if (cached) {
+    // Re-inserting a hit keeps the Map in least-recently-used order for eviction.
+    program.shaders.delete(stageDefines);
+    program.shaders.set(stageDefines, cached);
+    return cached;
+  }
+  const compiled = createMainShader(gl, stageDefines);
+  if (!compiled) {
+    program.failedStageDefines.add(stageDefines);
+    return mainShaderFor(gl, program, ALL_FRAGMENT_SHADER_STAGE_DEFINES);
+  }
   if (program.shaders.size >= MAX_CACHED_MAIN_SHADERS) {
     // Map iteration is insertion order, so the first entry is the least recently used.
     for (const [key, evicted] of program.shaders) {
@@ -1910,7 +1933,8 @@ function compileMainShaderVariant(
       break;
     }
   }
-  return shader;
+  program.shaders.set(stageDefines, compiled);
+  return compiled;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

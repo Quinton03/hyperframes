@@ -1434,6 +1434,59 @@ describe("createColorGradingRuntime", () => {
     expect(compiled()).toBe(beforeEviction + 1);
   });
 
+  it("selects the variant from the animated grade, not the authored one", () => {
+    const video = makeDrawableVideo();
+    video.setAttribute(HF_COLOR_GRADING_ATTR, serializeHfColorGrading({ effects: { blur: 0 } }));
+    video.style.setProperty("--hf-color-grading-blur", "0.45");
+    startRuntimeWithVideo(video);
+
+    expect(stageNames(mainFragmentSources().at(-1) ?? "", "define")).toEqual(["HF_STAGE_BLUR"]);
+  });
+
+  it("compiles each look preview with its own stages", async () => {
+    const video = makeDrawableVideo();
+    video.removeAttribute(HF_COLOR_GRADING_ATTR);
+    document.body.appendChild(video);
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,x");
+    runtime = createColorGradingRuntime();
+
+    await runtime.renderPreviews("#hero-video", [
+      { id: "halftone", grading: { effects: { halftone: 0.5 } } },
+    ]);
+
+    expect(stageNames(mainFragmentSources().at(-1) ?? "", "define")).toEqual(["HF_STAGE_HALFTONE"]);
+  });
+
+  it("draws a variant the driver rejects through every stage, and stops retrying it", () => {
+    const { video } = startRuntimeWithVideo();
+    const gl = getContextSpy.mock.results[0]?.value as WebGLRenderingContext;
+    const rejected = "#define HF_STAGE_HALFTONE\n#ifdef GL_FRAGMENT_PRECISION_HIGH";
+    gl.getShaderParameter = vi.fn(() => !lastShaderSources.at(-1)?.startsWith(rejected));
+    const attempts = () => lastShaderSources.filter((source) => source.startsWith(rejected)).length;
+
+    runtime!.setGrading(`#${video.id}`, { effects: { halftone: 0.6 } });
+    const fallback = mainFragmentSources().at(-1) ?? "";
+    expect(stageNames(fallback, "define")).toEqual(stageNames(fallback, "ifdef"));
+    runtime!.setGrading(`#${video.id}`, { adjust: { exposure: 0.1 } });
+    runtime!.setGrading(`#${video.id}`, { effects: { halftone: 0.2 } });
+
+    expect(attempts()).toBe(1);
+    expect(runtime!.isGraded(video)).toBe(true);
+  });
+
+  it("stops compiling once even the every-stage variant is rejected", () => {
+    const { video } = startRuntimeWithVideo();
+    const gl = getContextSpy.mock.results[0]?.value as WebGLRenderingContext;
+    gl.getShaderParameter = vi.fn(() => false);
+    const compiled = () => mainFragmentSources().length;
+    const afterCreation = compiled();
+
+    runtime!.setGrading(`#${video.id}`, { effects: { halftone: 0.6 } });
+    runtime!.setGrading(`#${video.id}`, { effects: { halftone: 0.2 } });
+
+    expect(compiled()).toBe(afterCreation + 2);
+  });
+
   it("uses the effected media sample as the graded shader input", () => {
     const video = makeDrawableVideo();
     video.setAttribute(HF_COLOR_GRADING_ATTR, serializeHfColorGrading({ effects: { blur: 0.25 } }));
