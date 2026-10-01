@@ -22,6 +22,7 @@ export type ClipboardPayload =
       kind: "dom-element";
       html: string;
       sourceFile: string;
+      projectId?: string;
       originSelector?: string;
       originSelectorIndex?: number;
     };
@@ -70,6 +71,7 @@ export function deserializeClipboardPayload(json: string): ClipboardPayload | nu
       kind: "dom-element",
       html: obj.html,
       sourceFile: obj.sourceFile,
+      projectId: typeof obj.projectId === "string" ? obj.projectId : undefined,
       originSelector: typeof obj.originSelector === "string" ? obj.originSelector : undefined,
       originSelectorIndex:
         typeof obj.originSelectorIndex === "number" ? obj.originSelectorIndex : undefined,

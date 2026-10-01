@@ -52,12 +52,16 @@ afterEach(() => {
 
 // The preview page: the saved markup with the preview's in-memory ids, a sub-composition
 // mounted inline, and the runtime's hide on both clips.
-function mountPreview(sub: string, bundle: (host: Element) => void): HTMLIFrameElement {
+function mountPreview(
+  sub: string,
+  bundle: (host: Element) => void,
+  saved = SAVED,
+): HTMLIFrameElement {
   const iframe = document.createElement("iframe");
   document.body.appendChild(iframe);
   const doc = iframe.contentDocument as Document;
   doc.open();
-  doc.write(ensureHfIds(SAVED));
+  doc.write(ensureHfIds(saved));
   doc.close();
   const parsed = new DOMParser().parseFromString(ensureHfIds(sub), "text/html");
   const subRoot = (parsed.querySelector("template") as HTMLTemplateElement).content
@@ -93,14 +97,15 @@ function mountClipboard(
   domSelection: DomEditSelection | null = null,
   sub = SUB,
   bundle: (host: Element) => void = () => {},
+  saved = SAVED,
 ) {
-  const files: Record<string, string> = { "index.html": SAVED, "compositions/sub.html": sub };
+  const files: Record<string, string> = { "index.html": saved, "compositions/sub.html": sub };
   const fail = { on: false };
   const delayMs: Record<string, number> = {};
   const domEditSave = { pending: Promise.resolve() };
   const domSelectionRef = { current: domSelection };
   stubFiles(files, fail, delayMs);
-  const iframe = mountPreview(sub, bundle);
+  const iframe = mountPreview(sub, bundle, saved);
   const writes: string[] = [];
   const deleted: string[] = [];
   const writeProjectFile = async (_path: string, content: string) => {
@@ -247,6 +252,39 @@ const SUB_SELECTION = {
   selectorIndex: 0,
   sourceFile: "compositions/sub.html",
 } as DomEditSelection;
+
+describe("paste of an element styled by its id", () => {
+  it("gives the copy the look its original has", async () => {
+    clearSelection();
+    const saved = SAVED.replace(
+      "<body>",
+      "<body><style>#badge { color: rgb(200, 30, 40); letter-spacing: 3px; }</style>",
+    ).replace("</h1>", '</h1><p id="badge">New</p>');
+    const selection = {
+      hfId: stampedHfId(saved, "#badge"),
+      selector: "#badge",
+      selectorIndex: 0,
+      sourceFile: "index.html",
+    } as DomEditSelection;
+    const { clipboard, writes } = mountClipboard(selection, SUB, () => {}, saved);
+    clipboard().handleCopy();
+    await clipboard().handlePaste();
+    const page = document.createElement("iframe");
+    document.body.appendChild(page);
+    const doc = page.contentDocument as Document;
+    doc.open();
+    doc.write(writes[0] ?? "");
+    doc.close();
+    const look = (id: string) => {
+      const style = (page.contentWindow as Window).getComputedStyle(
+        doc.getElementById(id) as Element,
+      );
+      return { color: style.color, letterSpacing: style.letterSpacing };
+    };
+    expect(look("badge")).toEqual({ color: "rgb(200, 30, 40)", letterSpacing: "3px" });
+    expect(look("badge-2")).toEqual(look("badge"));
+  });
+});
 
 describe("copy of a sub-composition clip", () => {
   it("rebases its relative asset paths to the project root, as the preview does", async () => {
