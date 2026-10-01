@@ -1,4 +1,5 @@
 import type { GsapAnimation } from "@hyperframes/core/gsap-parser";
+import { PROPERTY_GROUPS } from "@hyperframes/parsers/gsap-constants";
 import type { DomEditSelection } from "../components/editor/domEditingTypes";
 import { usePlayerStore } from "../player/store/playerStore";
 import { resolveTweenStart, resolveTweenDuration } from "../utils/globalTimeCompiler";
@@ -179,7 +180,9 @@ async function commitFlatViaKeyframes(
   if (runtime && ts !== null) {
     const { gsapLib, el, mainTl } = runtime;
     const draggedValues: Record<string, number> = {};
-    for (const key of Object.keys(properties)) {
+    // Clearing x/y clears GSAP's whole transform, and the seek does not bring back an xPercent
+    // set outside the timeline, so the restore below carries every position channel.
+    for (const key of new Set([...Object.keys(properties), ...PROPERTY_GROUPS.position])) {
       const v = Number(gsapLib.getProperty(el, key));
       if (Number.isFinite(v)) draggedValues[key] = v;
     }
