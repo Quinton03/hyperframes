@@ -12,6 +12,16 @@ export interface UseProjectFileWriterOptions {
   projectId: string | null;
 }
 
+async function fetchProjectFile(projectId: string | null, path: string, query: string) {
+  if (!projectId) throw new Error("No active project");
+  const response = await studioApiFetch(
+    `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(path)}${query}`,
+  );
+  if (!response.ok) throw new Error(`Failed to read ${path}`);
+  const data = (await response.json()) as { content?: string; version?: string };
+  return { content: data.content, version: data.version ?? response.headers.get("etag") };
+}
+
 // The etag-guarded project-file read/write pair every Studio save path
 // shares. A host mounting hand editing outside Studio needs only this, not
 // the full file manager (file tree, editor tabs, uploads, font assets).
@@ -31,29 +41,19 @@ export function useProjectFileWriter({ projectId }: UseProjectFileWriterOptions)
 
   const readProjectFile = useCallback(
     async (path: string): Promise<string> => {
-      if (!projectId) throw new Error("No active project");
-      const response = await studioApiFetch(
-        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(path)}`,
-      );
-      if (!response.ok) throw new Error(`Failed to read ${path}`);
-      const data = (await response.json()) as { content?: string; version?: string };
-      if (typeof data.content !== "string") throw new Error(`Missing file contents for ${path}`);
-      fileVersions.set(path, data.version ?? response.headers.get("etag"));
-      return data.content;
+      const { content, version } = await fetchProjectFile(projectId, path, "");
+      if (typeof content !== "string") throw new Error(`Missing file contents for ${path}`);
+      fileVersions.set(path, version);
+      return content;
     },
     [fileVersions, projectId],
   );
 
   const readOptionalProjectFile = useCallback(
     async (path: string): Promise<string> => {
-      if (!projectId) throw new Error("No active project");
-      const response = await studioApiFetch(
-        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(path)}?optional=1`,
-      );
-      if (!response.ok) throw new Error(`Failed to read ${path}`);
-      const data = (await response.json()) as { content?: string; version?: string };
-      fileVersions.set(path, data.version ?? response.headers.get("etag"));
-      return typeof data.content === "string" ? data.content : "";
+      const { content, version } = await fetchProjectFile(projectId, path, "?optional=1");
+      fileVersions.set(path, version);
+      return typeof content === "string" ? content : "";
     },
     [fileVersions, projectId],
   );
