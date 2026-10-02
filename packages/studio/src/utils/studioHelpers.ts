@@ -92,6 +92,11 @@ export function isImageBackgroundValue(value: string): boolean {
   return /^url\(/i.test(value.trim());
 }
 
+export function cssPropertyName(property: string): string {
+  if (property.startsWith("--")) return property;
+  return property.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`).replace(/^ms-/, "-ms-");
+}
+
 export function isManualGeometryStyleProperty(property: string): boolean {
   return property === "left" || property === "top" || property === "width" || property === "height";
 }
