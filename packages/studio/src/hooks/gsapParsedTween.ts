@@ -30,6 +30,7 @@ interface GsapWindow {
     defaults?: () => { ease?: unknown };
     getProperty?: (target: Element, prop: string) => unknown;
     set?: (target: Element, vars: Record<string, unknown>) => void;
+    parseEase?: (name: string) => unknown;
   };
   __timelines?: Record<string, { getChildren?: (nested: boolean) => ParsedTween[] }>;
 }
@@ -71,7 +72,7 @@ export function findParsedTween(
       const targets = tween.targets?.() ?? [];
       if (!targets.includes(element) && !targets.some((t) => element.id && t.id === element.id))
         continue;
-      if (Math.abs((tween.startTime?.() ?? Number.NaN) - start) > 1e-3) continue;
+      if (!startsAt(tween, start)) continue;
       const vars = tween.vars ?? {};
       const carries = keyframed ? "keyframes" in vars : props.some((p) => p in vars);
       if (!carries || !((tween.duration?.() ?? 0) > 0)) continue;
@@ -80,6 +81,22 @@ export function findParsedTween(
     }
   }
   return null;
+}
+
+/** GSAP's startTime() counts the tween's `delay`; the file's parse does not. */
+function startsAt(tween: ParsedTween, start: number): boolean {
+  const delay = Number(tween.vars?.delay) || 0;
+  return Math.abs((tween.startTime?.() ?? Number.NaN) - delay - start) <= 1e-3;
+}
+
+/** `anim` timed as GSAP runs it: its start with any delay, a duration it leaves to GSAP filled in. */
+export function withLiveTiming(anim: GsapAnimation, tween: ParsedTween | null): GsapAnimation {
+  const start = tween?.startTime?.();
+  return {
+    ...anim,
+    ...(Number.isFinite(start) && { resolvedStart: start }),
+    ...(anim.duration == null && tween && { duration: tween.duration?.() }),
+  };
 }
 
 const TRANSFORM = ["x", "y", "rotation", "scaleX", "scaleY"];
@@ -158,8 +175,27 @@ export function parsedTweenEase(iframe: HTMLIFrameElement | null, tween: ParsedT
   const win = iframe?.contentWindow as GsapWindow | null;
   const ease =
     tween.vars?.ease ?? tween.parent?.vars?.defaults?.ease ?? win?.gsap?.defaults?.().ease;
-  return typeof ease === "string" ? ease : null;
+  if (typeof ease === "string") return ease;
+  const named = (name: string) => win?.gsap?.parseEase?.(name) === ease;
+  return typeof ease === "function" ? (BUILT_IN_EASES.find(named) ?? null) : null;
 }
+
+// GSAP holds a resolved ease, its own default included, as the function parseEase returns.
+const BUILT_IN_EASES = [
+  "none",
+  ...[
+    "power1",
+    "power2",
+    "power3",
+    "power4",
+    "sine",
+    "expo",
+    "circ",
+    "back",
+    "elastic",
+    "bounce",
+  ].flatMap((e) => [`${e}.in`, `${e}.out`, `${e}.inOut`]),
+];
 
 /** An array of keyframe steps at the exact percentages GSAP times them; the parse rounds them. */
 export function withExactStepTimes(anim: GsapAnimation, tween: ParsedTween | null): GsapAnimation {

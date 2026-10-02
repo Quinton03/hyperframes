@@ -14,6 +14,7 @@ import {
   parsedImplicitEndValue,
   parsedTweenEase,
   withExactStepTimes,
+  withLiveTiming,
 } from "./gsapParsedTween";
 import { KEYFRAME_PCT_MATCH } from "./gsapShared";
 import { tweenReach } from "./gsapTweenReach";
@@ -161,7 +162,6 @@ function heldEnds(
 // fallow-ignore-next-line complexity
 export function planValueAtPlayhead(edit: PlayheadEdit): PlayheadEditPlan {
   const { anim, values } = edit;
-  if (anim.extras && Object.keys(anim.extras).length > 0) return refuse("tween-extras");
   const start = resolveTweenStart(anim);
   const duration = resolveTweenDuration(anim);
   if (start == null || !(duration > 0)) return refuse("no-timing");
@@ -248,7 +248,7 @@ export function planValueEdit(
   const tween = findParsedTween(iframe, selection.element, anim);
   const timed = withExactStepTimes(anim, tween);
   return planValueAtPlayhead({
-    anim: timed.duration == null && tween ? { ...timed, duration: tween.duration?.() } : timed,
+    anim: withLiveTiming(timed, tween),
     at: activeKeyframePct != null ? { percentage: activeKeyframePct } : { time: currentTime },
     values,
     backfill,
