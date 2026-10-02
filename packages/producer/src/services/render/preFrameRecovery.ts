@@ -7,9 +7,9 @@ import type { ProducerLogger } from "../../logger.js";
 import type { FileServerHandle, FileServerHealth } from "../fileServer.js";
 
 /**
- * The one transient shape the pre-frame recovery retries: a loopback endpoint loss on a one-worker
- * stream before any frame is written. A bare `Target closed` (Chrome killed by a host shutdown) names
- * no endpoint and is excluded, matching the encoder-interruption rule in shouldRetryViaPinnedFallback.
+ * The loss that earns a file-server health probe (and restart when unhealthy) before the retry: a
+ * loopback endpoint loss on a one-worker stream before any frame. Whether to retry at all is
+ * shouldRetryViaPinnedFallback's call; a bare `Target closed` names no endpoint, so it gets no probe.
  */
 export function resolvePreFrameLoopbackLoss(input: {
   failure: CaptureFailure;

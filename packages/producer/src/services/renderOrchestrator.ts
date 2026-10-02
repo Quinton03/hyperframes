@@ -2432,8 +2432,6 @@ export function shouldRetryViaPinnedFallback(args: {
   isDeCaptureError?: boolean;
   isCancellation: boolean;
   isEncoderInterrupted?: boolean;
-  /** Pre-frame loopback connection loss on an ordinary one-worker stream. */
-  isPreFrameLoopbackConnectionLoss?: boolean;
   deWorkerInversion: "inverted" | "reverted" | undefined;
   deParallelRouter: "routed" | "reverted" | undefined;
   /**
@@ -2471,7 +2469,6 @@ export function shouldRetryViaPinnedFallback(args: {
   if (args.isDeRendererStall === true || args.isSequentialCaptureStall === true) return true;
   if (args.isParallelCaptureStall === true || args.isEncoderDeath === true) return true;
   if (args.isTransientCaptureError === true) return true;
-  if (args.isPreFrameLoopbackConnectionLoss) return true;
   return args.deWorkerInversion === "inverted" || args.deParallelRouter === "routed";
 }
 
@@ -4757,7 +4754,6 @@ async function executeRenderPipeline(input: {
               isDeCaptureError,
               isCancellation,
               isEncoderInterrupted: err instanceof EncoderInterruptedError,
-              isPreFrameLoopbackConnectionLoss: preFrameLoopbackLoss !== undefined,
               deWorkerInversion,
               deParallelRouter,
               isDeRendererStall: isDeStall,
