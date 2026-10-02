@@ -139,7 +139,7 @@ function collectMessages(error: unknown): string[] {
   return messages;
 }
 
-// Node/Bun spell IPv6 `connect ETIMEDOUT ::1:49152`; Chrome URLs bracket it: `http://[::1]:49152/`.
+// Node/Bun spell IPv6 loopback as `::1:PORT` in errno text; Chrome URLs bracket it as `[::1]:PORT`.
 const LOOPBACK_HOST = String.raw`(127\.0\.0\.1|localhost|\[::1\]|::1)`;
 const LOOPBACK_CONNECTION_LOSS_PATTERNS = [
   new RegExp(String.raw`connect (?:ETIMEDOUT|ECONNREFUSED|ECONNRESET) ${LOOPBACK_HOST}:(\d+)`, "i"),

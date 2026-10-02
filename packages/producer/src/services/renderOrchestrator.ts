@@ -2396,7 +2396,7 @@ export function resolveParallelRouterRetryPlan(args: {
  * of calibration, so a generic capture failure on that pinned count is
  * exactly the scenario the pin itself introduced risk for.
  *
- * Includes OOM (previously excluded — see PR history): every worker's
+ * Includes OOM: every worker's
  * `executeWorkerTask` closes its capture session in a `finally` that awaits
  * `closeCaptureSession` → `releaseBrowser`, which SIGKILLs the Chrome process
  * via `forceReleaseBrowser` if a graceful `page.close()` hangs
