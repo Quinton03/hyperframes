@@ -1790,6 +1790,54 @@ export function materializeKeyframesFromScript(
   return ms.toString();
 }
 
+/**
+ * Rewrites a tween as `to()` with these keyframes where it stands: the call keeps its place in the
+ * script and its position argument, so a tween placed after it ('>', '<', '+=', none) stays put.
+ */
+export function replaceTweenWithKeyframesInScript(
+  script: string,
+  animationId: string,
+  edit: {
+    targetSelector: string;
+    position: number;
+    duration: number;
+    keyframes: Array<{
+      percentage: number;
+      properties: Record<string, number | string>;
+      ease?: string;
+      auto?: boolean;
+    }>;
+    ease?: string;
+    easeEach?: string;
+  },
+): string | null {
+  const parsed = parseGsapScriptAcornForWrite(script);
+  const target = parsed?.located.find((l) => l.id === animationId);
+  const call = target?.call;
+  if (!target || call?.varsArg?.type !== "ObjectExpression") return null;
+  const { animation } = target;
+  if (animation.method !== "to" && animation.method !== "from" && animation.method !== "fromTo")
+    return null;
+  const ms = new MagicString(script);
+  const start = animation.resolvedStart ?? animation.position;
+  const moved = typeof start !== "number" || Math.abs(start - edit.position) > 5e-4;
+  const kept = preservedVarsEntries(call.varsArg, script).filter(
+    (e) => !/^\s*duration\s*:/.test(e) && !(moved && /^\s*delay\s*:/.test(e)),
+  );
+  const sorted = [...edit.keyframes].sort((a, b) => a.percentage - b.percentage);
+  const parts = [`keyframes: ${buildKeyframeObjectCode(sorted, edit.easeEach)}`, ...kept];
+  parts.push(`duration: ${valueToCode(edit.duration)}`);
+  if (edit.ease) parts.push(`ease: ${JSON.stringify(edit.ease)}`);
+  if (animation.hasUnresolvedSelector || animation.targetSelector !== edit.targetSelector) {
+    const selectorArg = call.node.arguments[0];
+    ms.overwrite(selectorArg.start, selectorArg.end, JSON.stringify(edit.targetSelector));
+  }
+  convertMethodToTo(ms, animation, call, call.varsArg);
+  overwriteVarsArg(ms, call, `{ ${parts.join(", ")} }`);
+  if (moved) overwritePosition(ms, call, edit.position);
+  return ms.toString();
+}
+
 // ── Add animation with keyframes ──────────────────────────────────────────────
 
 /** Insert a new keyframed `to()` call and return the new animation ID. */
