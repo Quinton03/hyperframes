@@ -38,7 +38,7 @@ import {
   hasNonHoldTweenForElement,
   POSITION_CHANNELS,
 } from "./gsapRuntimeKeyframes";
-import { assertGsapEditPersisted, saveMove } from "./gsapEditOutcome";
+import { assertGsapEditPersisted, GsapEditBlockedError, saveMove } from "./gsapEditOutcome";
 import type { GsapAnimationFetchOptions } from "./useGsapAnimationFetchFallback";
 import { refuseGsapTakeover, type ElementOffsetStagerDeps } from "./elementOffsetStager";
 import {
@@ -61,6 +61,19 @@ function firstPreflightFailure(
     if (selection) return { error: result.reason, selection };
   }
   return null;
+}
+
+/** The group's script writes go out as one batch to one file, so members from two files refuse. */
+function secondFile(
+  updates: DomEditGroupPathOffsetCommit[],
+  savedOnElement: Map<DomEditSelection, boolean>,
+): { error: unknown; selection: DomEditSelection } | null {
+  const scripted = updates.filter(({ selection }) => !savedOnElement.has(selection));
+  const file = scripted[0]?.selection.sourceFile;
+  const other = scripted.find(({ selection }) => selection.sourceFile !== file);
+  return other
+    ? { error: new GsapEditBlockedError("mixed-files"), selection: other.selection }
+    : null;
 }
 
 export interface UseGsapAwareEditingParams {
@@ -266,7 +279,8 @@ export function useGsapAwareEditing({
           assertGsapEditPersisted(outcome);
         }),
       );
-      const preflightFailure = firstPreflightFailure(preflightResults, updates);
+      const preflightFailure =
+        firstPreflightFailure(preflightResults, updates) ?? secondFile(updates, offsetMembers);
       if (preflightFailure) {
         trackGsapInteractionFailure(
           preflightFailure.error,

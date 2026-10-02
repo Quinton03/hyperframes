@@ -150,7 +150,7 @@ describe("handleDomGroupMoveBy", () => {
     act(() => root.unmount());
   });
 
-  it("moves a member GSAP positions through the GSAP write, by the same delta", async () => {
+  it("moves a member GSAP positions through the GSAP write, planned and written at one delta", async () => {
     mocks.drag.mockResolvedValue({ status: "persisted" });
     const doc = preview();
     const animated = layer(doc, "animated", [1, 0, 0, 1], { renderTransform: () => {} });
@@ -162,6 +162,8 @@ describe("handleDomGroupMoveBy", () => {
     const write = mocks.drag.mock.calls.find((call) => !call[6]?.preflightOnly);
     expect(write?.[0]).toBe(animated.selection);
     expect(write?.[1]).toEqual({ x: 10, y: 0 });
+    const plan = mocks.drag.mock.calls.find((call) => call[6]?.preflightOnly);
+    expect(plan?.[1]).toEqual(write?.[1]);
     expect(moved(before, animated.centre())).toEqual({ x: 10, y: 0 });
     expect(stageElementPositionOffset).not.toHaveBeenCalled();
     act(() => root.unmount());

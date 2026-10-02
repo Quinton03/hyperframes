@@ -4,7 +4,8 @@ export type GsapEditBlockReason =
   | "no-selector"
   | "unroll-required"
   | "source-uneditable"
-  | "keyframes-uneditable";
+  | "keyframes-uneditable"
+  | "mixed-files";
 
 /**
  * Which of the nine situations produced a block. The user-facing `reason` stays
@@ -35,7 +36,6 @@ export type PlayheadEditRefusal =
   | "unknown-ease"
   | "implicit-end-unknown"
   | "not-a-tween"
-  | "tween-extras"
   | "no-timing"
   | "shared-tween";
 
@@ -70,6 +70,8 @@ export const GSAP_EDIT_BLOCK_COPY: Record<GsapEditBlockReason, string> = {
   "source-uneditable": "This animation is computed at runtime. Edit the animation in the Code tab.",
   "keyframes-uneditable":
     "Studio can't add this edit to the animation's keyframes. Edit this animation in the Code tab.",
+  "mixed-files":
+    "These layers are animated in different files. Move each file's layers separately.",
 };
 
 export class GsapEditBlockedError extends Error {

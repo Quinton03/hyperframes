@@ -96,7 +96,7 @@ describe("a group drag plans every member before its first write", () => {
   it("refuses the whole group when one member's tween cannot take a keyframe", async () => {
     const h = mountGroup([
       positionTween("a"),
-      positionTween("b", { extras: { repeat: 1 } } as Partial<GsapAnimation>),
+      positionTween("b", { ease: undefined }),
       positionTween("c"),
     ]);
     const styles = h.elements.map((el) => el.getAttribute("style"));
@@ -104,7 +104,7 @@ describe("a group drag plans every member before its first write", () => {
     await expect(h.groupCommit(h.updates)).rejects.toMatchObject({
       name: "GsapEditBlockedError",
       reason: "keyframes-uneditable",
-      detail: "tween-extras",
+      detail: "unknown-ease",
     });
 
     expect(h.written()).toEqual([]);
@@ -116,6 +116,20 @@ describe("a group drag plans every member before its first write", () => {
     expect(h.showToast).toHaveBeenCalledWith(GSAP_EDIT_BLOCK_COPY["keyframes-uneditable"], "error");
     expect(trackStudioEditBlocked).toHaveBeenCalledTimes(1);
     expect(trackStudioEditBlocked).toHaveBeenCalledWith(expect.objectContaining({ targetId: "b" }));
+    act(() => h.root.unmount());
+  });
+
+  it("refuses members animated in two files, since the batch writes one file", async () => {
+    const h = mountGroup(["a", "b", "c"].map((id) => positionTween(id)));
+    const updates = h.updates.map((u, i) => ({
+      ...u,
+      selection: { ...u.selection, sourceFile: i === 2 ? "scenes/intro.html" : "index.html" },
+    }));
+
+    await expect(h.groupCommit(updates)).rejects.toMatchObject({ reason: "mixed-files" });
+
+    expect(h.written()).toEqual([]);
+    expect(trackStudioEditBlocked).toHaveBeenCalledWith(expect.objectContaining({ targetId: "c" }));
     act(() => h.root.unmount());
   });
 
