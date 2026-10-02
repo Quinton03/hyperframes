@@ -202,8 +202,11 @@ export function usePersistentEditHistory({ projectId }: UsePersistentEditHistory
     if (!projectId) return;
     const seen = own.changes();
     const response = await fetch(historyUrl(projectId)).catch(() => null);
-    const next = response?.ok ? ((await response.json()) as HistoryView) : EMPTY;
+    const next = response?.ok
+      ? ((await response.json().catch(() => null)) as HistoryView | null)
+      : EMPTY;
     if (projectIdRef.current !== projectId) return;
+    if (!next) return console.error("The history's reply was unreadable.");
     setView(next);
     own.offered(seen, next);
   }, [projectId, own]);

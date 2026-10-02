@@ -187,7 +187,11 @@ it("without a history on the server an edit still saves, and there is nothing to
 });
 
 /** Answers requests to `route` with `reply` instead of the engine, every other request as before; returns the undo. */
-function answer(route: "/history/step" | "/history/claim", status: number, reply: object | string) {
+function answer(
+  route: "/history" | "/history/step" | "/history/claim",
+  status: number,
+  reply: object | string,
+) {
   const real = globalThis.fetch;
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
     url.endsWith(route)
@@ -256,6 +260,24 @@ it("a step whose reply cannot be read says so, instead of throwing", async () =>
     reason: "failed",
     message: "The history's reply was unreadable.",
   });
+});
+
+it("an edit whose history reply cannot be read is still saved, and the reply is its own error", async () => {
+  const { hook, file, save } = await studio();
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  cleanup.push(() => logged.mockRestore());
+  answer("/history", 200, "<html>");
+  save("B");
+  await act(() =>
+    hook().recordEdit({
+      label: "Moved Title",
+      files: { "index.html": { before: "A", after: "B" } },
+    }),
+  );
+  await vi.waitFor(() =>
+    expect(logged).toHaveBeenCalledWith("The history's reply was unreadable."),
+  );
+  expect(file()).toBe("B");
 });
 
 it("a step that cannot reach the server says so", async () => {
