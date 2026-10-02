@@ -58,7 +58,6 @@ export function findGsapPositionAnimation(
   return scored[0]?.anim ?? null;
 }
 
-/** 50 when `a` spans the playhead, else minus five per second to its nearest end. */
 function playheadProximity(a: GsapAnimation, currentTime: number): number {
   const pos = a.resolvedStart ?? (typeof a.position === "number" ? a.position : 0);
   const dur = a.duration ?? 0;
@@ -99,14 +98,12 @@ export function pickClosestToPlayhead(anims: GsapAnimation[]): GsapAnimation | n
   });
 }
 
-/** Seconds from `time` to `anim`'s range, 0 inside it. */
 function playheadDistance(anim: GsapAnimation, time: number): number {
   const s = resolveTweenStart(anim) ?? 0;
   const e = s + resolveTweenDuration(anim);
   return time >= s && time <= e ? 0 : Math.min(Math.abs(time - s), Math.abs(time - e));
 }
 
-/** Of two tweens spanning `time`, the one whose file states a value there (the later if both do). */
 function statedValueWinner(a: GsapAnimation, b: GsapAnimation, time: number) {
   const [mine, theirs] = [statesValueAt(a, time), statesValueAt(b, time)];
   if (mine !== theirs) return mine ? a : b;

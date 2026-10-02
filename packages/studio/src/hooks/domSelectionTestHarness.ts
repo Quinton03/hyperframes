@@ -63,10 +63,7 @@ export function makeSelection(label: string, element: HTMLElement): DomEditSelec
   };
 }
 
-/**
- * A selection built the way production builds it (getDomLayerPatchTarget):
- * buildStableSelector answers a BARE class for an element with no id / hf-id.
- */
+/** Built as getDomLayerPatchTarget builds it: a bare class for an element with no id or hf-id. */
 export function stableSelectionFor(el: HTMLElement): DomEditSelection {
   const selector = buildStableSelector(el);
   return {
@@ -80,7 +77,6 @@ export function stableSelectionFor(el: HTMLElement): DomEditSelection {
   } as unknown as DomEditSelection;
 }
 
-/** `count` class-only `.group` siblings in one clip; `withIds` names them group-0, group-1, ... */
 export function mountGroupSiblings(count: number, withIds = false): HTMLElement[] {
   const groups = Array.from({ length: count }, (_, i) =>
     withIds ? `<div class="group" id="group-${i}"></div>` : `<div class="group"></div>`,
