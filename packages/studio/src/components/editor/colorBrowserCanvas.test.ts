@@ -1,4 +1,4 @@
-import { vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const CHROME_147_FILL_STYLE: Record<string, string> = {
   transparent: "rgba(0, 0, 0, 0)",
@@ -23,7 +23,7 @@ const CHROME_147_RELATIVE_SRGB: Record<string, string> = {
   "color-mix(in srgb, #ff000000, #0000ffff 50%)": "color(srgb 0 0 1 / 0.5)",
 };
 
-export async function loadColorModulesWithChromeCanvas() {
+async function loadColorModulesWithChromeCanvas() {
   let fillStyle = "#000000";
   const context = {
     get fillStyle() {
@@ -41,3 +41,42 @@ export async function loadColorModulesWithChromeCanvas() {
   vi.resetModules();
   return { ...(await import("./colorValue")), ...(await import("./gradientValue")) };
 }
+
+describe("parseCssColor with a browser canvas", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it.each([
+    ["red", { red: 255, green: 0, blue: 0, alpha: 1 }],
+    ["hsl(210 40% 50%)", { red: 77, green: 128, blue: 179, alpha: 1 }],
+    ["rgb(100%, 0%, 0%)", { red: 255, green: 0, blue: 0, alpha: 1 }],
+    ["oklch(0.7 0.15 200)", { red: 0, green: 185, blue: 195, alpha: 1 }],
+    ["oklch(0.7 0.15 200 / 0.25)", { red: 0, green: 185, blue: 195, alpha: 0.25 }],
+    ["hsl(0 100% 50% / 0.001)", { red: 255, green: 0, blue: 0, alpha: 0.001 }],
+    ["inherit", null],
+    ["currentcolor", null],
+  ])("resolves %s through the canvas, or null if it must not", async (input, expected) => {
+    const { parseCssColor: parseFresh } = await loadColorModulesWithChromeCanvas();
+    expect(parseFresh(input)).toEqual(expected);
+  });
+});
+
+describe("insertGradientStop with a browser canvas", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it.each([
+    ["oklch(0.7 0.15 200)", "red", "#B28979"],
+    ["#ff000000", "#0000ffff", "rgba(0, 0, 255, 0.5)"],
+  ])("gives %s to %s the midpoint the browser paints", async (left, right, expected) => {
+    const { parseGradient: parse, insertGradientStop: insert } =
+      await loadColorModulesWithChromeCanvas();
+    const model = parse(`linear-gradient(90deg, ${left} 0%, ${right} 100%)`);
+    expect(model).not.toBeNull();
+    expect(insert(model!, 50).stops[1].color).toBe(expected);
+  });
+});

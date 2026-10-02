@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   formatCssColor,
   hsvToRgb,
@@ -8,7 +8,6 @@ import {
   toColorPickerValue,
   toHexColor,
 } from "./colorValue";
-import { loadColorModulesWithChromeCanvas } from "./colorCanvasTestUtils";
 
 describe("parseCssColor", () => {
   it("parses rgb values", () => {
@@ -44,27 +43,6 @@ describe("parseCssColor", () => {
       expect(parseCssColor(input)).toBeNull();
     },
   );
-
-  describe("with a browser canvas", () => {
-    afterEach(() => {
-      vi.unstubAllGlobals();
-      vi.resetModules();
-    });
-
-    it.each([
-      ["red", { red: 255, green: 0, blue: 0, alpha: 1 }],
-      ["hsl(210 40% 50%)", { red: 77, green: 128, blue: 179, alpha: 1 }],
-      ["rgb(100%, 0%, 0%)", { red: 255, green: 0, blue: 0, alpha: 1 }],
-      ["oklch(0.7 0.15 200)", { red: 0, green: 185, blue: 195, alpha: 1 }],
-      ["oklch(0.7 0.15 200 / 0.25)", { red: 0, green: 185, blue: 195, alpha: 0.25 }],
-      ["hsl(0 100% 50% / 0.001)", { red: 255, green: 0, blue: 0, alpha: 0.001 }],
-      ["inherit", null],
-      ["currentcolor", null],
-    ])("resolves %s through the canvas, or null if it must not", async (input, expected) => {
-      const { parseCssColor: parseFresh } = await loadColorModulesWithChromeCanvas();
-      expect(parseFresh(input)).toEqual(expected);
-    });
-  });
 
   it("parses transparent", () => {
     expect(parseCssColor("transparent")).toEqual({
