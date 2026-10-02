@@ -54,13 +54,14 @@ let groupDragCommitCounter = 0;
 function firstPreflightFailure(
   results: PromiseSettledResult<void>[],
   updates: DomEditGroupPathOffsetCommit[],
+  savedOnElement: Map<DomEditSelection, boolean>,
 ): { error: unknown; selection: DomEditSelection } | null {
   for (const [index, result] of results.entries()) {
     if (result.status !== "rejected") continue;
     const selection = updates[index]?.selection;
     if (selection) return { error: result.reason, selection };
   }
-  return null;
+  return secondFile(updates, savedOnElement);
 }
 
 /** The group's script writes go out as one batch to one file, so members from two files refuse. */
@@ -279,8 +280,7 @@ export function useGsapAwareEditing({
           assertGsapEditPersisted(outcome);
         }),
       );
-      const preflightFailure =
-        firstPreflightFailure(preflightResults, updates) ?? secondFile(updates, offsetMembers);
+      const preflightFailure = firstPreflightFailure(preflightResults, updates, offsetMembers);
       if (preflightFailure) {
         trackGsapInteractionFailure(
           preflightFailure.error,
