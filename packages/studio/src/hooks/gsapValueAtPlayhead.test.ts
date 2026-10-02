@@ -407,6 +407,31 @@ describe("a rotate on a GSAP-animated layer, at the playhead", () => {
   });
 });
 
+describe("a rotate on a layer whose tween turns it on another axis", () => {
+  it("holds the new rotation across the whole tween, so the layer does not turn before the playhead", async () => {
+    const flip = tween({
+      id: "#box-to-0-rotation",
+      propertyGroup: "rotation",
+      method: "to",
+      properties: { rotationY: 180 },
+      resolvedStart: 0,
+      duration: 2,
+      ease: "none",
+    });
+    usePlayerStore.setState({ currentTime: 1 });
+    const commitMutation = vi.fn();
+    const live = [liveTween(el, { start: 0, duration: 2, vars: flip.properties })];
+    await tryGsapRotationIntercept(selection, 45, [flip], previewWith(el, live), commitMutation);
+    expect(commitMutation.mock.calls.map((call) => call[1].keyframes)).toEqual([
+      [
+        { percentage: 0, properties: { rotation: 45 } },
+        { percentage: 50, properties: { rotation: 45 } },
+        { percentage: 100, properties: { rotationY: 180, rotation: 45 } },
+      ],
+    ]);
+  });
+});
+
 describe("planValueAtPlayhead", () => {
   const plan = (edit: Partial<PlayheadEdit>) =>
     planValueAtPlayhead({

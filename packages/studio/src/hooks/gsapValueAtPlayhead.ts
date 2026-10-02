@@ -40,6 +40,8 @@ export interface PlayheadEdit {
   parsedEase?: string | null;
   /** A channel of the edit the tween does not animate yet, held at this value on its keyframes. */
   backfill?: Record<string, number>;
+  /** Hold the backfill from the tween's start too, where GSAP would otherwise begin at the old value. */
+  holdFromStart?: boolean;
 }
 
 export type PlayheadEditPlan =
@@ -176,9 +178,13 @@ export function planValueAtPlayhead(edit: PlayheadEdit): PlayheadEditPlan {
   const backfilled: Record<string, number> = {};
   for (const [prop, value] of Object.entries(edit.backfill ?? {})) {
     if (!(prop in values) || keyframes.some((kf) => kf.properties[prop] != null)) continue;
+    if (edit.holdFromStart && !keyframes.some((kf) => kf.percentage <= 0))
+      keyframes.unshift({ percentage: 0, properties: {} });
     for (const kf of keyframes) kf.properties[prop] = value;
     backfilled[prop] = value;
   }
+  if (Object.keys(values).some((prop) => !keyframes.some((kf) => kf.properties[prop] != null)))
+    return refuse("implicit-end-unknown");
   let position = start;
   let span = duration;
 
@@ -235,7 +241,10 @@ export async function commitValueAtPlayhead(
   values: Record<string, number>,
   iframe: HTMLIFrameElement | null,
   callbacks: GsapDragCommitCallbacks,
-  options: { label: string; backfill?: Record<string, number>; beforeReload?: () => void },
+  options: Pick<PlayheadEdit, "backfill" | "holdFromStart"> & {
+    label: string;
+    beforeReload?: () => void;
+  },
 ): Promise<GsapEditOutcome> {
   await materializeIfDynamic(anim, iframe, callbacks.commitMutation, selection);
   // One keyframe of a tween its siblings share would move them all.
@@ -249,6 +258,7 @@ export async function commitValueAtPlayhead(
     at: activeKeyframePct != null ? { percentage: activeKeyframePct } : { time: currentTime },
     values,
     backfill: options.backfill,
+    holdFromStart: options.holdFromStart,
     implicitEndValue: parsedImplicitEndValue(tween),
     parsedEase: parsedTweenEase(iframe, tween),
   });

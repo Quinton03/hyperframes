@@ -446,7 +446,7 @@ export async function tryGsapRotationIntercept(
     { rotation: newRotation },
     iframe,
     { commitMutation, fetchAnimations: fetchFallbackAnimations },
-    { label: "Rotate" },
+    { label: "Rotate", backfill: { rotation: newRotation }, holdFromStart: true },
   );
 }
 
