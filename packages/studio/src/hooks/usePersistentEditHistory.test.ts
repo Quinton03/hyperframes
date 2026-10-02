@@ -116,6 +116,29 @@ it("undoes the edit claimed since the key, not a later edit the server took in f
   expect(readFileSync(join(dir, "card.html"), "utf8")).toBe("Y");
 });
 
+it("a second undo pressed while the same edit saves undoes the edit before it", async () => {
+  const { hook, file, save, readFile } = await studio();
+  save("B");
+  await act(() =>
+    hook().recordEdit({ label: "Moved Title", files: { "index.html": { before: "A", after: "B" } } }),
+  );
+  await vi.waitFor(() => expect(hook().undoLabel).toBe("Moved Title"));
+  const atKey = hook().claims();
+  save("C");
+  await act(() =>
+    hook().recordEdit({ label: "Moved Card", files: { "index.html": { before: "B", after: "C" } } }),
+  );
+
+  const first = await act(() => hook().undo({ readFile, claimedAfter: atKey }));
+  const second = await act(() => hook().undo({ readFile, claimedAfter: atKey }));
+
+  expect([first, second]).toMatchObject([
+    { ok: true, label: "Undid: Moved Card" },
+    { ok: true, label: "Undid: Moved Title" },
+  ]);
+  expect(file()).toBe("A");
+});
+
 it("a drag's edits under one key undo as one step, even before the drag goes idle", async () => {
   const { hook, file, save, readFile } = await studio();
   const writes: Array<[before: string, after: string]> = [
