@@ -209,7 +209,6 @@ export interface SoftReloadOptions {
   currentTimeOverride?: number;
   /** After-write file HTML — the primary source for the authored opacity and transform restore. */
   authoredHtml?: string;
-  reparse?: Element[];
   /** Other composition files a reset element is written in, by path; null when one could not be read. */
   nestedFiles?: Map<string, string> | null;
 }
@@ -274,7 +273,7 @@ export function applySoftReload(
   scriptText: string,
   options: SoftReloadOptions = {},
 ): SoftReloadResult {
-  const { onAsyncFailure, currentTimeOverride, authoredHtml, reparse = [] } = options;
+  const { onAsyncFailure, currentTimeOverride, authoredHtml } = options;
   if (!iframe || !scriptText) return "cannot-soft-reload";
 
   const win = iframe.contentWindow as IframeWindow | null;
@@ -347,7 +346,7 @@ export function applySoftReload(
   // fallow-ignore-next-line complexity
   const doReload = () => {
     const timelines = win.__timelines;
-    const targets = collectResetTargets(win, doc, targetKeys, reparse);
+    const targets = collectResetTargets(win, doc, targetKeys);
 
     // Kill ONLY the target composition's timeline(s) — leaving every other
     // composition's timeline (and its children on the global timeline) intact.

@@ -48,10 +48,8 @@ export function collectResetTargets(
   win: { __timelines?: Record<string, unknown> },
   doc: Document,
   targetKeys: string[],
-  reparse: Element[] = [],
 ): Map<Element, Set<string>> {
-  // Elements the caller needs GSAP to parse again, with nothing tweened yet.
-  const targets = new Map<Element, Set<string>>(reparse.map((el) => [el, new Set<string>()]));
+  const targets = new Map<Element, Set<string>>();
   const timelines = (win.__timelines ?? {}) as Record<string, TweenLike | undefined>;
   const others = new Set<unknown>(
     Object.entries(timelines).flatMap(([key, tl]) => (targetKeys.includes(key) ? [] : [tl])),
