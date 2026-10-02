@@ -1828,6 +1828,9 @@ export function replaceTweenWithKeyframesInScript(
   const parts = [`keyframes: ${buildKeyframeObjectCode(sorted, edit.easeEach)}`, ...kept];
   parts.push(`duration: ${valueToCode(edit.duration)}`);
   if (edit.ease) parts.push(`ease: ${JSON.stringify(edit.ease)}`);
+  const entrance = animation.method === "from" || animation.method === "fromTo";
+  if (entrance && !kept.some((e) => /^\s*immediateRender\s*:/.test(e)))
+    parts.push("immediateRender: true");
   if (animation.hasUnresolvedSelector || animation.targetSelector !== edit.targetSelector) {
     const selectorArg = call.node.arguments[0];
     ms.overwrite(selectorArg.start, selectorArg.end, JSON.stringify(edit.targetSelector));
