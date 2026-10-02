@@ -6,6 +6,7 @@ import { buildProjectApiPath } from "../utils/projectRouting";
 import { markStudioWriteToken } from "../utils/studioFileVersion";
 import { serializeStudioFileMutations } from "../utils/studioFileMutationCoordinator";
 import type { RecordEditInput } from "../utils/studioFileHistory";
+import { studioApiFetch } from "../utils/studioApiFetch";
 
 type ProjectFileWriter = (path: string, content: string, expectedContent?: string) => Promise<void>;
 
@@ -31,7 +32,7 @@ function errorOf(value: unknown): string | null {
 }
 
 async function readVersion(projectId: string, path: string): Promise<string> {
-  const response = await fetch(
+  const response = await studioApiFetch(
     buildProjectApiPath(projectId, `/files/${encodeURIComponent(path)}`),
   );
   const body: unknown = await response.json().catch(() => null);
@@ -53,7 +54,7 @@ export async function requestFreezeFrame(input: {
   const expectedVersion = await readVersion(input.projectId, input.path);
   const transactionToken = `freeze:${crypto.randomUUID()}`;
   markStudioWriteToken(transactionToken);
-  const response = await fetch(
+  const response = await studioApiFetch(
     buildProjectApiPath(input.projectId, "/file-mutations/freeze-frame"),
     {
       method: "POST",
