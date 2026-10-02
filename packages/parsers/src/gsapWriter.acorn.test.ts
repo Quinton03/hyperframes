@@ -578,3 +578,18 @@ tl.set("#b", { x: 5 }, 0);`;
     );
   });
 });
+
+describe("position argument", () => {
+  it("is added after the last argument, so a call with a trailing comma stays valid", () => {
+    const script = `var tl = gsap.timeline({ paused: true });
+tl.to(
+  "#a",
+  { x: 100, duration: 1 },
+);
+window.__timelines["t"] = tl;`;
+    const id = parseGsapScriptAcorn(script).animations[0]!.id;
+    const result = updateAnimationInScript(script, id, { position: 0.5 });
+    expect(() => new Function("gsap", "window", result)).not.toThrow();
+    expect(parseGsapScriptAcorn(result).animations[0]!.position).toBe(0.5);
+  });
+});

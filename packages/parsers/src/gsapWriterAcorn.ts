@@ -443,7 +443,8 @@ function overwritePosition(ms: MagicString, call: TweenCallInfo, position: numbe
   if (call.positionArg) {
     ms.overwrite(call.positionArg.start, call.positionArg.end, valueToCode(position));
   } else {
-    ms.appendLeft(call.node.end - 1, `, ${valueToCode(position)}`);
+    const last = call.node.arguments.at(-1);
+    ms.appendLeft(last ? last.end : call.node.end - 1, `, ${valueToCode(position)}`);
   }
 }
 
