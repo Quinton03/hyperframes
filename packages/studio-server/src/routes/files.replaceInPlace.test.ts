@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
 import { registerFileRoutes } from "./files";
-import type { StudioApiAdapter } from "../types";
+import { stubAdapter } from "./stubAdapter.test-helpers";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -34,20 +34,7 @@ window.__timelines = { main: tl };
 </body></html>`;
   writeFileSync(join(dir, "comp.html"), html);
   const hono = new Hono();
-  registerFileRoutes(hono, {
-    listProjects: () => [],
-    resolveProject: async (id: string) => ({ id, dir }),
-    bundle: async () => null,
-    lint: async () => ({ findings: [] }),
-    runtimeUrl: "/api/runtime.js",
-    rendersDir: () => "/tmp/renders",
-    startRender: () => ({
-      id: "job-1",
-      status: "rendering",
-      progress: 0,
-      outputPath: "/tmp/o.mp4",
-    }),
-  } as StudioApiAdapter);
+  registerFileRoutes(hono, stubAdapter(dir));
   return hono;
 }
 

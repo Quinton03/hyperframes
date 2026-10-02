@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { registerFreezeFrameRoutes, type FrameExtractor } from "./freezeFrame";
 import { fileContentVersion } from "../helpers/fileVersion";
-import type { StudioApiAdapter } from "../types";
+import { stubAdapter } from "./stubAdapter.test-helpers";
 
 const tempDirs: string[] = [];
 afterEach(() => {
@@ -25,17 +25,8 @@ function setup(
   tempDirs.push(dir);
   mkdirSync(dirname(join(dir, file.path)), { recursive: true });
   writeFileSync(join(dir, file.path), file.html);
-  const adapter: StudioApiAdapter = {
-    listProjects: () => [],
-    resolveProject: async (id: string) => ({ id, dir }),
-    bundle: async () => null,
-    lint: async () => ({ findings: [] }),
-    runtimeUrl: "/api/runtime.js",
-    rendersDir: () => "/tmp/renders",
-    startRender: () => ({ id: "j", status: "rendering", progress: 0, outputPath: "/tmp/o.mp4" }),
-  };
   const app = new Hono();
-  registerFreezeFrameRoutes(app, adapter, extract, stillToken);
+  registerFreezeFrameRoutes(app, stubAdapter(dir), extract, stillToken);
   const post = (body: unknown) =>
     app.request("http://localhost/projects/demo/file-mutations/freeze-frame", {
       method: "POST",
