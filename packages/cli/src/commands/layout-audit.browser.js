@@ -1436,10 +1436,7 @@
     );
   }
 
-  /**
-   * Raw `d`-space endpoints (no CTM) — the mapping authors use when they paste screen coords into
-   * `d` — plus the path length they were sampled from, so callers never re-query the geometry.
-   */
+  // Raw `d`-space endpoints (no CTM), as authors paste screen coords into `d`, plus the path length.
   function pathUserEndpoints(path) {
     if (typeof path.getTotalLength !== "function" || typeof path.getPointAtLength !== "function") {
       return null;
@@ -1505,25 +1502,13 @@
     return { compact, painted };
   }
 
-  // Attach near-miss tolerance (screen px), shared by both connector findings. Separate from
-  // the closed-glyph chord floor.
+  // Attach near-miss tolerance (screen px) for both connector findings; not the glyph chord floor.
   function connectorAttachThreshold(rootRect) {
     return Math.max(32, Math.min(rootRect.width, rootRect.height) * 0.02);
   }
 
-  /**
-   * The one owner of connector enumeration. Both connector findings (`connector_detached`,
-   * `connector_orphan`) consume this so a change to what counts as a connector lands in both.
-   *
-   * A candidate is a `<path>` inside a visible `<svg>` with connector intent (marker or name),
-   * outside decoration-only containers, whose endpoints resolve in both user and screen space.
-   * Dash-hidden shafts (see `shaftDashHidden`) are filtered out: nothing renders, so no finding
-   * about where it renders can apply. `painted` (display/visibility/opacity, see
-   * `shaftIsPainted`) is reported rather than filtered — `connector_orphan` is defined on a
-   * visible shaft and skips unpainted ones, `connector_detached` does not yet gate on it.
-   * `chord` is the rendered span in screen px: closed/glyph paths collapse to one point, so
-   * callers threshold it in px, not user units.
-   */
+  // The one connector enumeration for connector_detached and connector_orphan. Skips dash-hidden
+  // shafts; reports `painted` for callers to gate on, and `chord`, the rendered span in screen px.
   function* connectorShafts(root) {
     for (const svg of Array.from(root.querySelectorAll("svg"))) {
       if (!isVisibleElement(svg)) continue;
@@ -1625,17 +1610,8 @@
     return opacityChain(path) >= 0.2;
   }
 
-  /**
-   * True when the stroke's dash pattern currently paints nothing: the window of the pattern the
-   * shaft shows, `[dashoffset, dashoffset + length]`, sits inside a single gap — a draw-on
-   * entrance (`dasharray >= length; dashoffset >= length`) not yet advanced. Up to 10% of the
-   * length may still poke into a neighbouring dash (the tail of a nearly finished tween). Any
-   * whole dash inside the window means the stroke paints, so dashed patterns, `4 0`, a bare `0`
-   * (renders solid) and `none` are painted. A zero-length dash paints only as a line cap: `0 4`
-   * is a dotted line under `stroke-linecap: round | square` and invisible under the default
-   * `butt` (the state a finished draw-off tween leaves behind: `0px, 999999px`). Caps that a
-   * non-zero dash would add at the window edges are ignored.
-   */
+  // True when the visible dash window [offset, offset + length] sits in one gap (an unstarted
+  // draw-on), allowing 10% overlap. Zero-length dashes paint only with a round or square linecap.
   function shaftDashHidden(path, total) {
     const style = getComputedStyle(path);
     const dashes = dashArrayLengths(style.strokeDasharray, path);
