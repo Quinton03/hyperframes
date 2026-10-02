@@ -52,17 +52,18 @@ export function findGsapPositionAnimation(
     if (a.keyframes) score += 5;
     if (selector && a.targetSelector === selector) score += 8;
     else if (a.targetSelector.includes(",")) score -= 5;
-    const pos = a.resolvedStart ?? (typeof a.position === "number" ? a.position : 0);
-    const dur = a.duration ?? 0;
-    if (currentTime >= pos - 0.05 && currentTime <= pos + dur + 0.05) score += 50;
-    else
-      score -= Math.round(
-        Math.min(Math.abs(currentTime - pos), Math.abs(currentTime - pos - dur)) * 5,
-      );
-    return { anim: a, score };
+    return { anim: a, score: score + playheadProximity(a, currentTime) };
   });
   scored.sort((a, b) => b.score - a.score);
   return scored[0]?.anim ?? null;
+}
+
+/** 50 when `a` spans the playhead, else minus five per second to its nearest end. */
+function playheadProximity(a: GsapAnimation, currentTime: number): number {
+  const pos = a.resolvedStart ?? (typeof a.position === "number" ? a.position : 0);
+  const dur = a.duration ?? 0;
+  if (currentTime >= pos - 0.05 && currentTime <= pos + dur + 0.05) return 50;
+  return -Math.round(Math.min(Math.abs(currentTime - pos), Math.abs(currentTime - pos - dur)) * 5);
 }
 
 /** Whether the file states `anim`'s value at `time`; a tween's implicit start is GSAP's current value. */
@@ -88,24 +89,32 @@ export function pickClosestToPlayhead(anims: GsapAnimation[]): GsapAnimation | n
   if (anims.length <= 1) return anims[0] ?? null;
   const ct = usePlayerStore.getState().currentTime;
   return anims.reduce((best, a) => {
-    const s = resolveTweenStart(a) ?? 0;
-    const e = s + resolveTweenDuration(a);
-    const dist = ct >= s && ct <= e ? 0 : Math.min(Math.abs(ct - s), Math.abs(ct - e));
-    const bestS = resolveTweenStart(best) ?? 0;
-    const bestE = bestS + resolveTweenDuration(best);
-    const bestDist =
-      ct >= bestS && ct <= bestE ? 0 : Math.min(Math.abs(ct - bestS), Math.abs(ct - bestE));
+    const dist = playheadDistance(a, ct);
+    const bestDist = playheadDistance(best, ct);
     if (dist < bestDist) return a;
-    if (dist === 0 && bestDist === 0) {
-      const [mine, theirs] = [statesValueAt(a, ct), statesValueAt(best, ct)];
-      if (mine !== theirs) return mine ? a : best;
-      if (mine && s !== bestS) return s > bestS ? a : best;
-    }
-    if (
-      dist === bestDist &&
-      (a.keyframes?.keyframes.length ?? 0) > (best.keyframes?.keyframes.length ?? 0)
-    )
-      return a;
+    const stated = dist === 0 && bestDist === 0 ? statedValueWinner(a, best, ct) : null;
+    if (stated) return stated;
+    if (dist === bestDist && keyframeCount(a) > keyframeCount(best)) return a;
     return best;
   });
+}
+
+/** Seconds from `time` to `anim`'s range, 0 inside it. */
+function playheadDistance(anim: GsapAnimation, time: number): number {
+  const s = resolveTweenStart(anim) ?? 0;
+  const e = s + resolveTweenDuration(anim);
+  return time >= s && time <= e ? 0 : Math.min(Math.abs(time - s), Math.abs(time - e));
+}
+
+/** Of two tweens spanning `time`, the one whose file states a value there (the later if both do). */
+function statedValueWinner(a: GsapAnimation, b: GsapAnimation, time: number) {
+  const [mine, theirs] = [statesValueAt(a, time), statesValueAt(b, time)];
+  if (mine !== theirs) return mine ? a : b;
+  const [s, bS] = [resolveTweenStart(a) ?? 0, resolveTweenStart(b) ?? 0];
+  if (mine && s !== bS) return s > bS ? a : b;
+  return null;
+}
+
+function keyframeCount(anim: GsapAnimation): number {
+  return anim.keyframes?.keyframes.length ?? 0;
 }

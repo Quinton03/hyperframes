@@ -121,6 +121,10 @@ function historyUrl(projectId: string, path = ""): string {
   return `/api/projects/${encodeURIComponent(projectId)}/history${path}`;
 }
 
+function unionPaths(...lists: Array<readonly string[] | undefined>): string[] {
+  return [...new Set(lists.flatMap((list) => list ?? []))];
+}
+
 async function post(
   url: string,
   body: object,
@@ -250,8 +254,8 @@ export function usePersistentEditHistory({ projectId }: UsePersistentEditHistory
           ? own.claimedAfter(callbacks.claimedAfter)
           : null;
       const next = direction === "undo" ? view.back : view.forward;
-      const stepPaths = target ? Object.keys(own.afterOf(target)) : (next?.paths ?? []);
-      const paths = [...new Set([...stepPaths, ...(heldClaimRef.current?.paths ?? [])])];
+      const stepPaths = target ? Object.keys(own.afterOf(target)) : next?.paths;
+      const paths = unionPaths(stepPaths, heldClaimRef.current?.paths);
       own.overtake();
       const run = async (): Promise<ApplyResult> => {
         const previous = await readAll(paths, callbacks.readFile);

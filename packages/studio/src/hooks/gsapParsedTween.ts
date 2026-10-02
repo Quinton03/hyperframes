@@ -75,9 +75,7 @@ export function findParsedTween(
 export function parsedImplicitEndValue(tween: ParsedTween | null): ImplicitEndValue {
   return (prop, end) => {
     if (!tween) return null;
-    const parts = tween.timeline?.getChildren?.() ?? [];
-    const ordered = parts.length > 0 ? (end === "start" ? parts : [...parts].reverse()) : [tween];
-    for (const part of ordered) {
+    for (const part of partsFrom(tween, end)) {
       const pair = endsIn(part, prop);
       if (pair) return end === "start" ? pair[0] : pair[1];
       // The nearest part animating `prop` is not initialised: an earlier one would be a wrong value.
@@ -85,6 +83,13 @@ export function parsedImplicitEndValue(tween: ParsedTween | null): ImplicitEndVa
     }
     return null;
   };
+}
+
+/** A keyframed tween's parts, nearest `end` first; a flat tween is its own one part. */
+function partsFrom(tween: ParsedTween, end: "start" | "end"): ParsedTween[] {
+  const parts = tween.timeline?.getChildren?.() ?? [];
+  if (parts.length === 0) return [tween];
+  return end === "start" ? parts : [...parts].reverse();
 }
 
 /** The ease GSAP resolved for a flat tween that authors none: its timeline's default, else GSAP's. */

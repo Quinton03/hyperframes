@@ -143,6 +143,32 @@ it("a drag's edits under one key undo as one step, even before the drag goes idl
   expect(file()).toBe("A");
 });
 
+it("an undo before the history view shows a drag's held claim still waits on the files it wrote", async () => {
+  const { hook, save, readFile } = await studio();
+  const server = globalThis.fetch;
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
+    init?.method === "POST"
+      ? server(url, init)
+      : Promise.resolve(new Response(null, { status: 503 })),
+  );
+  save("B");
+  await act(() =>
+    hook().recordEdit({
+      label: "Dragged Title",
+      coalesceKey: "drag",
+      files: { "index.html": { before: "A", after: "B" } },
+    }),
+  );
+  let waitedOn: readonly string[] = [];
+  const serialize = <T>(paths: readonly string[], task: () => Promise<T>) => {
+    waitedOn = paths;
+    return task();
+  };
+
+  await act(() => hook().undo({ readFile, serialize }));
+  expect(waitedOn).toEqual(["index.html"]);
+});
+
 it("an agent's edit made seconds before Studio's stays the agent's: Cmd+Z undoes only Studio's", async () => {
   const { hook, file, save, readFile } = await studio();
   save("B");
