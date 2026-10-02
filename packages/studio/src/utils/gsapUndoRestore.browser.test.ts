@@ -46,51 +46,55 @@ it.each([
   { gsap: "hold", placement: "px", rotation: 0 },
   { gsap: "tween", placement: "px", rotation: 0 },
   { gsap: "tween", placement: "xpercent", rotation: 30 },
-])("an undone crop leaves a $gsap $placement r$rotation layer where it was", async (spec) => {
-  const dir = join(mkdtempSync(join(tmpdir(), "undo-gsap-")), "case");
-  writeFixture({ gesture: "crop", nesting: "root", zoom: 100, ...spec }, dir);
-  const restored = readFileSync(join(dir, "index.html"), "utf8");
-  const previous = restored.replace(
-    `<div id="target"`,
-    `<div id="target" style="clip-path: ${CROP}"`,
-  );
-  const page = await browser.newPage();
-  await page.setViewport({ width: 1920, height: 1080 });
-  await page.setRequestInterception(true);
-  // Only the fixture's GSAP CDN script is served; anything else is refused, never fetched.
-  page.on("request", (request) =>
-    request.url().endsWith("/gsap.min.js")
-      ? request.respond({ body: readFileSync(require.resolve("gsap/dist/gsap.min.js"), "utf8") })
-      : request.abort("blockedbyclient"),
-  );
-  await page.setContent(restored, { waitUntil: "load" });
-  await page.evaluate(readFileSync(require.resolve("@hyperframes/core/runtime"), "utf8"));
-  await page.waitForFunction(() => "__player" in window);
-  await page.evaluate(undoBundle);
+])(
+  "an undone crop leaves a $gsap $placement r$rotation layer where it was",
+  async (spec) => {
+    const dir = join(mkdtempSync(join(tmpdir(), "undo-gsap-")), "case");
+    writeFixture({ gesture: "crop", nesting: "root", zoom: 100, ...spec }, dir);
+    const restored = readFileSync(join(dir, "index.html"), "utf8");
+    const previous = restored.replace(
+      `<div id="target"`,
+      `<div id="target" style="clip-path: ${CROP}"`,
+    );
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setRequestInterception(true);
+    // Only the fixture's GSAP CDN script is served; anything else is refused, never fetched.
+    page.on("request", (request) =>
+      request.url().endsWith("/gsap.min.js")
+        ? request.respond({ body: readFileSync(require.resolve("gsap/dist/gsap.min.js"), "utf8") })
+        : request.abort("blockedbyclient"),
+    );
+    await page.setContent(restored, { waitUntil: "load" });
+    await page.evaluate(readFileSync(require.resolve("@hyperframes/core/runtime"), "utf8"));
+    await page.waitForFunction(() => "__player" in window);
+    await page.evaluate(undoBundle);
 
-  const box = () =>
-    page.evaluate(() => {
-      const { left, top, width, height } = document
-        .getElementById("target")!
-        .getBoundingClientRect();
-      return [left, top, width, height].map((n) => Math.round(n * 100) / 100);
-    });
-  await page.evaluate(() =>
-    (window as unknown as { __player: { seek(t: number): void } }).__player.seek(1),
-  );
-  const before = await box();
-  const outcome = await page.evaluate(
-    (files, crop) => {
-      document.getElementById("target")!.style.setProperty("clip-path", crop);
-      const undo = (window as unknown as { hfUndo: typeof import("./gsapUndoRestore") }).hfUndo;
-      const iframe = { contentDocument: document, contentWindow: window } as HTMLIFrameElement;
-      return undo.applyUndoRestoreToPreview(iframe, "index.html", files, 1, () => {});
-    },
-    { "index.html": { previous, restored } },
-    CROP,
-  );
+    const box = () =>
+      page.evaluate(() => {
+        const { left, top, width, height } = document
+          .getElementById("target")!
+          .getBoundingClientRect();
+        return [left, top, width, height].map((n) => Math.round(n * 100) / 100);
+      });
+    await page.evaluate(() =>
+      (window as unknown as { __player: { seek(t: number): void } }).__player.seek(1),
+    );
+    const before = await box();
+    const outcome = await page.evaluate(
+      (files, crop) => {
+        document.getElementById("target")!.style.setProperty("clip-path", crop);
+        const undo = (window as unknown as { hfUndo: typeof import("./gsapUndoRestore") }).hfUndo;
+        const iframe = { contentDocument: document, contentWindow: window } as HTMLIFrameElement;
+        return undo.applyUndoRestoreToPreview(iframe, "index.html", files, 1, () => {});
+      },
+      { "index.html": { previous, restored } },
+      CROP,
+    );
 
-  expect(outcome).toBe("soft");
-  expect(await box()).toEqual(before);
-  await page.close();
-}, 30_000);
+    expect(outcome).toBe("soft");
+    expect(await box()).toEqual(before);
+    await page.close();
+  },
+  30_000,
+);
