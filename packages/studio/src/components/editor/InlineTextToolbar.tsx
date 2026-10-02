@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { applyInlineStyle } from "./inlineTextStyleRange";
 import { readInlineStyle, readInlineStyleSpread } from "./inlineTextStyleRead";
-import { parseCssColor, toHexColor } from "./colorValue";
+import { resolvePickerColor } from "./colorValue";
 import type { InlineTextEditSession } from "../../hooks/useInlineTextEdit";
 
 /**
@@ -248,7 +248,11 @@ function placeOverSelection(
     placeBelow,
     styles,
     colours,
-    pickerColour: toPickerColour(styles.color ?? colours[0]),
+    pickerColour: resolvePickerColor(
+      styles.color ?? colours[0],
+      rangeStartElement(range),
+      DEFAULT_COLOR,
+    ),
   };
 }
 
@@ -258,8 +262,7 @@ function isBold(weight: string | undefined): boolean {
   return Number.parseInt(weight, 10) >= 600;
 }
 
-/** A colour input accepts only `#rrggbb`; normalise any valid CSS colour to it. */
-function toPickerColour(value: string | undefined): string {
-  const parsed = value ? parseCssColor(value) : null;
-  return parsed ? toHexColor(parsed) : DEFAULT_COLOR;
+function rangeStartElement(range: Range): Element | null {
+  const node = range.startContainer;
+  return node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
 }

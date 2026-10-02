@@ -36,9 +36,8 @@ try {
   const page = await browser.newPage();
   const results = await page.evaluate(
     async (colorUrl, gradientUrl) => {
-      const { parseCssColor, toColorPickerValue, mergeColorWithExistingAlpha } = await import(
-        colorUrl
-      );
+      const { parseCssColor, toColorPickerValue, mergeColorWithExistingAlpha, resolvePickerColor } =
+        await import(colorUrl);
       const { parseGradient, insertGradientStop } = await import(gradientUrl);
       const inputs = [
         "white",
@@ -66,8 +65,18 @@ try {
       const element = document.createElement("span");
       element.style.color = "oklch(0.7 0.15 200)";
       document.body.append(element);
+      const frame = document.createElement("iframe");
+      frame.srcdoc =
+        '<html style="color-scheme: dark"><body><span style="color: light-dark(white, red)">x</span></body></html>';
+      await new Promise((loaded) => {
+        frame.onload = loaded;
+        document.body.append(frame);
+      });
+      const darkSpan = frame.contentDocument.querySelector("span");
       return {
         colors,
+        darkParse: parseCssColor(darkSpan.style.color),
+        darkPicker: resolvePickerColor(darkSpan.style.color, darkSpan, "#ffffff"),
         picker: toColorPickerValue(getComputedStyle(element).color),
         alpha: mergeColorWithExistingAlpha("#123456", "color(srgb 0.4 0 0.6 / 0.25)"),
         gradient: insertGradientStop(gradient, 50).stops[1].color,
@@ -116,12 +125,14 @@ try {
     }
     assert.ok(Math.abs(actual.alpha - channels[3]) < 0.000001, `color ${index} alpha`);
   }
+  assert.equal(results.darkParse, null, "light-dark() needs the element's colour scheme");
+  assert.equal(results.darkPicker, "#ff0000", "dark-scheme light-dark() picks what it paints");
   assert.equal(results.picker, "#00b9c3");
   assert.equal(results.alpha, "rgba(18, 52, 86, 0.25)");
   assert.equal(results.gradient, "#808080");
   assert.equal(results.alphaGradient, "rgba(0, 0, 0, 0.5)");
   console.log(
-    "Passed 18 native CSS color cases, computed-style picker, alpha preservation, and two gradient cases.",
+    "Passed 18 native CSS color cases, computed-style and dark-scheme pickers, alpha preservation, and two gradient cases.",
   );
 } finally {
   await browser?.close();

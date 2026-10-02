@@ -24,6 +24,7 @@ const CHROME_147_RELATIVE_SRGB: Record<string, string> = {
   "color-mix(in srgb, hwb(0 0% 0%), hwb(240 0% 0%) 50%)": "color(srgb 0.5 0 0.5)",
   "color-mix(in oklab, red, blue 50%)": "color(srgb 0.550402 0.325634 0.636508)",
   "color-mix(in srgb, red, blue 50%)": "color(srgb 0.5 0 0.5)",
+  "light-dark(white, red)": "color(srgb 1 1 1)",
 };
 
 async function loadColorModulesWithChromeCanvas() {
@@ -60,6 +61,7 @@ describe("parseCssColor with a browser canvas", () => {
     ["hsl(0 100% 50% / 0.001)", { red: 255, green: 0, blue: 0, alpha: 0.001 }],
     ["inherit", null],
     ["currentcolor", null],
+    ["light-dark(white, red)", null],
   ])("resolves %s through the canvas, or null if it must not", async (input, expected) => {
     const { parseCssColor: parseFresh } = await loadColorModulesWithChromeCanvas();
     expect(parseFresh(input)).toEqual(expected);

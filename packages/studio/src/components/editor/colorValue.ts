@@ -79,7 +79,7 @@ function canResolveInBrowser(value: string): boolean {
     typeof document !== "undefined" &&
     typeof CSS !== "undefined" &&
     CSS.supports("color", value) &&
-    !/\bcurrentcolor\b|\bvar\s*\(/i.test(value)
+    !/\bcurrentcolor\b|\bvar\s*\(|\blight-dark\s*\(/i.test(value)
   );
 }
 
@@ -134,6 +134,18 @@ function parseSrgbSerialization(serialized: string): ParsedColor | null {
 
 export function parseCssColor(value: string): ParsedColor | null {
   return parseSerializedColor(value) ?? parseBrowserColor(value.trim());
+}
+
+export function resolvePickerColor(
+  value: string | undefined,
+  element: Element | null,
+  fallback: string,
+): string {
+  const view = element?.ownerDocument.defaultView;
+  const parsed =
+    (value ? parseCssColor(value) : null) ??
+    (element && view ? parseCssColor(view.getComputedStyle(element).color) : null);
+  return parsed ? toHexColor(parsed) : fallback;
 }
 
 export function toColorPickerValue(value: string): string {
