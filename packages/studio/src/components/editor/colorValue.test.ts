@@ -54,29 +54,33 @@ describe("parseCssColor", () => {
       ["red", { red: 255, green: 0, blue: 0, alpha: 1 }],
       ["hsl(210 40% 50%)", { red: 77, green: 128, blue: 179, alpha: 1 }],
       ["rgb(100%, 0%, 0%)", { red: 255, green: 0, blue: 0, alpha: 1 }],
-    ])("resolves %s from the canvas's legacy serialization", async (input, expected) => {
-      const legacy: Record<string, string> = {
-        transparent: "rgba(0, 0, 0, 0)",
-        white: "#ffffff",
-        red: "#ff0000",
-        "hsl(210 40% 50%)": "#4d80b3",
-        "rgb(100%, 0%, 0%)": "#ff0000",
-      };
-      let fillStyle = "#000000";
-      const context = {
-        get fillStyle() {
-          return fillStyle;
-        },
-        set fillStyle(next: string) {
-          fillStyle = legacy[next] ?? fillStyle;
-        },
-      };
-      vi.stubGlobal("CSS", { supports: () => true });
-      vi.stubGlobal("document", { createElement: () => ({ getContext: () => context }) });
-      vi.resetModules();
-      const { parseCssColor: parseFresh } = await import("./colorValue");
-      expect(parseFresh(input)).toEqual(expected);
-    });
+      ["inherit", null],
+    ])(
+      "resolves %s from the canvas's legacy serialization, or null if it rejects it",
+      async (input, expected) => {
+        const legacy: Record<string, string> = {
+          transparent: "rgba(0, 0, 0, 0)",
+          white: "#ffffff",
+          red: "#ff0000",
+          "hsl(210 40% 50%)": "#4d80b3",
+          "rgb(100%, 0%, 0%)": "#ff0000",
+        };
+        let fillStyle = "#000000";
+        const context = {
+          get fillStyle() {
+            return fillStyle;
+          },
+          set fillStyle(next: string) {
+            fillStyle = legacy[next] ?? fillStyle;
+          },
+        };
+        vi.stubGlobal("CSS", { supports: () => true });
+        vi.stubGlobal("document", { createElement: () => ({ getContext: () => context }) });
+        vi.resetModules();
+        const { parseCssColor: parseFresh } = await import("./colorValue");
+        expect(parseFresh(input)).toEqual(expected);
+      },
+    );
   });
 
   it("parses transparent", () => {
