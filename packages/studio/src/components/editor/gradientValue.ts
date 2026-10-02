@@ -402,13 +402,17 @@ function interpolateGradientStopColor(model: GradientModel, position: number): s
 
 const LEGACY_COLOR = /^(?:#|(?:rgba?|hsla?|hwb)\(|[a-z]+$)/i;
 
+const isLegacy = (color: string) => LEGACY_COLOR.test(color.trim());
+const isModern = (color: string) => !isLegacy(color) && !/\bvar\(/i.test(color);
+
 function mixLikeTheGradient(
   stops: GradientStop[],
   left: string,
   right: string,
   ratio: number,
 ): string {
-  const space = stops.every((stop) => LEGACY_COLOR.test(stop.color.trim())) ? "srgb" : "oklab";
+  const oklab = stops.some((stop) => isModern(stop.color)) || !isLegacy(left) || !isLegacy(right);
+  const space = oklab ? "oklab" : "srgb";
   return `color-mix(in ${space}, ${left}, ${right} ${round(ratio * 100)}%)`;
 }
 

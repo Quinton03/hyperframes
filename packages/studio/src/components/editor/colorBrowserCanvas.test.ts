@@ -23,6 +23,7 @@ const CHROME_147_RELATIVE_SRGB: Record<string, string> = {
   "color-mix(in srgb, #ff000000, #0000ffff 50%)": "color(srgb 0 0 1 / 0.5)",
   "color-mix(in srgb, hwb(0 0% 0%), hwb(240 0% 0%) 50%)": "color(srgb 0.5 0 0.5)",
   "color-mix(in oklab, red, blue 50%)": "color(srgb 0.550402 0.325634 0.636508)",
+  "color-mix(in srgb, red, blue 50%)": "color(srgb 0.5 0 0.5)",
 };
 
 async function loadColorModulesWithChromeCanvas() {
@@ -89,6 +90,12 @@ describe("insertGradientStop with a browser canvas", () => {
       "red 0%, blue 50%, oklch(0.7 0.15 200) 100%",
       25,
       "#8C53A2",
+    ],
+    [
+      "an unresolved var() stop leaves a legacy interval in sRGB",
+      "red 0%, blue 50%, var(--third, red) 100%",
+      25,
+      "#800080",
     ],
   ])("%s", async (_case, stops, position, expected) => {
     const { parseGradient: parse, insertGradientStop: insert } =
