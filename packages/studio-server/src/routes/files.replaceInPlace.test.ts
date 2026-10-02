@@ -156,4 +156,20 @@ describe("an edit at the playhead rewrites its tween where it stands", () => {
     expect(edited.endsWith(tail)).toBe(true);
     expect(calls(html).indexOf(edited)).toBe(calls(script).findIndex((l) => l.includes('"#a"')));
   });
+
+  it.each([
+    ["from()", `tl.from("#a", { x: -60, duration: 1 }, 1);`, "immediateRender: true"],
+    ["fromTo()", `tl.fromTo("#a", { x: -60 }, { x: 0, duration: 1 }, 1);`, "immediateRender: true"],
+    [
+      "an authored choice",
+      `tl.from("#a", { x: -60, duration: 1, immediateRender: false }, 1);`,
+      "immediateRender: false",
+    ],
+  ])("keeps a %s entrance showing its start before it starts", async (_, script, rendered) => {
+    const { html } = await moveAtPlayhead(script, "#a");
+
+    const edited = calls(html).find((line) => line.includes('"#a"'))!;
+    expect(edited).toMatch(/^tl\.to\("#a", \{ keyframes: /);
+    expect(edited.match(/immediateRender: \w+/g)).toEqual([rendered]);
+  });
 });
