@@ -41,6 +41,7 @@ beforeAll(async () => {
 
 afterAll(() => browser?.close());
 
+// The first case opens the cold browser's first page, which overran 5 s on a loaded CI runner.
 it.each([
   { gsap: "hold", placement: "px", rotation: 0 },
   { gsap: "tween", placement: "px", rotation: 0 },
@@ -56,10 +57,11 @@ it.each([
   const page = await browser.newPage();
   await page.setViewport({ width: 1920, height: 1080 });
   await page.setRequestInterception(true);
+  // Only the fixture's GSAP CDN script is served; anything else is refused, never fetched.
   page.on("request", (request) =>
     request.url().endsWith("/gsap.min.js")
       ? request.respond({ body: readFileSync(require.resolve("gsap/dist/gsap.min.js"), "utf8") })
-      : request.continue(),
+      : request.abort("blockedbyclient"),
   );
   await page.setContent(restored, { waitUntil: "load" });
   await page.evaluate(readFileSync(require.resolve("@hyperframes/core/runtime"), "utf8"));
@@ -91,4 +93,4 @@ it.each([
   expect(outcome).toBe("soft");
   expect(await box()).toEqual(before);
   await page.close();
-});
+}, 30_000);
