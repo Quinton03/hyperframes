@@ -641,7 +641,9 @@ describe("runCommit — instantPatch wiring", () => {
       await deps.api.commitMutation(selection, { x: 10 }, { label: "drag", softReload: true });
     });
 
-    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/files/compositions%2Fsub.html"));
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/files/compositions%2Fsub.html"), {
+      credentials: "omit",
+    });
     expect(applySoftReload).toHaveBeenCalledWith(
       expect.anything(),
       NESTED_SCRIPT,
