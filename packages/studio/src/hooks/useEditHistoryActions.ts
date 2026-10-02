@@ -80,13 +80,16 @@ export function useEditHistoryActions({
       const predictedShown = predicted ? (showHistoryRestoreNow?.(predicted.files) ?? null) : null;
       const pendingEditShown =
         !predictedShown && direction === "undo" ? revertNewestStudioPendingEdit() : null;
-      const putBack = predictedShown ?? pendingEditShown;
+      const putBack = predictedShown ?? pendingEditShown?.showAgain;
       const claimedAfter =
         direction === "undo" && hasStudioPendingEdits() ? editHistory.claims?.() : undefined;
       let result: HistoryResult = { ok: false, reason: "failed" };
       let serverSteppedShown = false;
+      let revertIsTheUndo = false;
       try {
         await waitForPendingDomEditSaves();
+        revertIsTheUndo = Boolean(pendingEditShown && !(await pendingEditShown.landed()));
+        if (revertIsTheUndo) return;
         result = await editHistory[direction]({
           readFile: readHistoryFile,
           serialize: serializeHistoryFiles,
@@ -97,7 +100,7 @@ export function useEditHistoryActions({
           ? stepped && result.undoes === predicted?.id
           : stepped && Boolean(pendingEditShown);
       } finally {
-        if (putBack && !serverSteppedShown) putBack();
+        if (putBack && !serverSteppedShown && !revertIsTheUndo) putBack();
       }
       if (!result.ok && result.reason === "content-mismatch") {
         showToast(

@@ -11,7 +11,13 @@ export type StudioPendingEditsDrainResult = StudioSaveDrainResult;
 
 export type StudioEditRevert = () => () => void;
 
-const pendingEdits = new Map<Promise<unknown>, { revert: StudioEditRevert | null }>();
+interface PendingEdit {
+  revert: StudioEditRevert | null;
+  landed: () => Promise<boolean>;
+}
+
+const pendingEdits = new Map<Promise<unknown>, PendingEdit>();
+const NOT_SAVED = () => Promise.resolve(false);
 let adopting = false;
 
 function waitForPostBlurEffects(): Promise<void> {
@@ -67,7 +73,7 @@ export function trackStudioPendingEdit(
   if (!result) return undefined;
   const promise = Promise.resolve(result);
   if (adopting) return promise;
-  pendingEdits.set(promise, { revert: null });
+  pendingEdits.set(promise, { revert: null, landed: NOT_SAVED });
   promise.then(
     () => pendingEdits.delete(promise),
     () => pendingEdits.delete(promise),
@@ -90,6 +96,8 @@ export function beginStudioPendingEdit(revert: StudioEditRevert | null) {
   const promise = trackStudioPendingEdit(new Promise<unknown>((resolve) => (settle = resolve)))!;
   const entry = pendingEdits.get(promise)!;
   entry.revert = revert;
+  let landed = Promise.resolve(false);
+  entry.landed = () => landed;
   return {
     settle,
     reverted: () => entry.revert === null && revert !== null,
@@ -97,7 +105,12 @@ export function beginStudioPendingEdit(revert: StudioEditRevert | null) {
     adopt<T>(start: () => T): T {
       adopting = true;
       try {
-        return start();
+        const committed = start();
+        landed = Promise.resolve(committed).then(
+          () => true,
+          () => false,
+        );
+        return committed;
       } catch (error) {
         settle();
         throw error;
@@ -108,12 +121,15 @@ export function beginStudioPendingEdit(revert: StudioEditRevert | null) {
   };
 }
 
-export function revertNewestStudioPendingEdit(): (() => void) | null {
+export function revertNewestStudioPendingEdit(): {
+  showAgain: () => void;
+  landed: () => Promise<boolean>;
+} | null {
   const newest = [...pendingEdits.values()].at(-1);
   const revert = newest?.revert;
   if (!newest || !revert) return null;
   newest.revert = null;
-  return revert();
+  return { showAgain: revert(), landed: newest.landed };
 }
 
 export async function flushStudioPendingEdits({

@@ -281,6 +281,56 @@ it("an undo pressed while a nudge's save is queued shows the nudge undone in the
   expect(s.box()).toBe("50px");
 });
 
+/** A nudge whose save is queued and then rejects, and the history requests the undo sends. */
+async function failingNudge(s: Awaited<ReturnType<typeof studio>>) {
+  resetNudgeKeys();
+  let fail!: () => void;
+  const save = vi.fn(
+    () => new Promise<void>((_, reject) => (fail = () => reject(new Error("The save failed.")))),
+  );
+  s.mount(createElement(Nudge, { target: s.element("box"), save }));
+  act(() => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", cancelable: true }));
+  });
+  await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  const steps: string[] = [];
+  const real = globalThis.fetch;
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    if (/\/history\/(step|undo)$/.test(url)) steps.push(url);
+    return real(url, init);
+  });
+  const nudge = () => s.element("box").style.getPropertyValue("translate");
+  return { fail: () => fail(), steps, nudge };
+}
+
+it("an undo pressed while a nudge's save fails keeps the nudge undone and steps no older edit", async () => {
+  const s = await studio();
+  await s.edit();
+  const n = await failingNudge(s);
+  expect(n.nudge()).not.toBe("");
+
+  const undone = s.actions().undo();
+  expect(n.nudge()).toBe("");
+  n.fail();
+  await act(() => undone);
+  expect(n.steps).toEqual([]);
+  expect(s.file()).toBe(AFTER);
+  expect(s.box()).toBe("50px");
+  expect(n.nudge()).toBe("");
+});
+
+it("an undo pressed while the only edit's save fails leaves the screen as the file, nothing put back", async () => {
+  const s = await studio();
+  s.show(BEFORE);
+  const n = await failingNudge(s);
+
+  const undone = s.actions().undo();
+  n.fail();
+  await act(() => undone);
+  expect(s.file()).toBe(BEFORE);
+  expect(n.nudge()).toBe("");
+});
+
 it("an undo pressed while a queued save fails undoes the edit before it, file and box alike", async () => {
   const s = await studio();
   await s.edit();

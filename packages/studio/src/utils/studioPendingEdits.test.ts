@@ -232,7 +232,7 @@ describe("a pending edit undo can paint back", () => {
     expect(second.reverted()).toBe(true);
     expect(first.reverted()).toBe(false);
     expect(revertNewestStudioPendingEdit()).toBeNull();
-    again!();
+    again!.showAgain();
     expect(shown).toEqual(["second undone", "second again"]);
     first.settle();
     second.settle();

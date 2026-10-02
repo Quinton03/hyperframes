@@ -59,10 +59,10 @@ it("a drag whose save is still running can be painted back at once, and shown ag
   const moved = element.style.getPropertyValue("translate");
   expect(moved).not.toBe("40px 30px");
 
-  const showAgain = revertNewestStudioPendingEdit();
+  const shown = revertNewestStudioPendingEdit();
   expect(element.style.getPropertyValue("translate")).toBe("40px 30px");
   expect(revertNewestStudioPendingEdit()).toBeNull();
-  showAgain!();
+  shown!.showAgain();
   expect(element.style.getPropertyValue("translate")).toBe(moved);
 
   saved();
