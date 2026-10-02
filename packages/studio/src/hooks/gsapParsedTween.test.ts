@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
-import { parsedImplicitEndValue } from "./gsapParsedTween";
-import { liveTween } from "./gsapParsedTween.test-helpers";
+import { gsap } from "gsap";
+import { afterEach, describe, expect, it } from "vitest";
+import { findParsedTween, parsedImplicitEndValue } from "./gsapParsedTween";
+import { liveTween, previewWith, tween } from "./gsapParsedTween.test-helpers";
 
 type Parsed = Parameters<typeof parsedImplicitEndValue>[0];
 const el = document.createElement("div");
@@ -30,5 +31,32 @@ describe("parsedImplicitEndValue", () => {
 
   it("has no value without a parsed tween", () => {
     expect(parsedImplicitEndValue(null)("x", "start")).toBeNull();
+  });
+});
+
+describe("findParsedTween", () => {
+  afterEach(() => document.body.replaceChildren());
+
+  it("takes the flat tween an edit names, not a keyframed tween at the same start", () => {
+    const fade = liveTween(el, { start: 0, duration: 2, vars: { keyframes: {}, ease: "none" } });
+    const slide = liveTween(el, { start: 0, duration: 2, vars: { x: 300 } });
+    const edit = tween({ method: "to", properties: { x: 300 }, resolvedStart: 0, duration: 2 });
+    expect(findParsedTween(previewWith(el, [fade, slide]), el, edit)).toBe(slide);
+  });
+
+  it("parses a to() tween the playhead has not reached, from its authored start", () => {
+    const box = document.body.appendChild(document.createElement("div"));
+    box.id = "box";
+    const timeline = gsap.timeline({ paused: true }).to(box, { x: 300, duration: 1 }, 2);
+    timeline.seek(0.5);
+    gsap.set(box, { x: 40 });
+    const iframe = { contentWindow: { __timelines: { main: timeline }, gsap } };
+    const edit = tween({ method: "to", properties: { x: 300 }, resolvedStart: 2, duration: 1 });
+
+    const parsed = findParsedTween(iframe as unknown as HTMLIFrameElement, box, edit);
+
+    expect(parsedImplicitEndValue(parsed)("x", "start")).toBe(0);
+    expect([gsap.getProperty(box, "x"), timeline.time()]).toEqual([40, 0.5]);
+    timeline.kill();
   });
 });

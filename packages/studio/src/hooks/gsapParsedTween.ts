@@ -13,15 +13,24 @@ interface PropTween {
 interface ParsedTween {
   _pt?: PropTween;
   _from?: boolean;
+  _initted?: boolean;
   vars?: Record<string, unknown>;
-  parent?: { vars?: { defaults?: { ease?: unknown } } };
+  parent?: {
+    vars?: { defaults?: { ease?: unknown } };
+    time?: () => number;
+    seek?: (time: number, suppressEvents?: boolean) => unknown;
+  };
   timeline?: { getChildren?: () => ParsedTween[] };
   targets?: () => Element[];
   startTime?: () => number;
   duration?: () => number;
 }
 interface GsapWindow {
-  gsap?: { defaults?: () => { ease?: unknown } };
+  gsap?: {
+    defaults?: () => { ease?: unknown };
+    getProperty?: (target: Element, prop: string) => unknown;
+    set?: (target: Element, vars: Record<string, unknown>) => void;
+  };
   __timelines?: Record<string, { getChildren?: (nested: boolean) => ParsedTween[] }>;
 }
 
@@ -45,7 +54,7 @@ function endsIn(tween: ParsedTween, prop: string): [number, number] | null {
   return tween._from ? [pair[1], pair[0]] : pair;
 }
 
-/** The live tween GSAP built from `anim`: same element, start and channels. */
+/** The live tween GSAP built from `anim`: same element, start and channels, parsed. */
 // fallow-ignore-next-line complexity
 export function findParsedTween(
   iframe: HTMLIFrameElement | null,
@@ -56,6 +65,7 @@ export function findParsedTween(
   const start = resolveTweenStart(anim);
   if (!win?.__timelines || start == null) return null;
   const props = Object.keys(anim.keyframes?.keyframes[0]?.properties ?? anim.properties);
+  const keyframed = Boolean(anim.keyframes);
   for (const timeline of Object.values(win.__timelines)) {
     for (const tween of timeline?.getChildren?.(true) ?? []) {
       const targets = tween.targets?.() ?? [];
@@ -63,11 +73,38 @@ export function findParsedTween(
         continue;
       if (Math.abs((tween.startTime?.() ?? Number.NaN) - start) > 1e-3) continue;
       const vars = tween.vars ?? {};
-      const carries = props.some((p) => p in vars) || "keyframes" in vars;
-      if (carries && (tween.duration?.() ?? 0) > 0) return tween;
+      const carries = keyframed ? "keyframes" in vars : props.some((p) => p in vars);
+      if (!carries || !((tween.duration?.() ?? 0) > 0)) continue;
+      parseUnplayed(win, element, tween, props);
+      return tween;
     }
   }
   return null;
+}
+
+const TRANSFORM = ["x", "y", "rotation", "scaleX", "scaleY"];
+
+/** GSAP parses a to() tween only when the playhead first passes it, and a soft reload resets that.
+ *  Play it through and back with its channels cleared, as main's drag did, so a gesture's live
+ *  `gsap.set` is not read as the authored start; then put back what the seek did not. */
+function parseUnplayed(win: GsapWindow, element: Element, tween: ParsedTween, props: string[]) {
+  const parts = tween.timeline?.getChildren?.() ?? [];
+  if (tween._initted && parts.every((part) => part._initted)) return;
+  const { parent } = tween;
+  const gsap = win.gsap;
+  if (!parent?.seek || !parent.time || !gsap?.getProperty || !gsap.set) return;
+  const live = new Map(
+    [...new Set([...props, ...TRANSFORM])].map((p) => [p, gsap.getProperty!(element, p)]),
+  );
+  const now = parent.time();
+  gsap.set(element, { clearProps: props.join(",") });
+  try {
+    parent.seek((tween.startTime?.() ?? 0) + (tween.duration?.() ?? 0), true);
+  } finally {
+    parent.seek(now, true);
+    const moved = [...live].filter(([p, v]) => v != null && gsap.getProperty!(element, p) !== v);
+    if (moved.length > 0) gsap.set(element, Object.fromEntries(moved));
+  }
 }
 
 /** Start and end values from GSAP's own parse of the tween, as loaded from the file. Null when
