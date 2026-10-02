@@ -13,6 +13,7 @@ interface RecordEditInput {
 interface ApplyCallbacks {
   readFile: (path: string) => Promise<string>;
   serialize?: <T>(paths: readonly string[], task: () => Promise<T>) => Promise<T>;
+  claimedAfter?: number;
 }
 
 export interface UsePersistentEditHistoryOptions {
@@ -53,6 +54,7 @@ function createOwnHistory() {
   const own = new Map<string, OwnFiles>();
   let next: Record<"undo" | "redo", NextStep | null> | null = null;
   let changes = 0;
+  let claimed = { count: 0, id: "" };
   const remember = (id: string, files: OwnFiles) => {
     const known = own.get(id) ?? {};
     for (const [path, { before, after }] of Object.entries(files)) {
@@ -73,6 +75,11 @@ function createOwnHistory() {
       if (seen === changes) next = { undo: view.back, redo: view.forward };
     },
     changes: () => changes,
+    claimCount: () => claimed.count,
+    claimedAfter: (count: number) => (claimed.count > count ? claimed.id : null),
+    noteClaim: (id: string) => {
+      claimed = { count: claimed.count + 1, id };
+    },
     stepped: (entry: { id: string; undoes?: string }) => {
       const undone = entry.undoes ? own.get(entry.undoes) : undefined;
       if (!undone) return;
@@ -221,7 +228,10 @@ export function usePersistentEditHistory({ projectId }: UsePersistentEditHistory
         ...(coalesceKey && { coalesceKey, idleMs: coalesceMs ?? DEFAULT_COALESCE_MS }),
       });
       const claimed = claimHeld(reply, label);
-      if (claimed) own.remember(claimed, files);
+      if (claimed) {
+        own.remember(claimed, files);
+        own.noteClaim(claimed);
+      }
       heldClaimRef.current = claimed && coalesceKey ? { paths, at: Date.now() } : null;
       await refresh();
     },
@@ -231,14 +241,19 @@ export function usePersistentEditHistory({ projectId }: UsePersistentEditHistory
   const step = useCallback(
     async (direction: "undo" | "redo", callbacks: ApplyCallbacks): Promise<ApplyResult> => {
       if (!projectId) return { ok: false, reason: "empty" };
+      const target =
+        direction === "undo" && callbacks.claimedAfter !== undefined
+          ? own.claimedAfter(callbacks.claimedAfter)
+          : null;
       const next = direction === "undo" ? view.back : view.forward;
-      const paths = [...new Set([...(next?.paths ?? []), ...(heldClaimRef.current?.paths ?? [])])];
+      const stepPaths = target ? Object.keys(own.afterOf(target)) : (next?.paths ?? []);
+      const paths = [...new Set([...stepPaths, ...(heldClaimRef.current?.paths ?? [])])];
       own.overtake();
       const run = async (): Promise<ApplyResult> => {
         const previous = await readAll(paths, callbacks.readFile);
         const posted = await post(
-          historyUrl(projectId, "/step"),
-          { direction: direction === "undo" ? "back" : "forward" },
+          historyUrl(projectId, target ? "/undo" : "/step"),
+          target ? { entryId: target } : { direction: direction === "undo" ? "back" : "forward" },
           studioWriteHeaders(),
         );
         heldClaimRef.current = null;
@@ -301,6 +316,7 @@ export function usePersistentEditHistory({ projectId }: UsePersistentEditHistory
     undo,
     redo,
     predict: own.predict,
+    claims: own.claimCount,
     noteOutsideChange,
   };
 }

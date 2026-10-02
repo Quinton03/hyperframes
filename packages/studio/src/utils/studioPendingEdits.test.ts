@@ -295,3 +295,20 @@ describe("the package's public revert", () => {
     }
   });
 });
+
+describe("a drain of only the current edits", () => {
+  it("ends once the edits pending at its start land, without waiting for one started after", async () => {
+    let landFirst!: () => void;
+    let landLater!: () => void;
+    trackStudioPendingEdit(new Promise<void>((resolve) => (landFirst = resolve)));
+    let drained = false;
+    const drain = flushStudioPendingEdits({ onlyCurrent: true }).then(() => (drained = true));
+    await Promise.resolve();
+    trackStudioPendingEdit(new Promise<void>((resolve) => (landLater = resolve)));
+    landFirst();
+    await drain;
+    expect(drained).toBe(true);
+    expect(hasStudioPendingEdits()).toBe(true);
+    landLater();
+  });
+});

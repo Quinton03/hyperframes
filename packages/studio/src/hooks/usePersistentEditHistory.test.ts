@@ -88,6 +88,34 @@ it("an edit Studio saved is undone and redone by the project's history, with the
   expect(file()).toBe("B");
 });
 
+it("undoes the edit claimed since the key, not a later edit the server took in first", async () => {
+  const { dir, hook, file, save, readFile } = await studio();
+  const atKey = hook().claims();
+  save("B");
+  await act(() =>
+    hook().recordEdit({
+      label: "Moved Title",
+      files: { "index.html": { before: "A", after: "B" } },
+    }),
+  );
+  writeFileSync(join(dir, "card.html"), "Y");
+  const later = hook().recordEdit({
+    label: "Added Card",
+    files: { "card.html": { before: "", after: "Y" } },
+  });
+  const afterLater = async <T>(_paths: readonly string[], task: () => Promise<T>) => {
+    await later;
+    return task();
+  };
+
+  const undone = await act(() =>
+    hook().undo({ readFile, serialize: afterLater, claimedAfter: atKey }),
+  );
+  expect(undone).toMatchObject({ ok: true, label: "Undid: Moved Title" });
+  expect(file()).toBe("A");
+  expect(readFileSync(join(dir, "card.html"), "utf8")).toBe("Y");
+});
+
 it("a drag's edits under one key undo as one step, even before the drag goes idle", async () => {
   const { hook, file, save, readFile } = await studio();
   const writes: Array<[before: string, after: string]> = [

@@ -163,8 +163,9 @@ export function usePreviewPersistence({
   }, [drainPendingDomEditSaves]);
 
   const settlePendingEdits = useCallback(async (): Promise<void> => {
-    await flushStudioPendingEdits();
-    await domEditSaveQueueRef.current?.waitForIdle();
+    const queued = domEditSaveQueueRef.current?.waitForIdle();
+    await flushStudioPendingEdits({ onlyCurrent: true });
+    await queued;
   }, []);
 
   const resetDomEditSaveQueueBreaker = useCallback(() => {

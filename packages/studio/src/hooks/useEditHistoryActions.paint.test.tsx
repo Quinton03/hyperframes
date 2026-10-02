@@ -168,6 +168,20 @@ it("an undo pressed while a save is still running waits for the server instead o
   expect(s.box()).toBe("10px");
 });
 
+it("an undo waits for a save queued before its key, not one queued after", async () => {
+  const s = await studio();
+  await s.edit();
+  let land!: () => void;
+  void s.persistence().queueDomEditSave(() => new Promise<void>((resolve) => (land = resolve)));
+  await vi.waitFor(() => expect(land).toBeTypeOf("function"));
+
+  const undone = s.actions().undo();
+  void s.persistence().queueDomEditSave(() => new Promise<void>(() => {}));
+  land();
+  await act(() => undone);
+  expect(s.file()).toBe(BEFORE);
+});
+
 it("an undo after an outside write ends with the preview showing the file the server restored", async () => {
   const s = await studio();
   await s.edit();

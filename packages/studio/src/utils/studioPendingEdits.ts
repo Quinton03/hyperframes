@@ -116,7 +116,9 @@ export function revertNewestStudioPendingEdit(): (() => void) | null {
   return revert();
 }
 
-export async function flushStudioPendingEdits(): Promise<StudioPendingEditsDrainResult> {
+export async function flushStudioPendingEdits({
+  onlyCurrent = false,
+} = {}): Promise<StudioPendingEditsDrainResult> {
   const active = focusedField();
   if (active) {
     active.blur();
@@ -128,10 +130,12 @@ export async function flushStudioPendingEdits(): Promise<StudioPendingEditsDrain
   window.dispatchEvent(
     new CustomEvent<StudioFlushPendingEditsDetail>(STUDIO_FLUSH_PENDING_EDITS_EVENT, { detail }),
   );
+  const current = onlyCurrent ? new Set(pendingEdits.keys()) : null;
+  const waiting = () => [...pendingEdits.keys()].filter((edit) => !current || current.has(edit));
   let conflict: StudioFileConflictError | undefined;
   let firstFailure: PromiseRejectedResult | undefined;
-  while (detail.promises.length > 0 || pendingEdits.size > 0) {
-    const promises = [...detail.promises, ...pendingEdits.keys()];
+  while (detail.promises.length > 0 || waiting().length > 0) {
+    const promises = [...detail.promises, ...waiting()];
     detail.promises = [];
     const batchFailures = inspectDrainFailures(await Promise.allSettled(promises));
     conflict ??= batchFailures.conflict;

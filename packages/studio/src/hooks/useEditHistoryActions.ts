@@ -3,7 +3,7 @@ import { useCallback, useMemo } from "react";
 import { STUDIO_MOTION_PATH } from "../components/editor/studioMotion";
 import { serializeStudioFileMutations } from "../utils/studioFileMutationCoordinator";
 import type { RestoreFiles } from "../utils/gsapUndoRestore";
-import { revertNewestStudioPendingEdit } from "../utils/studioPendingEdits";
+import { hasStudioPendingEdits, revertNewestStudioPendingEdit } from "../utils/studioPendingEdits";
 
 interface HistoryResult {
   ok: boolean;
@@ -18,11 +18,13 @@ interface HistoryResult {
 interface HistoryFileCallbacks {
   readFile: (path: string) => Promise<string>;
   serialize?: <T>(paths: readonly string[], task: () => Promise<T>) => Promise<T>;
+  claimedAfter?: number;
 }
 export interface EditHistoryHandle {
   undo: (cb: HistoryFileCallbacks) => Promise<HistoryResult>;
   redo: (cb: HistoryFileCallbacks) => Promise<HistoryResult>;
   predict?: (direction: "undo" | "redo") => { id: string; files: RestoreFiles } | null;
+  claims?: () => number;
   state: {
     undo: ReadonlyArray<{ createdAt: number }>;
     redo: ReadonlyArray<{ createdAt: number }>;
@@ -30,7 +32,7 @@ export interface EditHistoryHandle {
 }
 
 export interface UseEditHistoryActionsOptions {
-  editHistory: Pick<EditHistoryHandle, "undo" | "redo" | "predict">;
+  editHistory: Pick<EditHistoryHandle, "undo" | "redo" | "predict" | "claims">;
   readOptionalProjectFile: (path: string) => Promise<string>;
   readProjectFile: (path: string) => Promise<string>;
   writeProjectFile: (path: string, content: string) => Promise<void>;
@@ -79,6 +81,8 @@ export function useEditHistoryActions({
       const pendingEditShown =
         !predictedShown && direction === "undo" ? revertNewestStudioPendingEdit() : null;
       const putBack = predictedShown ?? pendingEditShown;
+      const claimedAfter =
+        direction === "undo" && hasStudioPendingEdits() ? editHistory.claims?.() : undefined;
       let result: HistoryResult = { ok: false, reason: "failed" };
       let serverSteppedShown = false;
       try {
@@ -86,6 +90,7 @@ export function useEditHistoryActions({
         result = await editHistory[direction]({
           readFile: readHistoryFile,
           serialize: serializeHistoryFiles,
+          claimedAfter,
         });
         const stepped = Boolean(result.ok && result.label);
         serverSteppedShown = predictedShown
