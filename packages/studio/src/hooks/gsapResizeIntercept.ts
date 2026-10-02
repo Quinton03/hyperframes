@@ -72,7 +72,7 @@ function preGestureBoxSize(el: HTMLElement): Record<string, number> {
 
 /** A size write at the playhead. When the same tween animates position, the resize's anchor move
  *  goes into this one write: a second write to the tween in the same gesture would plan on stale ids. */
-async function commitSizeAtPlayhead(
+export async function commitSizeAtPlayhead(
   selection: DomEditSelection,
   anim: GsapAnimation,
   size: Record<string, number>,

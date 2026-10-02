@@ -4,8 +4,8 @@ import type { GsapAnimation } from "@hyperframes/core/gsap-parser";
 import type { DomEditSelection } from "../components/editor/domEditingTypes";
 import { usePlayerStore } from "../player/store/playerStore";
 import { computeCurrentPercentage } from "./gsapDragCommit";
-import { tryGsapResizeIntercept } from "./gsapResizeIntercept";
-import { liveTween } from "./gsapParsedTween.test-helpers";
+import { commitSizeAtPlayhead, tryGsapResizeIntercept } from "./gsapResizeIntercept";
+import { liveTween, previewWith, tween } from "./gsapParsedTween.test-helpers";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -566,3 +566,42 @@ it("hands the size to the element's CSS when its only tween is a fade", async ()
   expect(handled).toEqual({ status: "element-size" });
   expect(commitMutation).not.toHaveBeenCalled();
 });
+
+it.each([
+  ["stays put", { x: 0, y: 0 }, { width: 300 }, undefined],
+  ["moves", { x: -40, y: 0 }, { width: 300, x: 10, y: 0 }, true],
+])(
+  "a size written at the playhead carries the anchor only when the box %s",
+  async (_, offset, written, owns) => {
+    const selection = titleSelection();
+    const el = selection.element;
+    el.setAttribute("data-hf-drag-gsap-base-x", "50");
+    el.setAttribute("data-hf-drag-gsap-base-y", "0");
+    const slide = tween({
+      id: "#title-to-0",
+      targetSelector: "#title",
+      propertyGroup: undefined,
+      method: "to",
+      properties: { x: 100, width: 320 },
+      resolvedStart: 0,
+      duration: 2,
+      ease: "none",
+    });
+    usePlayerStore.setState({ currentTime: 1 });
+    const commitMutation = vi.fn();
+    const live = liveTween(el, { start: 0, duration: 2, vars: slide.properties });
+
+    const outcome = await commitSizeAtPlayhead(
+      selection,
+      slide,
+      { width: 300 },
+      previewWith(el, [live]),
+      offset,
+      { commitMutation },
+    );
+
+    expect(outcome.ownsDragOffset).toBe(owns);
+    const mutation = commitMutation.mock.calls[0]![1];
+    expect(mutation.keyframes[0].properties).toEqual(written);
+  },
+);
