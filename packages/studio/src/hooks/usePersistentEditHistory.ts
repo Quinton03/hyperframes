@@ -81,9 +81,8 @@ function createOwnHistory() {
     noteClaim: (id: string) => {
       claimed = { count: claimed.count + 1, id };
     },
-    // Once undone, a second key pressed during the same save steps back instead.
-    undid: (id: string) => {
-      if (claimed.id === id) claimed = { ...claimed, id: "" };
+    releaseUndoneClaim: (id: string | null) => {
+      if (id && claimed.id === id) claimed = { ...claimed, id: "" };
     },
     stepped: (entry: { id: string; undoes?: string }) => {
       const undone = entry.undoes ? own.get(entry.undoes) : undefined;
@@ -280,7 +279,7 @@ export function usePersistentEditHistory({ projectId }: UsePersistentEditHistory
         }
         if (!reply.entry) return { ok: false, reason: "empty" };
         own.stepped(reply.entry);
-        if (target) own.undid(target);
+        own.releaseUndoneClaim(target);
         const changed = reply.entry.files.map((file) => file.path);
         return {
           ok: true,

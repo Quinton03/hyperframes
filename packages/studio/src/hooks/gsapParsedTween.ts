@@ -88,23 +88,46 @@ const TRANSFORM = ["x", "y", "rotation", "scaleX", "scaleY"];
  *  Play it through and back with its channels cleared, as main's drag did, so a gesture's live
  *  `gsap.set` is not read as the authored start; then put back what the seek did not. */
 function parseUnplayed(win: GsapWindow, element: Element, tween: ParsedTween, props: string[]) {
-  const parts = tween.timeline?.getChildren?.() ?? [];
-  if (tween._initted && parts.every((part) => part._initted)) return;
-  const { parent } = tween;
-  const gsap = win.gsap;
-  if (!parent?.seek || !parent.time || !gsap?.getProperty || !gsap.set) return;
-  const live = new Map(
-    [...new Set([...props, ...TRANSFORM])].map((p) => [p, gsap.getProperty!(element, p)]),
-  );
+  const seek = !isParsed(tween) && seekable(win, tween);
+  if (!seek) return;
+  const { parent, gsap } = seek;
+  const channels = [...new Set([...props, ...TRANSFORM])];
+  const live = channels.map((p) => [p, gsap.getProperty(element, p)] as const);
   const now = parent.time();
   gsap.set(element, { clearProps: props.join(",") });
   try {
     parent.seek((tween.startTime?.() ?? 0) + (tween.duration?.() ?? 0), true);
   } finally {
     parent.seek(now, true);
-    const moved = [...live].filter(([p, v]) => v != null && gsap.getProperty!(element, p) !== v);
-    if (moved.length > 0) gsap.set(element, Object.fromEntries(moved));
+    putBack(gsap, element, live);
   }
+}
+
+function isParsed(tween: ParsedTween): boolean {
+  const parts = tween.timeline?.getChildren?.() ?? [];
+  return Boolean(tween._initted) && parts.every((part) => part._initted);
+}
+
+function seekable(win: GsapWindow, tween: ParsedTween) {
+  const { parent } = tween;
+  const gsap = win.gsap;
+  if (!parent?.seek || !parent.time || !gsap?.getProperty || !gsap.set) return null;
+  return {
+    parent: { seek: parent.seek.bind(parent), time: parent.time.bind(parent) },
+    gsap: { getProperty: gsap.getProperty.bind(gsap), set: gsap.set.bind(gsap) },
+  };
+}
+
+function putBack(
+  gsap: {
+    getProperty: (el: Element, p: string) => unknown;
+    set: (el: Element, v: Record<string, unknown>) => void;
+  },
+  element: Element,
+  live: ReadonlyArray<readonly [string, unknown]>,
+) {
+  const moved = live.filter(([p, v]) => v != null && gsap.getProperty(element, p) !== v);
+  if (moved.length > 0) gsap.set(element, Object.fromEntries(moved));
 }
 
 /** Start and end values from GSAP's own parse of the tween, as loaded from the file. Null when
