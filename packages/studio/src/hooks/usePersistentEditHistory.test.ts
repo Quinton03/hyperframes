@@ -116,6 +116,29 @@ it("undoes the edit claimed since the key, not a later edit the server took in f
   expect(readFileSync(join(dir, "card.html"), "utf8")).toBe("Y");
 });
 
+it("undoes the edit pending at the key even when a later edit claims before the step", async () => {
+  const { dir, hook, file, save, readFile } = await studio();
+  const atKey = hook().claims();
+  save("B");
+  await act(() =>
+    hook().recordEdit({
+      label: "Moved Title",
+      files: { "index.html": { before: "A", after: "B" } },
+    }),
+  );
+  writeFileSync(join(dir, "card.html"), "Y");
+  await act(() =>
+    hook().recordEdit({ label: "Added Card", files: { "card.html": { before: "", after: "Y" } } }),
+  );
+
+  const undone = await act(() =>
+    hook().undo({ readFile, serialize: (_, task) => task(), claimedAfter: atKey }),
+  );
+  expect(undone).toMatchObject({ ok: true, label: "Undid: Moved Title" });
+  expect(file()).toBe("A");
+  expect(readFileSync(join(dir, "card.html"), "utf8")).toBe("Y");
+});
+
 it("a drag's edits under one key undo as one step, even before the drag goes idle", async () => {
   const { hook, file, save, readFile } = await studio();
   const writes: Array<[before: string, after: string]> = [

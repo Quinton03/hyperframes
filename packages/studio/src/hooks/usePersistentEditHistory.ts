@@ -55,7 +55,7 @@ function createOwnHistory() {
   const own = new Map<string, OwnFiles>();
   let next: Record<"undo" | "redo", NextStep | null> | null = null;
   let changes = 0;
-  let claimed = { count: 0, id: "" };
+  const claims: string[] = [];
   const remember = (id: string, files: OwnFiles) => {
     const known = own.get(id) ?? {};
     for (const [path, { before, after }] of Object.entries(files)) {
@@ -76,11 +76,9 @@ function createOwnHistory() {
       if (seen === changes) next = { undo: view.back, redo: view.forward };
     },
     changes: () => changes,
-    claimCount: () => claimed.count,
-    claimedAfter: (count: number) => (claimed.count > count ? claimed.id : null),
-    noteClaim: (id: string) => {
-      claimed = { count: claimed.count + 1, id };
-    },
+    claimCount: () => claims.length,
+    claimedAfter: (count: number) => claims[count] ?? null,
+    noteClaim: (id: string) => claims.push(id),
     stepped: (entry: { id: string; undoes?: string }) => {
       const undone = entry.undoes ? own.get(entry.undoes) : undefined;
       if (!undone) return;
