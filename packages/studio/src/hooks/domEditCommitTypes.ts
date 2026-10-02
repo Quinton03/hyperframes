@@ -56,7 +56,6 @@ export type PersistDomEditOperations = (
     skipRefresh?: boolean;
     deferRender?: boolean;
     importedFont?: ImportedFontAsset;
-    /** A document-level change on top of the patch (e.g. a sibling element), in the same undo entry. */
     prepareContent?: (html: string, sourceFile: string) => string;
     shouldSave?: () => boolean;
   },

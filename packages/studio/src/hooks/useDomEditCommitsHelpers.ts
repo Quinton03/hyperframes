@@ -198,7 +198,6 @@ export async function postPatchElement(
   return (await response.json()) as PatchElementResponse;
 }
 
-/** Writes `prepare`'s embellishment over the server's patch; returns what the file ends up holding. */
 export async function writePreparedContent(
   targetPath: string,
   patchedContent: string,
