@@ -1514,12 +1514,8 @@ describe("layout-audit.browser coordinate-frame findings", () => {
     expect(runAudit().filter((issue) => issue.code === "connector_detached")).toEqual([]);
   });
 
-  // The dash gate reads the whole pattern: only a stroke whose visible window sits inside one
-  // gap is hidden. Dashed patterns, a bare `0` (renders solid) and `none` all paint; a
-  // zero-length dash paints only as a round/square cap (`0 4` is dotted with round caps and
-  // invisible with the default butt cap). Path length is 100 (installConnectorGeometry);
-  // `50 100` at offset 40 leaves exactly 10% painted — the tolerance boundary — while offset 30
-  // shows 20% and fires.
+  // Path length is 100 (installConnectorGeometry) unless pathLength overrides it; `50 100` at 40 is
+  // exactly 10% painted, the tolerance boundary.
   it.each([
     { dasharray: "0 4", offset: "0", count: 0 },
     { dasharray: "0 4", offset: "0", linecap: "round", count: 1 },
@@ -1535,16 +1531,19 @@ describe("layout-audit.browser coordinate-frame findings", () => {
     { dasharray: "50 100", offset: "50", count: 0 },
     { dasharray: "50 100", offset: "40", count: 0 },
     { dasharray: "50 100", offset: "30", count: 1 },
+    { dasharray: "1000", offset: "-500", pathLength: "1000", count: 1 },
+    { dasharray: "1", offset: "1", pathLength: "1", count: 0 },
   ])(
-    "stroke-dasharray $dasharray, dashoffset $offset, linecap $linecap → $count connector_detached",
-    ({ dasharray, offset, linecap, count }) => {
+    "stroke-dasharray $dasharray, dashoffset $offset, linecap $linecap, pathLength $pathLength → $count",
+    ({ dasharray, offset, linecap = "butt", pathLength = "none", count }) => {
       document.body.innerHTML = foreignFrameDom;
+      if (pathLength !== "none") document.getElementById("detached")?.setAttribute("pathLength", pathLength);
       installGeometry(foreignFrameRects, {
         ...foreignFrameStyles,
         detached: {
           strokeDasharray: dasharray,
           strokeDashoffset: offset,
-          ...(linecap ? { strokeLinecap: linecap } : {}),
+          strokeLinecap: linecap,
         },
       });
       installConnectorGeometry({ e: 80, f: 227 });

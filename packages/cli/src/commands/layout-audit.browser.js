@@ -1516,7 +1516,9 @@
         if (path.closest(CONNECTOR_SKIP_CONTAINERS)) continue;
         if (!isConnectorPath(svg, path)) continue;
         const user = pathUserEndpoints(path);
-        if (!user || shaftDashHidden(path, user.total)) continue;
+        // Dash lengths are in pathLength units when the author sets one.
+        const authoredLength = Number.parseFloat(path.getAttribute("pathLength"));
+        if (!user || shaftDashHidden(path, authoredLength > 0 ? authoredLength : user.total)) continue;
         const rendered = pathScreenEndpoints(svg, path, user);
         if (!rendered) continue;
         const chord = Math.hypot(
