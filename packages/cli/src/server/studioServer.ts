@@ -8,7 +8,8 @@
 import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { realpath } from "@hyperframes/core";
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync, unlinkSync } from "node:fs";
+import { replaceFileAtomically } from "@hyperframes/core/atomic-file";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { resolve, join, basename, relative, sep } from "node:path";
@@ -402,7 +403,7 @@ function rewriteWrittenToHostViewport(projectDir: string, written: string[]): vo
         return match;
       },
     );
-    writeFileSync(absPath, content, "utf-8");
+    replaceFileAtomically(absPath, content, statSync(absPath).mode);
   }
 }
 
@@ -620,12 +621,17 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
             removeCancelledOutput();
             return;
           }
+          if (job.audioLoweredDb !== undefined) state.audioLoweredDb = job.audioLoweredDb;
           state.status = "complete";
           state.progress = 100;
           const metaPath = opts.outputPath.replace(/\.(mp4|webm|mov)$/, ".meta.json");
           writeFileSync(
             metaPath,
-            JSON.stringify({ status: "complete", durationMs: Date.now() - startTime }),
+            JSON.stringify({
+              status: "complete",
+              durationMs: Date.now() - startTime,
+              ...(job.audioLoweredDb !== undefined ? { audioLoweredDb: job.audioLoweredDb } : {}),
+            }),
           );
           // Refreshed HERE, not just at render start: a render can run for
           // minutes, and `hyperframes telemetry disable` during one must be

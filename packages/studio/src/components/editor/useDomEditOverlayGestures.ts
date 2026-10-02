@@ -9,21 +9,19 @@ import { type DomEditSelection } from "./domEditing";
 import {
   applyManualOffsetDragCommit,
   applyManualOffsetDragDraft,
-  applyRotationDraftViaGsap,
   endManualOffsetDragMembers,
   restoreManualOffsetDragMembers,
+  manualOffsetMoveRevert,
 } from "./manualOffsetDrag";
+import { applyRotationDraft, restoreRotationDraft } from "./rotationDraft";
 import {
   applyStudioBoxSize,
   applyStudioBoxSizeDraft,
-  applyStudioRotation,
-  applyStudioRotationDraft,
   endStudioManualEditGesture,
   isStudioManualEditGestureCurrent,
   readStudioBoxSize,
   restoreStudioBoxSize,
   restoreStudioPathOffset,
-  restoreStudioRotation,
 } from "./manualEdits";
 import {
   type GroupOverlayItem,
@@ -40,6 +38,7 @@ import {
   ROTATED_SNAP_BYPASS_DEGREES,
   hasDomEditRotationChanged,
   lockDragToDominantAxis,
+  movesGesture,
   resolveDomEditRotationGesture,
 } from "./domEditOverlayGestures";
 import { resolveCenterResizeSize } from "./domEditResizeLocal";
@@ -60,6 +59,7 @@ import { logResize, logResizeMove, logResizeSettle } from "../../utils/resizeDeb
 import { logDrag, logDragSettle, readDragPositions } from "../../utils/dragDebug";
 import { createGroupDragMover } from "./groupDragMove";
 import { DomEditSaveQueueOpenError } from "../../utils/domEditSaveQueue";
+import { beginStudioPendingEdit } from "../../utils/studioPendingEdits";
 
 function isTap(g: { startX: number; startY: number; travelled?: boolean }, e: React.PointerEvent) {
   return (
@@ -132,6 +132,8 @@ export function createDomEditOverlayGestureHandlers(opts: UseDomEditOverlayGestu
     if (!blockedMove && !g && !groupG) {
       opts.onCanvasPointerMoveRef.current(e, { preferClipAncestor: false });
     }
+    const held = g ?? groupG;
+    if (held && !movesGesture(held, e)) return;
 
     if (blockedMove) {
       const dx = e.clientX - blockedMove.startX;
@@ -166,9 +168,7 @@ export function createDomEditOverlayGestureHandlers(opts: UseDomEditOverlayGestu
         actualAngle: g.actualRotation,
         snap: e.shiftKey,
       });
-      if (!applyRotationDraftViaGsap(sel.element, rotated.angle)) {
-        applyStudioRotationDraft(sel.element, rotated);
-      }
+      applyRotationDraft(sel.element, rotated.angle, g.plainRotation);
       return;
     }
 
@@ -336,6 +336,7 @@ export function createDomEditOverlayGestureHandlers(opts: UseDomEditOverlayGestu
       const updates = groupG.members.map((member) => ({
         selection: member.selection,
         next: applyManualOffsetDragCommit(member, dx, dy),
+        plainTranslate: member.plainTranslate,
       }));
       logDrag("drop", {
         pointer: `${Math.round(rawDx)},${Math.round(rawDy)}`,
@@ -348,7 +349,10 @@ export function createDomEditOverlayGestureHandlers(opts: UseDomEditOverlayGestu
         ),
         at: readDragPositions(groupG.members),
       });
-      void Promise.resolve(opts.onGroupPathOffsetCommitRef.current(updates))
+      const groupEdit = beginStudioPendingEdit(manualOffsetMoveRevert(groupG.members));
+      const groupSaved = Promise.resolve(
+        groupEdit.adopt(() => opts.onGroupPathOffsetCommitRef.current(updates)),
+      )
         .catch(() => {
           for (const member of groupG.members) {
             if (
@@ -367,6 +371,7 @@ export function createDomEditOverlayGestureHandlers(opts: UseDomEditOverlayGestu
           // so this is where a snap-back would show.
           logDragSettle("settle", groupG.members);
         });
+      groupEdit.settle(groupSaved);
       return;
     }
 
@@ -421,24 +426,22 @@ export function createDomEditOverlayGestureHandlers(opts: UseDomEditOverlayGestu
         actualAngle: g.actualRotation,
         snap: e.shiftKey,
       });
-      const restoreRotation = () => {
-        // Single source of truth: snap the GSAP rotation back to the gesture's base
-        // angle; fall back to the legacy CSS-var restore when gsap is unavailable.
-        if (!applyRotationDraftViaGsap(sel.element, g.actualRotation)) {
-          restoreStudioRotation(sel.element, g.initialRotation);
-        }
-      };
+      const restoreRotation = () =>
+        restoreRotationDraft(
+          sel.element,
+          g.actualRotation,
+          g.initialRotation,
+          g.plainRotation !== null,
+        );
       if (!hasDomEditRotationChanged(g.actualRotation, finalRotation.angle)) {
         restoreRotation();
         endStudioManualEditGesture(sel.element, g.manualEditDragToken);
         return;
       }
-      // Keep the preview at the final angle through the GSAP channel (NOT the CSS var)
-      // while the commit lands a `tl.set`/keyframe rotation on the timeline.
-      if (!applyRotationDraftViaGsap(sel.element, finalRotation.angle)) {
-        applyStudioRotation(sel.element, finalRotation);
-      }
-      void Promise.resolve(opts.onRotationCommitRef.current(sel, finalRotation))
+      // Hold the final angle while the commit lands.
+      applyRotationDraft(sel.element, finalRotation.angle, g.plainRotation);
+      const commit = g.plainRotation ? { ...finalRotation, plain: g.plainRotation } : finalRotation;
+      void Promise.resolve(opts.onRotationCommitRef.current(sel, commit))
         .catch((error) => {
           logGestureCommitFailure("rotate commit failed", error);
           if (
@@ -475,8 +478,15 @@ export function createDomEditOverlayGestureHandlers(opts: UseDomEditOverlayGestu
         box.style.left = `${nextBoxLeft}px`;
         box.style.top = `${nextBoxTop}px`;
       }
-      void Promise.resolve(
-        opts.onPathOffsetCommitRef.current(sel, finalOffset, { altKey: e.altKey }),
+      const member = g.pathOffsetMember;
+      const edit = beginStudioPendingEdit(manualOffsetMoveRevert([member]));
+      const saved = Promise.resolve(
+        edit.adopt(() =>
+          opts.onPathOffsetCommitRef.current(sel, finalOffset, {
+            altKey: e.altKey,
+            plainTranslate: member.plainTranslate,
+          }),
+        ),
       )
         .catch(() => {
           if (
@@ -488,6 +498,7 @@ export function createDomEditOverlayGestureHandlers(opts: UseDomEditOverlayGestu
         .finally(() => {
           if (g.pathOffsetMember) endManualOffsetDragMembers([g.pathOffsetMember]);
         });
+      edit.settle(saved);
     } else {
       opts.suppressNextBoxClickRef.current = true;
       const finalSize = readStudioBoxSize(sel.element);
@@ -555,11 +566,12 @@ export function createDomEditOverlayGestureHandlers(opts: UseDomEditOverlayGestu
       restoreGestureOverlayRect(g);
     }
     if (g?.mode === "rotation" && sel) {
-      applyRotationDraftViaGsap(
+      restoreRotationDraft(
         sel.element,
-        g.actualRotation - (Number.parseFloat(g.initialRotation.studioRotation) || 0),
+        g.actualRotation,
+        g.initialRotation,
+        g.plainRotation !== null,
       );
-      restoreStudioRotation(sel.element, g.initialRotation);
       endStudioManualEditGesture(sel.element, g.manualEditDragToken);
     }
     opts.blockedMoveRef.current = null;

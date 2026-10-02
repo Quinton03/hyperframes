@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import { useContext, type MouseEvent } from "react";
 import { Camera } from "../icons/SystemIcons";
 import { useStudioShellContext } from "../contexts/StudioContext";
 import { usePanelLayoutContext } from "../contexts/PanelLayoutContext";
@@ -7,6 +7,7 @@ import { Button, buttonBase, buttonSizes, buttonVariants, cn, Tooltip } from "./
 import { Dock } from "./dock/Dock";
 import { InspectorIcon } from "./icons/InspectorIcon";
 import { HyperframesLogo } from "./ui/HyperframesLogo";
+import { ShowThemeToggle, ThemeToggle } from "./ThemeToggle";
 
 export interface StudioHeaderProps {
   captureFrameHref: string;
@@ -44,6 +45,7 @@ export function StudioHeader({
   inspectorPanelActive,
   onExport,
 }: StudioHeaderProps) {
+  const showThemeToggle = useContext(ShowThemeToggle);
   const { projectId, renderQueue } = useStudioShellContext();
   const { rightCollapsed, setRightCollapsed, setRightPanelTab } = usePanelLayoutContext();
   const isRendering = renderQueue.isRendering;
@@ -126,7 +128,8 @@ export function StudioHeader({
               aria-pressed={inspectorButtonActive}
               className={cn(
                 "h-full rounded-none",
-                inspectorButtonActive && "bg-hover text-accent enabled:hover:text-accent",
+                inspectorButtonActive &&
+                  "bg-on text-accent-ink enabled:hover:bg-on-hover enabled:hover:text-accent-ink",
               )}
               icon={<InspectorIcon size={16} />}
               onClick={() => {
@@ -146,6 +149,7 @@ export function StudioHeader({
             </Button>
           </Tooltip>
         </div>
+        {showThemeToggle && <ThemeToggle />}
         <Dock.WindowMenu />
         <Tooltip
           label={

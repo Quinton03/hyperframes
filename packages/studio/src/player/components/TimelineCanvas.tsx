@@ -83,7 +83,7 @@ export const TimelineCanvas = memo(function TimelineCanvas() {
           data-active={ghostLaneActive || undefined}
           className={`pointer-events-none absolute flex items-center justify-center rounded-lg border border-dashed text-[11px] transition-colors duration-150 ${
             ghostLaneActive
-              ? "border-studio-accent/60 bg-studio-accent/6 text-studio-accent"
+              ? "border-studio-accent/60 bg-studio-accent/6 text-accent-ink"
               : "border-neutral-700/50 text-neutral-500"
           }`}
           style={{

@@ -24,7 +24,7 @@ import {
   type ParsedGsapAcornForWrite,
   type TweenCallInfo,
 } from "./gsapParserAcorn.js";
-import { classifyPropertyGroup } from "./gsapConstants.js";
+import { classifyPropertyGroup, isXYPositionWrite } from "./gsapConstants.js";
 import type { PropertyGroupName } from "./gsapConstants.js";
 import {
   findObjectArrayKeyframeIndex,
@@ -32,6 +32,9 @@ import {
 } from "./gsapObjectArrayTiming.js";
 import type { SplitAnimationsOptions, SplitAnimationsResult } from "./gsapSerialize.js";
 import * as acornWalk from "acorn-walk";
+import { clipQueryRoot, clipTweenMatcher, hasExplicitTime } from "./clipTweens.js";
+
+export { clipQueryRoot, clipTweenMatcher, hasExplicitTime };
 
 // acorn ESTree nodes are structurally untyped here; mirror gsapParserAcorn.ts /
 // gsapInline.ts rather than re-deriving the full ESTree union for every access.
@@ -445,7 +448,7 @@ function overwritePosition(ms: MagicString, call: TweenCallInfo, position: numbe
 }
 
 /**
- * Shift every tween targeting `targetSelector` by `delta` seconds (clamped ≥0),
+ * Shift every tween the clip at `targetSelector` carries by `delta` seconds (clamped ≥0),
  * rewriting each call's position argument. Mirrors recast's shiftPositionsInScript
  * (used by timeline clip-move to keep GSAP positions in sync with the clip start).
  */
@@ -453,14 +456,15 @@ export function shiftPositionsInScript(
   script: string,
   targetSelector: string,
   delta: number,
+  root?: ParentNode,
 ): string {
   const parsed = parseGsapScriptAcornForWrite(script);
   if (!parsed) return script;
+  const carries = clipTweenMatcher(targetSelector, root);
   const ms = new MagicString(script);
   let changed = false;
   for (const entry of parsed.located) {
-    if (entry.animation.targetSelector !== targetSelector) continue;
-    if (typeof entry.animation.position !== "number") continue;
+    if (!carries(entry.animation) || !hasExplicitTime(entry.animation)) continue;
     overwritePosition(ms, entry.call, shiftedPosition(entry.animation.position, delta));
     changed = true;
   }
@@ -564,7 +568,7 @@ function isLoopOrForEach(node: Node): boolean {
 }
 
 /**
- * Linearly remap every tween targeting `targetSelector` from the old clip
+ * Linearly remap every tween the clip at `targetSelector` carries from the old clip
  * [oldStart, oldDuration] onto the new [newStart, newDuration] (position and,
  * when present, duration scaled by the duration ratio). Mirrors recast's
  * scalePositionsInScript (used by timeline clip-resize).
@@ -576,21 +580,24 @@ export function scalePositionsInScript(
   oldDuration: number,
   newStart: number,
   newDuration: number,
+  root?: ParentNode,
 ): string {
   if (oldDuration <= 0 || newDuration <= 0) return script;
   const ratio = newDuration / oldDuration;
   const parsed = parseGsapScriptAcornForWrite(script);
   if (!parsed) return script;
+  const carries = clipTweenMatcher(targetSelector, root);
   const ms = new MagicString(script);
   let changed = false;
   for (const entry of parsed.located) {
-    if (entry.animation.targetSelector !== targetSelector) continue;
-    if (typeof entry.animation.position !== "number") continue;
-    const newPos = Math.max(
-      0,
-      Math.round((newStart + (entry.animation.position - oldStart) * ratio) * 1000) / 1000,
-    );
-    overwritePosition(ms, entry.call, newPos);
+    if (!carries(entry.animation) || typeof entry.animation.position !== "number") continue;
+    if (hasExplicitTime(entry.animation)) {
+      const newPos = Math.max(
+        0,
+        Math.round((newStart + (entry.animation.position - oldStart) * ratio) * 1000) / 1000,
+      );
+      overwritePosition(ms, entry.call, newPos);
+    }
     if (typeof entry.animation.duration === "number" && entry.animation.duration > 0) {
       const newDur = Math.max(0.001, Math.round(entry.animation.duration * ratio * 1000) / 1000);
       upsertProp(ms, entry.call.varsArg, "duration", newDur);
@@ -679,7 +686,7 @@ export function removeAnimationFromScript(script: string, animationId: string): 
  *
  * Keeps `keepId` (the write the commit just edited); falls back to the LAST
  * position write in source order (the runtime-effective one) if `keepId` is stale.
- * Removes every OTHER pure-position write (`propertyGroup === "position"`, which
+ * Removes every OTHER x/y position write (`isXYPositionWrite`, which
  * covers tl.to/from/fromTo flat-or-keyframed, tl.set, and standalone gsap.set,
  * including degenerate duration:0 tweens). Non-position writes for the same
  * selector (rotation / opacity / size / mixed) are left untouched.
@@ -692,7 +699,7 @@ export function dedupePositionWritesInScript(
   const parsed = parseGsapScriptAcornForWrite(script);
   if (!parsed) return script;
   const posWrites = parsed.located.filter(
-    (l) => l.animation.targetSelector === selector && l.animation.propertyGroup === "position",
+    (l) => l.animation.targetSelector === selector && isXYPositionWrite(l.animation),
   );
   if (posWrites.length <= 1) return script;
   const keeper = posWrites.find((l) => l.id === keepId) ?? posWrites[posWrites.length - 1]!;

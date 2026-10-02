@@ -9,6 +9,7 @@
  * easing, or seek position.
  */
 import type { GsapAnimation, PropertyGroupName } from "@hyperframes/core/gsap-parser";
+import { isXYPositionWrite } from "@hyperframes/parsers/gsap-constants";
 import type { DomEditSelection } from "../components/editor/domEditingTypes";
 import { usePlayerStore } from "../player/store/playerStore";
 
@@ -27,6 +28,7 @@ import { commitWholePropertyOffset } from "./gsapWholePropertyOffsetCommit";
 import { isGestureTransactionCommit } from "./gestureTransaction";
 import { tweenReach, tweensForThisElement } from "./gsapTweenReach";
 import { resolveTweenDuration } from "../utils/globalTimeCompiler";
+import { roundTo3 } from "../utils/rounding";
 import type { GsapDragCommitCallbacks } from "./gsapDragCommit";
 import { isInstantHold, selectorFromSelection, writeTargetSelector } from "./gsapShared";
 import {
@@ -34,7 +36,11 @@ import {
   pickClosestToPlayhead,
   readGsapPositionFromIframe,
 } from "./gsapPositionDetection";
-import { hasNonHoldTweenForElement } from "./gsapRuntimeKeyframes";
+import {
+  hasNonHoldTweenForElement,
+  POSITION_CHANNELS,
+  ROTATION_CHANNELS,
+} from "./gsapRuntimeKeyframes";
 import { getAnimationsForElement } from "./gsapElementMatch";
 import {
   animationWritesAnyProperty,
@@ -42,25 +48,7 @@ import {
   type GsapEditOutcome,
 } from "./gsapEditOutcome";
 
-// Position channels — used to scope the "has a live position tween?" check so a
-// sibling rotation/scale animation never forces a static position hold into the
-// keyframe branch (which corrupts it into a frozen duration-0 keyframed tween).
-export const POSITION_CHANNELS: string[] = [
-  "x",
-  "y",
-  "xPercent",
-  "yPercent",
-  "left",
-  "top",
-  // GSAP normalizes translateX/Y to x/y at play time, but readTween reads the
-  // AUTHORED shape — include them so a hand-authored translateX/Y position tween
-  // still counts as a live position tween.
-  "translateX",
-  "translateY",
-];
 const POSITION_CHANNEL_SET = new Set<string>(POSITION_CHANNELS);
-
-const ROTATION_CHANNELS: string[] = ["rotation", "rotationX", "rotationY", "rotationZ"];
 const ROTATION_CHANNEL_SET = new Set<string>(ROTATION_CHANNELS);
 
 // ── Property-group tween resolution ───────────────────────────────────────
@@ -258,8 +246,7 @@ export async function tryGsapDragIntercept(
   // the live keyframed/real tween if present (else any), strip the rest, so the
   // commit below updates ONE write instead of fighting duplicates.
   let workingAnimations = animations;
-  const isPosWrite = (a: GsapAnimation) =>
-    a.targetSelector === selector && a.propertyGroup === "position";
+  const isPosWrite = (a: GsapAnimation) => a.targetSelector === selector && isXYPositionWrite(a);
   if (animations.filter(isPosWrite).length > 1 && fetchFallbackAnimations) {
     const fresh = await fetchFallbackAnimations();
     const dupes = fresh.filter(isPosWrite);
@@ -344,7 +331,9 @@ export async function tryGsapDragIntercept(
     const fresh = await fetchFallbackAnimations();
     const freshMatch = fresh.find(
       (a) =>
-        a.targetSelector === posAnim!.targetSelector && a.propertyGroup === posAnim!.propertyGroup,
+        a.targetSelector === posAnim!.targetSelector &&
+        a.propertyGroup === posAnim!.propertyGroup &&
+        isXYPositionWrite(a) === isXYPositionWrite(posAnim!),
     );
     if (freshMatch && freshMatch.id !== posAnim.id) {
       posAnim = freshMatch;
@@ -446,7 +435,7 @@ export async function tryGsapRotationIntercept(
   // `angle` is the ABSOLUTE target rotation resolved by the gesture (gsap base +
   // pointer sweep) or the inspector — so it IS the new rotation. No base re-add: the
   // gesture's live preview already gsap.set this value (single source of truth).
-  const newRotation = Math.round(angle);
+  const newRotation = roundTo3(angle);
   // STATIC case (single source of truth = GSAP timeline): no rotation tween, so the
   // angle belongs in a `tl.set("#el",{rotation})`, not a keyframe conversion —
   // mirroring the static position set. Idempotent: re-rotate updates an existing

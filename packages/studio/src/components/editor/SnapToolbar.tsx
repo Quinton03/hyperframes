@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { MagnetStraight, GridFour, Path, Ruler, FrameCorners } from "@phosphor-icons/react";
 import { usePlayerStore } from "../../player/store/playerStore";
 import { usePreviewOverlayContext } from "./PreviewOverlayProvider";
+import { ownsPlainKeys } from "../../utils/typingTarget";
 
 // fallow-ignore-next-line complexity
 export const SnapToolbar = memo(function SnapToolbar() {
@@ -35,10 +36,8 @@ export const SnapToolbar = memo(function SnapToolbar() {
     // fallow-ignore-next-line complexity
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      const t = e.target;
-      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) return;
-      if (t instanceof HTMLElement && t.isContentEditable) return;
-      if (t instanceof HTMLIFrameElement) return;
+      if (ownsPlainKeys(e.target)) return;
+      if (e.target instanceof HTMLIFrameElement) return;
       if (e.key === "s" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         updatePrefs({ snapEnabled: !prefs.snapEnabled });
@@ -73,7 +72,7 @@ export const SnapToolbar = memo(function SnapToolbar() {
           type="button"
           className={`rounded-md p-1.5 transition-colors active:scale-[0.95] ${
             motionPathArmed
-              ? "bg-studio-accent/20 text-studio-accent"
+              ? "bg-studio-accent/20 text-accent-ink"
               : "bg-black/40 text-white/60 hover:bg-black/60 hover:text-white/80"
           }`}
           onClick={() => setMotionPathArmed(!motionPathArmed)}
@@ -99,7 +98,7 @@ export const SnapToolbar = memo(function SnapToolbar() {
             type="button"
             className={`rounded-md p-1.5 transition-colors active:scale-[0.95] ${
               visible
-                ? "bg-studio-accent/20 text-studio-accent"
+                ? "bg-studio-accent/20 text-accent-ink"
                 : "bg-black/40 text-white/60 hover:bg-black/60 hover:text-white/80"
             }`}
             onClick={toggle}
@@ -115,7 +114,7 @@ export const SnapToolbar = memo(function SnapToolbar() {
         type="button"
         className={`rounded-md p-1.5 transition-colors active:scale-[0.95] ${
           prefs.snapEnabled
-            ? "bg-studio-accent/20 text-studio-accent"
+            ? "bg-studio-accent/20 text-accent-ink"
             : "bg-black/40 text-white/60 hover:bg-black/60 hover:text-white/80"
         }`}
         onClick={toggleSnap}
@@ -131,7 +130,7 @@ export const SnapToolbar = memo(function SnapToolbar() {
           type="button"
           className={`rounded-md p-1.5 transition-colors active:scale-[0.95] ${
             prefs.gridVisible
-              ? "bg-studio-accent/20 text-studio-accent"
+              ? "bg-studio-accent/20 text-accent-ink"
               : "bg-black/40 text-white/60 hover:bg-black/60 hover:text-white/80"
           }`}
           onClick={toggleGrid}
@@ -164,7 +163,7 @@ export const SnapToolbar = memo(function SnapToolbar() {
         {gridPopoverOpen && (
           <div
             ref={popoverRef}
-            className="absolute right-0 top-full mt-1 rounded-lg bg-neutral-800 border border-neutral-700 p-3 shadow-xl min-w-[180px]"
+            className="absolute right-0 top-full mt-1 rounded-lg bg-raised border border-border p-3 shadow-xl min-w-[180px]"
           >
             <label className="flex items-center justify-between text-xs text-white/80 mb-2">
               <span>Grid spacing</span>

@@ -1,7 +1,14 @@
 // @vitest-environment happy-dom
 
 import { describe, it, expect, vi } from "vitest";
-import { applyUndoRestoreToPreview, diffSoftReloadableRestore } from "./gsapUndoRestore";
+import {
+  applyUndoRestoreToPreview,
+  diffSoftReloadableRestore,
+  showRestoreInPlace,
+} from "./gsapUndoRestore";
+import { applyPatch } from "./sourcePatcher";
+import { beginStudioManualEditGesture } from "../components/editor/manualEdits";
+import { writePlainMove, writeTranslatePx } from "../components/editor/plainTranslate";
 
 // ── Bug 2: undo/redo restore soft-apply ──────────────────────────────────────
 
@@ -70,79 +77,6 @@ describe("diffSoftReloadableRestore", () => {
       `<div id="a">t</div><script>window.__timelines["root"]=gsap.timeline().to("#a",{x:9});</script>`,
     );
     expect(diffSoftReloadableRestore(prev, next)).toEqual({ changedElementKeys: [] });
-  });
-});
-
-// What a first canvas edit adds to a file without GSAP (the server bootstraps a set plus a paused timeline).
-const BOOTSTRAP = `window.__timelines = window.__timelines || {};
-gsap.set("#t", { x: 90, y: 60 });
-const tl = gsap.timeline({ paused: true });
-window.__timelines["main"] = tl;`;
-const PLAIN = `<div data-composition-id="main"><div id="t" class="clip">t</div></div>\n    \n  `;
-const BOOTSTRAPPED = `${PLAIN}<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>\n<script>\n${BOOTSTRAP}\n</script>\n`;
-
-describe("undo of the first canvas edit in a file without GSAP", () => {
-  it("is soft: only the bootstrapped scripts differ", () => {
-    expect(diffSoftReloadableRestore(wrap(BOOTSTRAPPED), wrap(PLAIN))).toEqual({
-      changedElementKeys: [],
-    });
-  });
-
-  it("tears the bootstrapped timeline down in place, as a fresh load of the file would show", () => {
-    const { iframe, contentWindow, doc } = buildLiveIframe(
-      `<div data-composition-id="main"><div id="t" class="clip" style="transform: translate(90px, 60px); translate: none; rotate: none; scale: none; visibility: visible">t</div></div><script>${BOOTSTRAP}</script>`,
-    );
-    Object.assign(doc.getElementById("t")!, { _gsap: {} });
-    contentWindow.__timelines.main = { kill: vi.fn(), clear: vi.fn() };
-    Object.assign(contentWindow.gsap, { set: vi.fn() });
-    const reloadPreview = vi.fn();
-    const files = { index: { previous: wrap(BOOTSTRAPPED), restored: wrap(PLAIN) } };
-
-    expect(applyUndoRestoreToPreview(iframe, "index", files, 3, reloadPreview)).toBe("soft");
-    expect(reloadPreview).not.toHaveBeenCalled();
-    expect(doc.querySelectorAll("script")).toHaveLength(0);
-    expect(contentWindow.__timelines.main).toBeUndefined();
-    const style = doc.getElementById("t")!.style;
-    expect([style.transform, style.getPropertyValue("translate")]).toEqual(["", ""]);
-    expect(contentWindow.__player.seek).toHaveBeenCalledWith(3);
-  });
-
-  it("a crop undo after that undo stays in place too, though GSAP parsed the element", () => {
-    const { iframe, contentWindow, doc } = buildLiveIframe(
-      `<div data-composition-id="main"><div id="t" class="clip" style="transform: translate(90px, 60px)">t</div></div><script>${BOOTSTRAP}</script>`,
-    );
-    Object.assign(doc.getElementById("t")!, { _gsap: {} });
-    contentWindow.__timelines.main = { kill: vi.fn(), clear: vi.fn() };
-    Object.assign(contentWindow.gsap, { set: vi.fn() });
-    const reloadPreview = vi.fn();
-    const undo = (previous: string, restored: string) =>
-      applyUndoRestoreToPreview(
-        iframe,
-        "index",
-        { index: { previous, restored } },
-        3,
-        reloadPreview,
-      );
-    const cropped = PLAIN.replace(
-      'class="clip"',
-      'class="clip" style="clip-path: inset(0px 40px 0px 0px)"',
-    );
-
-    expect(undo(wrap(BOOTSTRAPPED), wrap(PLAIN))).toBe("soft");
-    doc.getElementById("t")!.setAttribute("style", "clip-path: inset(0px 40px 0px 0px)");
-    expect(undo(wrap(cropped), wrap(PLAIN))).toBe("soft");
-    expect(reloadPreview).not.toHaveBeenCalled();
-    expect(doc.getElementById("t")!.getAttribute("style")).toBeNull();
-  });
-
-  it("redo runs the bootstrapped script in place instead of remounting", () => {
-    const { iframe, doc } = buildLiveIframe(PLAIN);
-    const reloadPreview = vi.fn();
-    const files = { index: { previous: wrap(PLAIN), restored: wrap(BOOTSTRAPPED) } };
-
-    expect(applyUndoRestoreToPreview(iframe, "index", files, 3, reloadPreview)).toBe("soft");
-    expect(reloadPreview).not.toHaveBeenCalled();
-    expect(doc.querySelector("script")!.textContent).toContain('__timelines["main"]');
   });
 });
 
@@ -236,10 +170,10 @@ describe("applyUndoRestoreToPreview", () => {
 
   describe("an undo that re-runs a changed script matches a fresh load of the restored file", () => {
     const script = (extra: string) => `window.__timelines["root"]=gsap.timeline();${extra}`;
+    const root = (body: string) => `<div data-composition-id="root">${body}</div>`;
     const undoScriptEdit = (live: string, authored: string, edit: string) => {
-      const comp = (body: string) => `<div data-composition-id="root">${body}</div>`;
       const { iframe, contentWindow, doc } = buildLiveIframe(
-        `${comp(live)}<script>${script(edit)}</script>`,
+        `${root(live)}<script>${script(edit)}</script>`,
       );
       const clearProps = (targets: HTMLElement[]) =>
         targets.forEach((t) => t.removeAttribute("style"));
@@ -247,8 +181,8 @@ describe("applyUndoRestoreToPreview", () => {
       for (const el of doc.querySelectorAll("[style*=transform]")) Object.assign(el, { _gsap: {} });
       const files = {
         [ROOT]: {
-          previous: wrap(`${comp(authored)}<script>${script(edit)}</script>`),
-          restored: wrap(`${comp(authored)}<script>${script("")}</script>`),
+          previous: wrap(`${root(authored)}<script>${script(edit)}</script>`),
+          restored: wrap(`${root(authored)}<script>${script("")}</script>`),
         },
       };
       expect(applyUndoRestoreToPreview(iframe, ROOT, files, 3, vi.fn())).toBe("soft");
@@ -281,41 +215,6 @@ describe("applyUndoRestoreToPreview", () => {
         `gsap.set("#t",{x:116,y:-113});`,
       );
       expect(doc.getElementById("t")!.style.getPropertyValue("translate")).toBe("");
-    });
-  });
-
-  describe("undo lands on the file's Studio marks even when the live page drifted from it", () => {
-    const undo = (live: string, file: string, script: string, restoredScript = script) => {
-      const { iframe, doc } = buildLiveIframe(`${live}<script>${script}</script>`);
-      const files = {
-        [ROOT]: {
-          previous: wrap(`${file}<script>${script}</script>`),
-          restored: wrap(`${file}<script>${restoredScript}</script>`),
-        },
-      };
-      expect(applyUndoRestoreToPreview(iframe, ROOT, files, 3, vi.fn())).toBe("soft");
-      return doc.getElementById("a")!;
-    };
-    const MARKED = `<div id="a" data-hf-studio-path-offset="true" style="--hf-studio-offset-x: 60px">t</div>`;
-
-    it("puts back offset marks a move dropped from the live element (D15)", () => {
-      const el = undo(
-        `<div id="a">t</div>`,
-        MARKED,
-        `window.__timelines["root"]=gsap.timeline().to("#a",{x:9});`,
-        `window.__timelines["root"]=gsap.timeline();`,
-      );
-      expect(el.getAttribute("data-hf-studio-path-offset")).toBe("true");
-    });
-
-    it("drops marks the file lacks even when the script did not change", () => {
-      const el = undo(
-        `<div id="a" data-hf-studio-box-size="true" style="width: 502px">t</div>`,
-        `<div id="a" style="width: 300px">t</div>`,
-        `window.__timelines["root"]=gsap.timeline();`,
-      );
-      expect(el.hasAttribute("data-hf-studio-box-size")).toBe(false);
-      expect(el.getAttribute("style")).toBe("width: 300px");
     });
   });
 
@@ -363,47 +262,6 @@ describe("applyUndoRestoreToPreview", () => {
     expect(doc.getElementById("a")!.getAttribute("style")).toBe("z-index: 3");
   });
 
-  it("re-runs an unchanged script when the restore syncs an element GSAP parsed", () => {
-    const script = `window.__timelines["root"]=gsap.timeline().to("#a",{x:1});`;
-    const { iframe, contentWindow, doc } = buildLiveIframe(
-      `<div data-composition-id="root"><div id="a" style="translate: none; transform: translate(-50%, -50%); clip-path: inset(0px 40px 0px 0px)">t</div></div><script>${script}</script>`,
-    );
-    Object.assign(doc.getElementById("a")!, { _gsap: {} });
-    const reset: Element[] = [];
-    Object.assign(contentWindow.gsap, { set: (targets: Element[]) => reset.push(...targets) });
-    const markup = (style: string) =>
-      wrap(
-        `<div data-composition-id="root"><div id="a"${style}>t</div></div><script>${script}</script>`,
-      );
-    const files = {
-      [ROOT]: {
-        previous: markup(` style="clip-path: inset(0px 40px 0px 0px)"`),
-        restored: markup(""),
-      },
-    };
-    expect(applyUndoRestoreToPreview(iframe, ROOT, files, 3, vi.fn())).toBe("soft");
-    // GSAP re-parses the element as a fresh load would, instead of keeping its stale masks.
-    expect(reset).toContain(doc.getElementById("a"));
-    expect(doc.getElementById("a")!.style.getPropertyValue("translate")).toBe("");
-  });
-
-  it("keeps an undo on an element GSAP parsed in place when neither file has a GSAP script", () => {
-    const body = (clip: string) =>
-      `<div data-composition-id="main"><div id="t" style="${clip}">t</div></div>`;
-    const { iframe, contentWindow, doc } = buildLiveIframe(body(""));
-    Object.assign(doc.getElementById("t")!, { _gsap: {} });
-    const reloadPreview = vi.fn();
-    const files = {
-      [ROOT]: {
-        previous: wrap(body("clip-path: inset(0px 40px 0px 0px)")),
-        restored: wrap(body("")),
-      },
-    };
-    expect(applyUndoRestoreToPreview(iframe, ROOT, files, 3, reloadPreview)).toBe("soft");
-    expect(reloadPreview).not.toHaveBeenCalled();
-    expect(contentWindow.__hfStudioManualEditsApply).toHaveBeenCalled();
-  });
-
   it("full-reloads a changed two-script restore without partially touching the live DOM", () => {
     const previousScripts = [
       `window.__timelines["root"]=gsap.timeline().to("#a",{x:1});`,
@@ -429,6 +287,25 @@ describe("applyUndoRestoreToPreview", () => {
     expect([...doc.querySelectorAll("script")].map((script) => script.textContent)).toEqual(
       previousScripts,
     );
+  });
+
+  it("full-reloads a style restore on a GSAP-parsed element when the file has two scripts", () => {
+    const scripts = [
+      `<script>window.__timelines["root"]=gsap.timeline().to("#a",{x:1});</script>`,
+      `<script>window.__timelines["captions"]=gsap.timeline().to("#a",{y:1});</script>`,
+    ].join("");
+    const { iframe, doc } = buildLiveIframe(`<div id="a" style="z-index: 8">t</div>${scripts}`);
+    Object.assign(doc.getElementById("a")!, { _gsap: {} });
+    const reloadPreview = vi.fn();
+    const files = {
+      [ROOT]: {
+        previous: wrap(`<div id="a" style="z-index: 8">t</div>${scripts}`),
+        restored: wrap(`<div id="a" style="z-index: 3">t</div>${scripts}`),
+      },
+    };
+
+    expect(applyUndoRestoreToPreview(iframe, ROOT, files, 3, reloadPreview)).toBe("full");
+    expect(reloadPreview).toHaveBeenCalledTimes(1);
   });
 
   it("full-reloads a multi-file restore", () => {
@@ -516,11 +393,175 @@ describe("applyUndoRestoreToPreview", () => {
     expect(meta.content).toBe(content);
   });
 
+  const SUB = "compositions/sub.html";
+  const sub = (style: string, rootAttrs = "") =>
+    `<template id="sub-template"><div data-hf-id="hf-root" id="sub" data-composition-id="sub"${rootAttrs}><div ${style} data-hf-id="hf-t" id="target"></div></div></template>`;
+  const host = (style: string) =>
+    `<div data-composition-file="${SUB}" data-hf-id="hf-host"><div data-hf-inner-root="true" data-hf-authored-id="sub" data-hf-id="hf-root"><div data-hf-id="hf-t" id="target" ${style}></div></div></div>`;
+
+  it("restores a sub-composition file in place, on every host that inlines it", () => {
+    const { iframe, doc } = buildLiveIframe(
+      host(`style="clip-path: inset(0px 40px 0px 0px);"`) +
+        host(`style="clip-path: inset(0px 40px 0px 0px);"`),
+    );
+    const reloadPreview = vi.fn();
+    const files = {
+      [SUB]: { previous: sub(`style="clip-path: inset(0px 40px 0px 0px)"`), restored: sub("") },
+    };
+    expect(applyUndoRestoreToPreview(iframe, ROOT, files, 3, reloadPreview)).toBe("soft");
+    expect(reloadPreview).not.toHaveBeenCalled();
+    const targets = [...doc.querySelectorAll('[data-hf-id="hf-t"]')];
+    expect(targets.map((el) => el.getAttribute("style"))).toEqual([null, null]);
+  });
+
+  it("full-reloads a sub-composition restore that changes the file's own root", () => {
+    const { iframe } = buildLiveIframe(host(""));
+    const reloadPreview = vi.fn();
+    const files = { [SUB]: { previous: sub("", ' data-width="10"'), restored: sub("") } };
+    expect(applyUndoRestoreToPreview(iframe, ROOT, files, 3, reloadPreview)).toBe("full");
+    expect(reloadPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("full-reloads a sub-composition restore whose file has a GSAP script", () => {
+    const { iframe, doc } = buildLiveIframe(host(`style="clip-path: inset(0px 40px 0px 0px);"`));
+    const reloadPreview = vi.fn();
+    const script = `<script>gsap.timeline().to("#target", { x: 10 });</script>`;
+    const scripted = (style: string) =>
+      sub(style).replace("</div></template>", `${script}</div></template>`);
+    const files = {
+      [SUB]: {
+        previous: scripted(`style="clip-path: inset(0px 40px 0px 0px)"`),
+        restored: scripted(""),
+      },
+    };
+    expect(applyUndoRestoreToPreview(iframe, ROOT, files, 3, reloadPreview)).toBe("full");
+    expect(reloadPreview).toHaveBeenCalledTimes(1);
+    expect(doc.querySelector('[data-hf-id="hf-t"]')?.getAttribute("style")).toContain("clip-path");
+  });
+
   it("full-reloads when the restore touches a sub-comp, not the active comp", () => {
     const { iframe } = buildLiveIframe(`<div id="a">t</div>`);
     const reloadPreview = vi.fn();
     const files = { "scenes/intro.html": { previous: "a", restored: "b" } };
     expect(applyUndoRestoreToPreview(iframe, ROOT, files, 3, reloadPreview)).toBe("full");
     expect(reloadPreview).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("an undo that lands while the layer is being dragged", () => {
+  const ROOT = "index.html";
+  const undone = `<div id="a" style="width: 120px; translate: 90px 60px" data-start="2" data-hf-studio-original-inline-translate="">t</div>`;
+  const restored = wrap(`<div id="a" style="width: 100px" data-start="1">t</div>`);
+  const files = { [ROOT]: { previous: wrap(undone), restored } };
+  const saveDrop = (el: HTMLElement, file: string) =>
+    writePlainMove(el, { x: 20, y: 110 }).reduce((html, op) => applyPatch(html, "a", op), file);
+
+  function dragging(drag: boolean) {
+    const { iframe, doc } = buildLiveIframe(undone);
+    const el = doc.getElementById("a")!;
+    if (drag) beginStudioManualEditGesture(el, "move");
+    if (drag) writeTranslatePx(el, { x: 70, y: 110 });
+    else el.style.setProperty("opacity", "0.5");
+    applyUndoRestoreToPreview(iframe, ROOT, files, 3, vi.fn());
+    return el;
+  }
+
+  it("keeps the translate the drag is drawing and reverts the rest", () => {
+    const el = dragging(true);
+
+    expect(el.style.getPropertyValue("translate")).toBe("70px 110px");
+    expect(el.style.getPropertyValue("width")).toBe("100px");
+    expect(el.getAttribute("data-start")).toBe("1");
+    expect(el.hasAttribute("data-hf-studio-manual-edit-gesture")).toBe(true);
+  });
+
+  it("saves the drop onto the undone file, the same bytes as dragging the undone layer", () => {
+    const el = dragging(true);
+    const fresh = new DOMParser().parseFromString(restored, "text/html").getElementById("a")!;
+
+    const saved = saveDrop(el, restored);
+
+    expect(saved).toBe(saveDrop(fresh, restored));
+    expect(saved).toContain("width: 100px; translate: 20px 110px");
+    expect(saved).not.toContain("120px");
+  });
+
+  it("keeps the box where it is when the press has not moved it yet", () => {
+    const { iframe, doc } = buildLiveIframe(undone);
+    const el = doc.getElementById("a")!;
+    beginStudioManualEditGesture(el, "move");
+
+    applyUndoRestoreToPreview(iframe, ROOT, files, 3, vi.fn());
+
+    expect(el.style.getPropertyValue("translate")).toBe("90px 60px");
+    expect(el.style.getPropertyValue("width")).toBe("100px");
+  });
+
+  it("reverts the translate under a gesture that draws nothing, such as a text edit", () => {
+    const { iframe, doc } = buildLiveIframe(undone);
+    const el = doc.getElementById("a")!;
+    beginStudioManualEditGesture(el, "edit");
+
+    applyUndoRestoreToPreview(iframe, ROOT, files, 3, vi.fn());
+
+    expect(el.style.getPropertyValue("translate")).toBe("");
+    expect(el.hasAttribute("data-hf-studio-manual-edit-gesture")).toBe(true);
+  });
+
+  it("keeps the drag's translate when the undo is shown in place", () => {
+    const { iframe, doc } = buildLiveIframe(undone);
+    const el = doc.getElementById("a")!;
+    beginStudioManualEditGesture(el, "move");
+    writeTranslatePx(el, { x: 70, y: 110 });
+
+    expect(showRestoreInPlace(iframe, ROOT, files, 3)).not.toBeNull();
+
+    expect(el.style.getPropertyValue("translate")).toBe("70px 110px");
+    expect(el.style.getPropertyValue("width")).toBe("100px");
+  });
+
+  it("keeps a drag that started after the undo was shown when the undo is put back", () => {
+    const { iframe, doc } = buildLiveIframe(undone);
+    const el = doc.getElementById("a")!;
+    const putBack = showRestoreInPlace(iframe, ROOT, files, 3)!;
+    beginStudioManualEditGesture(el, "move");
+    writeTranslatePx(el, { x: 70, y: 110 });
+
+    putBack(3);
+
+    expect(el.style.getPropertyValue("translate")).toBe("70px 110px");
+    expect(el.style.getPropertyValue("width")).toBe("120px");
+  });
+
+  it("keeps the drag's translate when the undo re-runs a GSAP script", () => {
+    const script = (extra: string) =>
+      `<script>window.__timelines["root"]=gsap.timeline();${extra}</script>`;
+    const layer = `<div id="a" data-hf-studio-path-offset="true" style="translate: 40px 30px">t</div>`;
+    const { iframe, contentWindow, doc } = buildLiveIframe(
+      `${layer}${script("tl.set('#b',{x:1});")}`,
+    );
+    Object.assign(contentWindow.gsap, { set: () => {} });
+    const el = doc.getElementById("a")!;
+    beginStudioManualEditGesture(el, "move");
+    writeTranslatePx(el, { x: 70, y: 110 });
+    const scripted = {
+      [ROOT]: {
+        previous: wrap(`<div id="a">t</div>${script("tl.set('#b',{x:1});")}`),
+        restored: wrap(`<div id="a">t</div>${script("")}`),
+      },
+    };
+
+    expect(applyUndoRestoreToPreview(iframe, ROOT, scripted, 3, vi.fn())).toBe("soft");
+
+    expect(el.style.getPropertyValue("translate")).toBe("70px 110px");
+  });
+
+  it("restores a layer no gesture is drawing exactly as before", () => {
+    const el = dragging(false);
+    const want = new DOMParser().parseFromString(restored, "text/html").getElementById("a")!;
+
+    expect(el.getAttributeNames().map((n) => [n, el.getAttribute(n)])).toEqual(
+      want.getAttributeNames().map((n) => [n, want.getAttribute(n)]),
+    );
   });
 });

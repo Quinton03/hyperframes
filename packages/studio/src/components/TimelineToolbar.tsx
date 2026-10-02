@@ -31,8 +31,10 @@ import type { GsapAnimation } from "@hyperframes/core/gsap-parser";
 import type { DomEditSelection } from "./editor/domEditingTypes";
 import { canSplitElement } from "../utils/timelineElementSplit";
 import { useAudioMetersVisible } from "../utils/audioMeterVisibility";
+import { LinkedSelectionToggle } from "./LinkedSelectionToggle";
 import { useProjectHasAudio } from "../utils/audioMeterMath";
 import { canAddBeatAt, addBeatAtCompositionTime } from "../utils/beatEditActions";
+import { isTypingTarget } from "../utils/typingTarget";
 
 interface DomEditSessionSlice extends EnableKeyframesSession {
   domEditSelection: DomEditSelection | null;
@@ -196,14 +198,10 @@ export function TimelineToolbar({
   // "N" toggles timeline snapping (industry convention: Resolve/FCP).
   // Skip when typing in an input/contenteditable.
   useEffect(() => {
-    // fallow-ignore-next-line complexity
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "n" && e.key !== "N") return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const target = e.target instanceof HTMLElement ? e.target : null;
-      if (target?.isContentEditable) return;
-      const tag = target?.tagName?.toLowerCase() ?? "";
-      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (isTypingTarget(e.target)) return;
       const store = usePlayerStore.getState();
       store.setTimelineSnapEnabled(!store.timelineSnapEnabled);
     };
@@ -221,6 +219,7 @@ export function TimelineToolbar({
           <TimelineToolPicker showSelectAroundPlayhead={showSelectAroundPlayhead} />
           {/* Divider: tool-mode | editing-actions */}
           <div aria-hidden="true" className="mx-1 h-4 w-px bg-neutral-800" />
+          <LinkedSelectionToggle />
           <Tooltip label={timelineSnapEnabled ? "Snapping on (N)" : "Snapping off (N)"}>
             <button
               type="button"
@@ -307,11 +306,11 @@ export function TimelineToolbar({
                   className={
                     !onToggleKeyframe
                       ? flatDisabled
-                      : `${flatBtn} active:scale-[0.98] hover:bg-white/6 ${
+                      : `${flatBtn} active:scale-[0.98] hover:bg-hover ${
                           keyframeState === "active"
-                            ? "text-studio-accent"
+                            ? "text-accent-ink"
                             : keyframeState === "inactive"
-                              ? "text-neutral-400 hover:text-studio-accent"
+                              ? "text-neutral-400 hover:text-accent-ink"
                               : "text-neutral-600 hover:text-neutral-400"
                         }`
                   }
@@ -342,9 +341,9 @@ export function TimelineToolbar({
                   onClick={() => setAutoKeyframeEnabled(!autoKeyframeEnabled)}
                   aria-label="Auto-record manual edits as keyframes"
                   aria-pressed={autoKeyframeEnabled}
-                  className={`${flatBtn} active:scale-[0.98] hover:bg-white/6 ${
+                  className={`${flatBtn} active:scale-[0.98] hover:bg-hover ${
                     autoKeyframeEnabled
-                      ? "text-red-400 hover:text-red-300"
+                      ? "text-danger-ink"
                       : "text-neutral-600 hover:text-neutral-400"
                   }`}
                 >
@@ -442,7 +441,7 @@ export function TimelineToolbar({
                   }}
                   className={
                     canAdd
-                      ? `${flatBtn} text-neutral-400 hover:bg-white/6 hover:text-[#22c55e] active:scale-[0.98]`
+                      ? `${flatBtn} text-text-2 hover:bg-hover hover:text-accent-ink active:scale-[0.98]`
                       : flatDisabled
                   }
                 >
@@ -479,8 +478,8 @@ export function TimelineToolbar({
               onClick={() => setThumbnailMode(thumbnailsVisible ? "hidden" : "adaptive")}
               className={`h-7 px-2 rounded-md text-[11px] font-medium transition-colors ${
                 thumbnailsVisible
-                  ? "bg-studio-accent/10 text-studio-accent"
-                  : "text-neutral-400 hover:bg-white/6 hover:text-neutral-200"
+                  ? "bg-studio-accent/10 text-accent-ink"
+                  : "text-neutral-400 hover:bg-hover hover:text-neutral-200"
               }`}
             >
               <Image size={16} aria-hidden="true" />
@@ -494,8 +493,8 @@ export function TimelineToolbar({
               aria-pressed={zoomMode === "fit"}
               className={`h-7 px-2 rounded-md text-[11px] font-medium transition-colors ${
                 zoomMode === "fit"
-                  ? "bg-studio-accent/10 text-studio-accent"
-                  : "text-neutral-400 hover:bg-white/6 hover:text-neutral-200"
+                  ? "bg-studio-accent/10 text-accent-ink"
+                  : "text-neutral-400 hover:bg-hover hover:text-neutral-200"
               }`}
             >
               <ArrowsOutLineHorizontal size={16} aria-hidden="true" />
@@ -531,7 +530,7 @@ export function TimelineToolbar({
             }}
             // h-6 on the input is the 24x24 WCAG 2.2 (2.5.8) target: the visible
             // track stays 2px and the thumb 10px, only the pointer box grows.
-            className="mx-1 h-6 w-[96px] cursor-pointer appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-[2px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-neutral-700 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-[10px] [&::-webkit-slider-thumb]:h-[10px] [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:-mt-1 [&::-webkit-slider-thumb]:shadow-[0_0_0_2px_#0a0a0a,0_1px_3px_rgba(0,0,0,0.5)] [&::-webkit-slider-thumb]:cursor-grab [&::-webkit-slider-thumb:active]:cursor-grabbing"
+            className="mx-1 h-6 w-[96px] cursor-pointer appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-[2px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-neutral-700 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-[10px] [&::-webkit-slider-thumb]:h-[10px] [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-text-0 [&::-webkit-slider-thumb]:-mt-1 [&::-webkit-slider-thumb]:shadow-[0_0_0_2px_#0a0a0a,0_1px_3px_rgba(0,0,0,0.5)] [&::-webkit-slider-thumb]:cursor-grab [&::-webkit-slider-thumb:active]:cursor-grabbing"
           />
           <Tooltip label="Zoom in">
             <button

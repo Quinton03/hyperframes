@@ -17,11 +17,7 @@ import { useFileManager } from "./hooks/useFileManager";
 import { usePreviewPersistence } from "./hooks/usePreviewPersistence";
 import { usePreviewDocumentVersion } from "./hooks/usePreviewDocumentVersion";
 import { useTimelineEditing } from "./hooks/useTimelineEditing";
-import {
-  persistTimelineMoveEditsAtomically,
-  type TimelineMoveEditsHandler,
-  type TimelineMoveOperation,
-} from "./hooks/timelineMoveAdapter";
+import { useTimelineMoveEditsHandler } from "./hooks/timelineMoveAdapter";
 import type { TimelineZIndexReorderCommit } from "./hooks/useTimelineEditingTypes";
 import type { BlockPreviewInfo } from "./components/sidebar/BlocksTab";
 import { useDomEditSession } from "./hooks/useDomEditSession";
@@ -30,6 +26,7 @@ import { useStudioSdkSessions } from "./hooks/useStudioSdkSessions";
 import { useStudioExternalFileChanges } from "./hooks/useStudioExternalFileChanges";
 import { useBlockHandlers } from "./hooks/useBlockHandlers";
 import { useAppHotkeys } from "./hooks/useAppHotkeys";
+import { trackedStudioEdit } from "./utils/studioPendingEdits";
 import { useClipboard } from "./hooks/useClipboard";
 import { deleteSelectedKeyframes } from "./hooks/timelineEditingHelpers";
 import { useCaptionDetection } from "./hooks/useCaptionDetection";
@@ -155,6 +152,7 @@ export function StudioApp({ readOnlyPreview = false, readOnlyPreviewReason }: St
     previewPersistence,
     pendingTimelineEditPathRef,
     reloadPreview,
+    onOutsideChange: editHistory.noteOutsideChange,
   });
   const invalidateGsapCacheRef = useRef<() => void>(() => {});
   const invalidateGsapCache = useCallback(() => invalidateGsapCacheRef.current(), []);
@@ -177,12 +175,8 @@ export function StudioApp({ readOnlyPreview = false, readOnlyPreviewReason }: St
     invalidateGsapCache,
     handleDomZIndexReorderCommitRef,
   });
-  const handleTimelineElementsMove: TimelineMoveEditsHandler = useCallback(
-    async (edits, coalesceKey, operation: TimelineMoveOperation = "timing", coalesceMs) => {
-      const deps = { handleTimelineGroupMove: timelineEditing.handleTimelineGroupMove };
-      await persistTimelineMoveEditsAtomically(edits, coalesceKey, operation, deps, coalesceMs);
-    },
-    [timelineEditing.handleTimelineGroupMove],
+  const handleTimelineElementsMove = useTimelineMoveEditsHandler(
+    timelineEditing.handleTimelineGroupMove,
   );
   const {
     addAssetAtPlayhead: handleAddAssetAtPlayhead,
@@ -244,6 +238,8 @@ export function StudioApp({ readOnlyPreview = false, readOnlyPreviewReason }: St
   });
   const appHotkeys = useAppHotkeys({
     handleTimelineElementsDelete: timelineEditing.handleTimelineElementsDelete,
+    handleLinkEdit: timelineEditing.handleLinkEdit,
+    handleTimelineElementDeleteOnly: timelineEditing.handleTimelineElementDeleteOnly,
     handleTimelineElementSplit: timelineEditing.handleTimelineElementSplit,
     handleDomEditElementDelete: domEditDeleteBridge,
     domEditSelectionRef: domEditSelectionBridgeRef,
@@ -254,7 +250,8 @@ export function StudioApp({ readOnlyPreview = false, readOnlyPreviewReason }: St
     writeProjectFile: fileManager.writeProjectFile,
     showToast,
     syncHistoryPreviewAfterApply: previewPersistence.syncHistoryPreviewAfterApply,
-    waitForPendingDomEditSaves: previewPersistence.waitForPendingDomEditSaves,
+    showHistoryRestoreNow: previewPersistence.showHistoryRestoreNow,
+    settlePendingEdits: previewPersistence.settlePendingEdits,
     handleCopy,
     handlePaste,
     handleCut,
@@ -313,9 +310,10 @@ export function StudioApp({ readOnlyPreview = false, readOnlyPreviewReason }: St
     readOnlyPreview,
   });
   domEditSelectionBridgeRef.current = domEditSession.domEditSelection;
-  handleDomZIndexReorderCommitRef.current = domEditSession.handleDomZIndexReorderCommit;
+  const { handleDomZIndexReorderCommit: zCommit, handleDomEditElementDelete: del } = domEditSession;
+  handleDomZIndexReorderCommitRef.current = trackedStudioEdit(zCommit);
   clearDomSelectionRef.current = domEditSession.clearDomSelection;
-  handleDomEditElementDeleteRef.current = domEditSession.handleDomEditElementDelete;
+  handleDomEditElementDeleteRef.current = trackedStudioEdit(del);
   resetKeyframesRef.current = domEditSession.handleResetSelectedElementKeyframes;
   invalidateGsapCacheRef.current = domEditSession.invalidateGsapCache;
   deleteSelectedKeyframesRef.current = () => deleteSelectedKeyframes(domEditSession);
@@ -548,6 +546,9 @@ export function StudioApp({ readOnlyPreview = false, readOnlyPreviewReason }: St
                   handleTimelineElementSplit={timelineEditing.handleTimelineElementSplit}
                   handleRazorSplit={timelineEditing.handleRazorSplit}
                   handleRazorSplitAll={timelineEditing.handleRazorSplitAll}
+                  handleFreezeFrame={timelineEditing.handleFreezeFrame}
+                  handleLinkEdit={timelineEditing.handleLinkEdit}
+                  handleTimelineElementDeleteOnly={timelineEditing.handleTimelineElementDeleteOnly}
                   onCopyClip={handleCopy}
                   onPasteClip={handlePaste}
                   onDuplicateClip={handleDuplicate}

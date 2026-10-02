@@ -12,12 +12,13 @@ interface UseDomEditPositionPatchCommitParams {
   showToast: (message: string, tone?: "error" | "info") => void;
 }
 
-interface PositionPatchOptions {
+type PositionPatchOptions = {
   label: string;
   coalesceKey: string;
   coalesceMs?: number;
   skipRefresh?: boolean;
-}
+  deferRender?: boolean;
+};
 
 export function useDomEditPositionPatchCommit({
   activeCompPath,
@@ -31,6 +32,7 @@ export function useDomEditPositionPatchCommit({
         coalesceKey: options.coalesceKey,
         coalesceMs: options.coalesceMs,
         skipRefresh: options.skipRefresh ?? true,
+        deferRender: options.deferRender,
       })
         .then(() => undefined)
         .catch((error) => {

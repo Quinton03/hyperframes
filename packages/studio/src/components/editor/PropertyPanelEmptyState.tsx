@@ -24,7 +24,7 @@ function FlatEmptyState() {
       <div className="mt-2 flex w-full flex-col gap-1.5">
         <span className="flex items-center justify-between rounded-lg border border-panel-border bg-panel-bg px-3 py-2">
           <span className="flex items-center gap-2 text-[11px] text-panel-text-2">
-            <span className="text-panel-danger">●</span>
+            <span className="text-danger-ink">●</span>
             Record a gesture
           </span>
           <span className="rounded-sm border border-panel-border-input px-[5px] py-px font-mono text-[9px] text-panel-text-5">
@@ -33,7 +33,7 @@ function FlatEmptyState() {
         </span>
         <span className="flex items-center justify-between rounded-lg border border-panel-border bg-panel-bg px-3 py-2">
           <span className="flex items-center gap-2 text-[11px] text-panel-text-2">
-            <span className="text-panel-accent">✦</span>
+            <span className="text-accent-ink">✦</span>
             Describe a change to the agent
           </span>
           <span className="rounded-sm border border-panel-border-input px-[5px] py-px font-mono text-[9px] text-panel-text-5">
@@ -50,7 +50,7 @@ function elementKindGlyph(element: DomEditSelection): { glyph: string; className
     return { glyph: "◆", className: "bg-panel-media/10 text-panel-media" };
   }
   if (element.textFields?.length > 0) {
-    return { glyph: "T", className: "bg-panel-accent/10 text-panel-accent" };
+    return { glyph: "T", className: "bg-panel-accent/10 text-accent-ink" };
   }
   return { glyph: "▦", className: "bg-panel-container/10 text-panel-container" };
 }
@@ -74,7 +74,7 @@ function FlatMultiSelectState({
   return (
     <div className="flex flex-col gap-3 px-4 py-3">
       <div className="flex items-center gap-3 rounded-xl border border-panel-border bg-panel-surface p-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-panel-accent/10 text-panel-accent">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-panel-accent/10 text-accent-ink">
           <Layers size={16} />
         </span>
         <div className="min-w-0 flex-1">

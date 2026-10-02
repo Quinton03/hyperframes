@@ -233,6 +233,36 @@ export function readAttr(tagSource: string, attr: string): string | null {
   return match?.[1] || null;
 }
 
+export function hasAttrName(tagSource: string, attr: string): boolean {
+  const escaped = attr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const attrs = tagSource.replace(/^<\s*[a-z][\w:-]*/i, "");
+  return new RegExp(`(?:^|\\s)${escaped}(?:\\s*=|\\s|/?>)`, "i").test(attrs);
+}
+
+// An explicit data-has-audio is authoritative for the compiler; only the exact value "true" means audible.
+export function isAudibleVideoTag(tagSource: string): boolean {
+  if (hasAttrName(tagSource, "muted")) return false;
+  if (!hasAttrName(tagSource, "data-has-audio")) return true;
+  const declared = readAttr(tagSource, "data-has-audio");
+  return declared === "true";
+}
+
+export function mediaTimeWindow(tagSource: string): { start: number; end: number } | null {
+  const start = Number(readAttr(tagSource, "data-start"));
+  const duration = Number(readAttr(tagSource, "data-duration"));
+  if (!readAttr(tagSource, "data-start") || !readAttr(tagSource, "data-duration")) return null;
+  if (!Number.isFinite(start) || !Number.isFinite(duration)) return null;
+  return { start, end: start + duration };
+}
+
+export function mediaWindowsOverlap(
+  a: { start: number; end: number } | null,
+  b: { start: number; end: number } | null,
+): boolean {
+  if (!a || !b) return true;
+  return a.start < b.end && b.start < a.end;
+}
+
 /** Read an HTML attribute using browser-equivalent character-reference decoding. */
 export function readDecodedAttr(tagSource: string, attr: string): string | null {
   if (!tagSource) return null;

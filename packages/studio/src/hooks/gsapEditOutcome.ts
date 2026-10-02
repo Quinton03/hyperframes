@@ -44,7 +44,8 @@ export type GsapEditOutcome =
       ownsDragOffset?: boolean;
     }
   | { status: "blocked"; reason: GsapEditBlockReason; detail?: GsapEditBlockDetail }
-  | { status: "element-offset" };
+  | { status: "element-offset" }
+  | { status: "element-size" };
 
 export const GSAP_EDIT_BLOCK_COPY: Record<GsapEditBlockReason, string> = {
   "no-selector": "This layer needs a stable selector before Studio can save the edit.",
@@ -65,6 +66,12 @@ export class GsapEditBlockedError extends Error {
 
 export function assertGsapEditPersisted(outcome: GsapEditOutcome): void {
   if (outcome.status === "blocked") throw new GsapEditBlockedError(outcome.reason, outcome.detail);
+}
+
+/** A move only a shared tween positions is saved on the element itself; a blocked one throws. */
+export async function saveMove(outcome: GsapEditOutcome, saveOnElement: () => Promise<void>) {
+  if (outcome.status === "element-offset") return saveOnElement();
+  assertGsapEditPersisted(outcome);
 }
 
 function assertGsapAnimationDirectlyEditable(animation: GsapAnimation): void {

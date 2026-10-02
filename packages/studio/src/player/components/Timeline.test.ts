@@ -16,7 +16,6 @@ import {
   getTimelineScrollLeftForZoomAnchor,
   getTimelineScrollLeftForZoomTransition,
   shouldShowTimelineShortcutHint,
-  shouldHandleTimelineDeleteKey,
   shouldAutoScrollTimeline,
   getTimelineVisibleTimeRange,
   getTimelineScrollTopForGeometryChange,
@@ -70,6 +69,21 @@ describe("timeline viewport geometry", () => {
     const next = createTimelineRowGeometry([1, 2, 3], [104, 48, 48]);
     const scrollTop = previous.getRowTop(2) - RULER_H + 6;
     expect(getTimelineScrollTopForGeometryChange(previous, next, scrollTop)).toBe(scrollTop + 56);
+  });
+
+  it("keeps a row added above the top row in view while the list sits at the top", () => {
+    // No top padding (trackPadding { top: 0 }), so the first row sits right under the ruler.
+    const previous = createTimelineRowGeometry([1, 2, 3], [48, 48, 48], { top: 0 });
+    const next = createTimelineRowGeometry([9, 1, 2, 3], [48, 48, 48, 48], { top: 0 });
+    expect(getTimelineScrollTopForGeometryChange(previous, next, 0)).toBe(0);
+  });
+
+  it("leaves scrollTop to edge auto-scroll while a clip drag adds a row above", () => {
+    const previous = createTimelineRowGeometry([1, 2, 3], [48, 48, 48]);
+    const next = createTimelineRowGeometry([9, 1, 2, 3], [48, 48, 48, 48]);
+    const scrollTop = previous.getRowTop(1) - RULER_H + 6;
+    expect(getTimelineScrollTopForGeometryChange(previous, next, scrollTop, true)).toBe(scrollTop);
+    expect(getTimelineScrollTopForGeometryChange(previous, next, scrollTop)).toBe(scrollTop + 48);
   });
 });
 
@@ -1245,26 +1259,6 @@ describe("shouldShowTimelineShortcutHint", () => {
 
   it("hides the hint when timeline tracks need vertical scrolling", () => {
     expect(shouldShowTimelineShortcutHint(221.5, 220)).toBe(false);
-  });
-});
-
-describe("shouldHandleTimelineDeleteKey", () => {
-  it("handles Delete and Backspace when focus is not in an editor", () => {
-    expect(shouldHandleTimelineDeleteKey({ key: "Delete" })).toBe(true);
-    expect(shouldHandleTimelineDeleteKey({ key: "Backspace" })).toBe(true);
-  });
-
-  it("ignores modifier shortcuts", () => {
-    expect(shouldHandleTimelineDeleteKey({ key: "Delete", metaKey: true })).toBe(false);
-    expect(shouldHandleTimelineDeleteKey({ key: "Backspace", ctrlKey: true })).toBe(false);
-  });
-
-  it("ignores input and editable targets", () => {
-    const input = { tagName: "INPUT", isContentEditable: false };
-    const editable = { tagName: "DIV", isContentEditable: true };
-
-    expect(shouldHandleTimelineDeleteKey({ key: "Delete", target: input })).toBe(false);
-    expect(shouldHandleTimelineDeleteKey({ key: "Delete", target: editable })).toBe(false);
   });
 });
 

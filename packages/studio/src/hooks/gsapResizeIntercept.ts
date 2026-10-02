@@ -31,13 +31,14 @@ import { commitWholePropertyOffset } from "./gsapWholePropertyOffsetCommit";
 import { commitGsapPositionFromDrag } from "./gsapDragPositionCommit";
 import { resolveTweenStart, resolveTweenDuration } from "../utils/globalTimeCompiler";
 import { isInstantHold, selectorFromSelection, writeTargetSelector } from "./gsapShared";
-import { roundTo3 } from "../utils/rounding";
+import { roundTo3, roundToLayoutPx } from "../utils/rounding";
 import { resolveGroupTween } from "./gsapRuntimeBridge";
 import { logResize } from "../utils/resizeDebug";
 import { animationWritesAnyProperty, type GsapEditOutcome } from "./gsapEditOutcome";
 import { preflightGsapResizeIntercept, resizeRoute } from "./gsapResizePreflight";
 
 const IDENTITY_ONE_PROPS = new Set(["opacity", "autoAlpha", "scale", "scaleX", "scaleY"]);
+const SIZE_PROPS = new Set(["width", "height"]);
 
 /** Build identity (zero / one) values for each property in `source`. */
 function synthesizeIdentityProps(
@@ -101,7 +102,7 @@ export async function tryGsapResizeIntercept(
   const fetchedAnimations = fetchFallbackAnimations ? await fetchFallbackAnimations() : [];
   const outcome = preflightGsapResizeIntercept(selection, animations, iframe, fetchedAnimations);
   if (outcome.status === "blocked") return outcome;
-  const { resizeGroup, resizeProperties, workingAnimations } = resizeRoute(
+  const { allKnownAnimations, resizeGroup, resizeProperties, workingAnimations } = resizeRoute(
     animations,
     fetchedAnimations,
   );
@@ -131,6 +132,10 @@ export async function tryGsapResizeIntercept(
     size,
   });
   if (!anim || isInstantHold(anim)) {
+    const scriptWritesSize = allKnownAnimations.some((a) =>
+      animationWritesAnyProperty(a, SIZE_PROPS),
+    );
+    if (!scriptWritesSize) return { status: "element-size" };
     const sel = selectorFromSelection(selection) ?? writeTargetSelector(selection);
     if (!sel) return { status: "blocked", reason: "no-selector" };
     // A scale hold is not a size hold.
@@ -287,8 +292,8 @@ export async function tryGsapResizeIntercept(
     }
   } else {
     resizeProps = {
-      width: Math.round(size.width),
-      height: Math.round(size.height),
+      width: roundToLayoutPx(size.width),
+      height: roundToLayoutPx(size.height),
     };
   }
   // Finalize a scale-route commit: tear down the gesture's inline width/height
@@ -358,8 +363,8 @@ export async function tryGsapResizeIntercept(
     // persisted file agree exactly (commitStaticGsapPosition composes the same
     // rounded value from this delta).
     const corrected = {
-      x: Math.round(base.x + residual.x),
-      y: Math.round(base.y + residual.y),
+      x: roundTo3(base.x + residual.x),
+      y: roundTo3(base.y + residual.y),
     };
     logResize("scale-finalize", {
       dropPoint: scaleDraftDropPoint,
@@ -541,7 +546,6 @@ export async function tryGsapResizeIntercept(
     return { status: "persisted", ownsDragOffset: await finalizeScaleResizeCommit() };
   }
 
-  const SIZE_PROPS = new Set(["width", "height"]);
   const backfillDefaults: Record<string, number> = {};
   for (const k of Object.keys(runtimeProps)) {
     if (SIZE_PROPS.has(k)) continue;

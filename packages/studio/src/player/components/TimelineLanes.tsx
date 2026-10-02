@@ -77,7 +77,6 @@ export function TimelineLanes({
   setResizingClip,
   setDraggedClip,
   setSelectedElementId,
-  shiftClickClipRef,
   getPreviewElement,
   getTrackStyle,
   keyframeCache,
@@ -353,7 +352,6 @@ export function TimelineLanes({
                       fontSize: 11,
                       letterSpacing: "0.06em",
                       textTransform: "uppercase",
-                      opacity: 0.5,
                     }}
                   >
                     New track
@@ -405,7 +403,6 @@ export function TimelineLanes({
                         onRazorSplit,
                         onRazorSplitAll,
                         blockedClipRef,
-                        shiftClickClipRef,
                         suppressClickRef,
                         scrollRef,
                         setShowPopover,

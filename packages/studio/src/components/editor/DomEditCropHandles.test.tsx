@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DomEditSelection } from "./domEditing";
 import type { OverlayRect } from "./domEditOverlayGeometry";
 import { DomEditCropHandles } from "./DomEditCropHandles";
+import { isElementCropLifted } from "./domEditOverlayCrop";
+import { useCropPresetBarStore } from "./cropPresetStore";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -33,6 +35,19 @@ function makeEl(id: string, clip: string): HTMLElement {
   return el;
 }
 
+/** Presses at the first x, moves through the rest with their buttons, and lets go where the last held move was. */
+function dragCropRight(handle: HTMLElement, pointerId: number, points: [number, number][]) {
+  const [[start], ...moves] = points;
+  const release = moves.filter(([, buttons]) => buttons & 1).at(-1)?.[0] ?? start;
+  const send = (type: string, clientX: number, buttons: number) =>
+    handle.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId, buttons, clientX }));
+  act(() => {
+    send("pointerdown", start, 1);
+    for (const [x, buttons] of moves) send("pointermove", x, buttons);
+    send("pointerup", release, 0);
+  });
+}
+
 function render(
   el: HTMLElement,
   onStyleCommit: (property: string, value: string) => Promise<unknown> | void = () => undefined,
@@ -55,27 +70,27 @@ function render(
   return { root, rerender: draw };
 }
 
-// Regression: the deselect restore used a ref recomputed from RENDER state — on
-// a direct A→B selection switch, state re-syncs to B before A's effect cleanup
-// runs, so A used to get B's crop string (or lose its crop entirely). The
-// restore value must be owned by A's own lift effect / crop gesture.
-describe("DomEditCropHandles clip lift/restore", () => {
-  it("lifts on select and restores the inline clip verbatim on unmount", () => {
+// The lift never touches the element's own clip-path: select+deselect must leave what the author
+// wrote verbatim, and a direct A→B switch must drop A's lift, not B's.
+describe("DomEditCropHandles clip lift", () => {
+  it("lifts on select without rewriting the inline clip, and drops the lift on unmount", () => {
     const a = makeEl("a", "inset(16px round 12px)");
     const { root } = render(a);
-    expect(a.style.getPropertyValue("clip-path")).toBe("none");
+    expect(isElementCropLifted(a)).toBe(true);
+    expect(a.style.getPropertyValue("clip-path")).toBe("inset(16px round 12px)");
     act(() => root.unmount());
+    expect(isElementCropLifted(a)).toBe(false);
     expect(a.style.getPropertyValue("clip-path")).toBe("inset(16px round 12px)");
   });
 
-  it("restores A's own clip when switching directly to B", () => {
+  it("drops A's lift when switching directly to B", () => {
     const a = makeEl("a", "inset(16px)");
     const b = makeEl("b", "inset(40px 8px 4px 2px)");
     const { root, rerender } = render(a);
     rerender(b);
-    // A got ITS clip back, not B's (and not removed); B is now lifted.
+    expect(isElementCropLifted(a)).toBe(false);
+    expect(isElementCropLifted(b)).toBe(true);
     expect(a.style.getPropertyValue("clip-path")).toBe("inset(16px)");
-    expect(b.style.getPropertyValue("clip-path")).toBe("none");
     act(() => root.unmount());
     expect(b.style.getPropertyValue("clip-path")).toBe("inset(40px 8px 4px 2px)");
   });
@@ -83,47 +98,9 @@ describe("DomEditCropHandles clip lift/restore", () => {
   it("never lifts an uneditable clip and leaves it untouched across select/deselect", () => {
     const a = makeEl("a", "circle(50% at 50% 50%)");
     const { root } = render(a);
-    expect(a.style.getPropertyValue("clip-path")).toBe("circle(50% at 50% 50%)");
+    expect(isElementCropLifted(a)).toBe(false);
     act(() => root.unmount());
     expect(a.style.getPropertyValue("clip-path")).toBe("circle(50% at 50% 50%)");
-  });
-
-  it("re-lifts synchronously after the commit path re-applies the cropped value", async () => {
-    const a = makeEl("a", "inset(10px)");
-    let resolveCommit: (() => void) | undefined;
-    const pendingCommit = new Promise<void>((resolve) => {
-      resolveCommit = resolve;
-    });
-    const onStyleCommit = vi.fn((property: string, value: string) => {
-      a.style.setProperty(property, value);
-      return pendingCommit;
-    });
-    const { root } = render(a, onStyleCommit);
-    const handle = document.querySelector<HTMLButtonElement>('[aria-label="Crop right"]');
-    expect(handle).toBeTruthy();
-
-    act(() =>
-      handle!.dispatchEvent(
-        new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, clientX: 100 }),
-      ),
-    );
-    act(() =>
-      handle!.dispatchEvent(
-        new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: 80 }),
-      ),
-    );
-    act(() =>
-      handle!.dispatchEvent(
-        new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: 80 }),
-      ),
-    );
-
-    expect(onStyleCommit).toHaveBeenCalledWith("clip-path", "inset(10px 30px 10px 10px)");
-    expect(a.style.getPropertyValue("clip-path")).toBe("none");
-    resolveCommit?.();
-    await act(async () => pendingCommit);
-    act(() => root.unmount());
-    expect(a.style.getPropertyValue("clip-path")).toBe("inset(10px 30px 10px 10px)");
   });
 
   it.each([
@@ -147,7 +124,14 @@ describe("DomEditCropHandles clip lift/restore", () => {
     ] as const) {
       const at = { clientX: 100 + d * c.dx, clientY: 50 + d * c.dy };
       act(() =>
-        handle.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 3, ...at })),
+        handle.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            buttons: type === "pointerup" ? 0 : 1,
+            pointerId: 3,
+            ...at,
+          }),
+        ),
       );
     }
     expect(onStyleCommit).not.toHaveBeenCalled();
@@ -157,16 +141,23 @@ describe("DomEditCropHandles clip lift/restore", () => {
     const onStyleCommit = vi.fn();
     render(makeEl("a", "inset(10px)"), onStyleCommit);
     const handle = document.querySelector<HTMLButtonElement>('[aria-label="Crop right"]')!;
-    act(() => {
-      for (const [type, clientX] of [
-        ["pointerdown", 100],
-        ["pointermove", 90],
-        ["pointermove", 80],
-        ["pointerup", 80],
-      ] as const) {
-        handle.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 4, clientX }));
-      }
-    });
+    dragCropRight(handle, 4, [
+      [100, 1],
+      [90, 1],
+      [80, 1],
+    ]);
+    expect(onStyleCommit).toHaveBeenCalledWith("clip-path", "inset(10px 30px 10px 10px)");
+  });
+
+  it("commits where the pointer let go, not at a buttonless move back at the press point", () => {
+    const onStyleCommit = vi.fn();
+    render(makeEl("a", "inset(10px)"), onStyleCommit);
+    const handle = document.querySelector<HTMLButtonElement>('[aria-label="Crop right"]')!;
+    dragCropRight(handle, 6, [
+      [100, 1],
+      [80, 1],
+      [100, 0],
+    ]);
     expect(onStyleCommit).toHaveBeenCalledWith("clip-path", "inset(10px 30px 10px 10px)");
   });
 
@@ -174,48 +165,55 @@ describe("DomEditCropHandles clip lift/restore", () => {
     const a = makeEl("a", "");
     const { root } = render(a, (property, value) => void a.style.setProperty(property, value));
     const handle = document.querySelector<HTMLButtonElement>('[aria-label="Crop right"]')!;
-    act(() => {
-      for (const [type, clientX] of [
-        ["pointerdown", 100],
-        ["pointermove", 90],
-        ["pointermove", 80],
-        ["pointerup", 80],
-      ] as const) {
-        handle.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 5, clientX }));
-      }
-    });
+    dragCropRight(handle, 5, [
+      [100, 1],
+      [90, 1],
+      [80, 1],
+    ]);
     await act(async () => undefined);
     act(() => root.unmount());
     expect(a.style.getPropertyValue("clip-path")).toBe("inset(0px 20px 0px 0px)");
   });
 
-  it("re-lifts when the crop commit rejects", async () => {
+  it("commits the dragged crop and stays lifted when the save fails", async () => {
     const a = makeEl("a", "inset(10px)");
     const onStyleCommit = vi.fn((property: string, value: string) => {
       a.style.setProperty(property, value);
       return Promise.reject(new Error("persist failed"));
     });
     const { root } = render(a, onStyleCommit);
-    const handle = document.querySelector<HTMLButtonElement>('[aria-label="Crop right"]');
-
-    act(() =>
-      handle!.dispatchEvent(
-        new PointerEvent("pointerdown", { bubbles: true, pointerId: 2, clientX: 100 }),
-      ),
-    );
-    act(() =>
-      handle!.dispatchEvent(
-        new PointerEvent("pointermove", { bubbles: true, pointerId: 2, clientX: 80 }),
-      ),
-    );
-    await act(async () => {
-      handle!.dispatchEvent(
-        new PointerEvent("pointerup", { bubbles: true, pointerId: 2, clientX: 80 }),
+    const handle = document.querySelector<HTMLButtonElement>('[aria-label="Crop right"]')!;
+    const press = (type: string, clientX: number) =>
+      act(() =>
+        handle.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            buttons: type === "pointerup" ? 0 : 1,
+            pointerId: 1,
+            clientX,
+          }),
+        ),
       );
+    press("pointerdown", 100);
+    press("pointermove", 80);
+    await act(async () => {
+      press("pointerup", 80);
       await Promise.resolve();
     });
 
-    expect(a.style.getPropertyValue("clip-path")).toBe("none");
+    expect(onStyleCommit).toHaveBeenCalledWith("clip-path", "inset(10px 30px 10px 10px)");
+    expect(isElementCropLifted(a)).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it("draws the crop the element has now, after an undo rewrites it", () => {
+    const a = makeEl("a", "inset(0px 20px 0px 0px)");
+    const { root, rerender } = render(a);
+    const outline = () => document.querySelector<HTMLElement>(".border-dashed")!.style.width;
+    expect(outline()).toBe("180px");
+    a.style.setProperty("clip-path", "inset(0px 50px 0px 0px)");
+    rerender(a);
+    expect(outline()).toBe("150px");
     act(() => root.unmount());
   });
 });
@@ -302,5 +300,48 @@ describe("DomEditCropHandles leaves the corner resize dots free", () => {
     document.body.innerHTML = "";
     render(makeEl("b", ""), undefined, rectOf(29, 14));
     expect(handles().map((h) => h.label)).toEqual(["Crop top", "Crop bottom"]);
+  });
+});
+
+describe("DomEditCropHandles preset bar", () => {
+  const click = (label: string) => {
+    const button = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+      (b) => b.textContent === label,
+    );
+    act(() => button?.click());
+  };
+
+  afterEach(() => useCropPresetBarStore.getState().close());
+
+  it("shows only for the clip the menu opened it for", () => {
+    const a = makeEl("a", "");
+    useCropPresetBarStore.getState().open({ id: "other" });
+    render(a);
+    expect(document.querySelector("[data-dom-edit-crop-bar]")).toBeNull();
+  });
+
+  it("commits a centred 1:1 crop, then Reset removes the clip-path", async () => {
+    const a = makeEl("a", "");
+    const commits: string[] = [];
+    useCropPresetBarStore.getState().open({ id: "a" });
+    const { root } = render(a, (_property, value) => {
+      commits.push(value);
+    });
+    click("1:1");
+    await act(async () => {});
+    expect(commits[0]).toBe("inset(0px 50px 0px 50px)");
+    click("Reset");
+    await act(async () => {});
+    expect(commits[1]).toBe("");
+    act(() => root.unmount());
+    expect(a.style.getPropertyValue("clip-path")).toBe("");
+  });
+
+  it("Done closes the bar", () => {
+    const a = makeEl("a", "");
+    useCropPresetBarStore.getState().open({ id: "a" });
+    render(a);
+    click("Done");
+    expect(useCropPresetBarStore.getState().openFor).toBeNull();
   });
 });

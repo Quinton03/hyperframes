@@ -1,3 +1,4 @@
+import type { RotationCommit } from "./rotationDraft";
 import { memo, useEffect, useMemo, useRef, type RefObject } from "react";
 import { type DomEditSelection } from "./domEditing";
 import type { PreviewMouseDownOptions } from "../../hooks/usePreviewInteraction";
@@ -10,6 +11,7 @@ import {
   type BlockedMoveState,
   type DomEditGroupPathOffsetCommit,
   type FocusableDomEditOverlay,
+  type MoveCommitOptions,
   type GestureState,
   type GroupGestureState,
   focusDomEditOverlayElement,
@@ -29,6 +31,8 @@ import { useDomEditCompositionRect } from "./useDomEditCompositionRect";
 import { CanvasContextMenu } from "./CanvasContextMenu";
 import { useInlineTextEditing } from "./useInlineTextEditing";
 import { usePreviewReadOnly } from "./previewReadOnlyContext";
+import { useMountEffect } from "../../hooks/useMountEffect";
+import { countStudioManualEditSave as counted } from "./manualEditsDom";
 import type { ZOrderAction, ZOrderPatch } from "./canvasContextMenuZOrder";
 import { getPreviewTargetFromPointer } from "../../utils/studioPreviewHelpers";
 import { logSelect } from "../../utils/selectDebug";
@@ -45,7 +49,7 @@ export {
   hasDomEditRotationChanged,
   resolveDomEditRotationGesture,
 } from "./domEditOverlayGestures";
-export type { DomEditGroupPathOffsetCommit } from "./domEditOverlayGestures";
+export type { DomEditGroupPathOffsetCommit, MoveCommitOptions } from "./domEditOverlayGestures";
 
 export interface DomEditOverlayProps {
   iframeRef: RefObject<HTMLIFrameElement | null>;
@@ -76,12 +80,12 @@ export interface DomEditOverlayProps {
     selection: DomEditSelection,
     options?: { revealPanel?: boolean; additive?: boolean },
   ) => void;
-  onBlockedMove: (selection: DomEditSelection) => void;
+  onBlockedMove: (selection: DomEditSelection, reason?: string) => void;
   onManualDragStart?: () => void;
   onPathOffsetCommit: (
     selection: DomEditSelection,
     next: { x: number; y: number },
-    modifiers?: { altKey?: boolean },
+    modifiers?: MoveCommitOptions,
   ) => Promise<unknown> | void;
   onGroupPathOffsetCommit: (updates: DomEditGroupPathOffsetCommit[]) => Promise<unknown> | void;
   onBoxSizeCommit: (
@@ -90,10 +94,7 @@ export interface DomEditOverlayProps {
     offset?: { x: number; y: number },
     restore?: () => void,
   ) => Promise<unknown> | void;
-  onRotationCommit: (
-    selection: DomEditSelection,
-    next: { angle: number },
-  ) => Promise<unknown> | void;
+  onRotationCommit: (selection: DomEditSelection, next: RotationCommit) => Promise<unknown> | void;
   onStyleCommit?: (property: string, value: string) => Promise<unknown> | void;
   recordingState?: GestureRecordingState;
   onToggleRecording?: () => void;
@@ -194,16 +195,28 @@ export const DomEditOverlay = memo(function DomEditOverlay({
     onTextEditingChangeRef.current?.(true);
     return () => onTextEditingChangeRef.current?.(false);
   }, [inlineText.editing]);
+  // Each canvas save is counted, so a reload requested before it settles loads again.
   const onPathOffsetCommitRef = useRef(onPathOffsetCommit);
-  onPathOffsetCommitRef.current = onPathOffsetCommit;
+  onPathOffsetCommitRef.current = (sel, ...rest) =>
+    counted(sel.element, () => onPathOffsetCommit(sel, ...rest));
   const onGroupPathOffsetCommitRef = useRef(onGroupPathOffsetCommit);
-  onGroupPathOffsetCommitRef.current = onGroupPathOffsetCommit;
+  onGroupPathOffsetCommitRef.current = (updates) => {
+    const save = () => onGroupPathOffsetCommit(updates);
+    return updates[0] ? counted(updates[0].selection.element, save) : save();
+  };
   const onBoxSizeCommitRef = useRef(onBoxSizeCommit);
-  onBoxSizeCommitRef.current = onBoxSizeCommit;
+  onBoxSizeCommitRef.current = (sel, ...rest) =>
+    counted(sel.element, () => onBoxSizeCommit(sel, ...rest));
   const onRotationCommitRef = useRef(onRotationCommit);
-  onRotationCommitRef.current = onRotationCommit;
+  onRotationCommitRef.current = (sel, next) =>
+    counted(sel.element, () => onRotationCommit(sel, next));
   const onStyleCommitRef = useRef(onStyleCommit);
-  onStyleCommitRef.current = onStyleCommit;
+  onStyleCommitRef.current =
+    onStyleCommit &&
+    ((property, value) => {
+      const save = () => onStyleCommit(property, value);
+      return selectionRef.current ? counted(selectionRef.current.element, save) : save();
+    });
   const onBlockedMoveRef = useRef(onBlockedMove);
   onBlockedMoveRef.current = onBlockedMove;
   const onManualDragStartRef = useRef(onManualDragStart);
@@ -283,6 +296,17 @@ export const DomEditOverlay = memo(function DomEditOverlay({
   useEffect(() => {
     if (readOnly) gestures.clearPointerState(selectionRef);
   }, [gestures, readOnly, selectionRef]);
+  // A gesture that loses its pointer, the window or the overlay is cancelled, so its mark goes too.
+  const cancelGestureRef = useRef(() => {});
+  cancelGestureRef.current = () => gestures.clearPointerState(selectionRef);
+  useMountEffect(() => {
+    const cancel = () => cancelGestureRef.current();
+    window.addEventListener("blur", cancel);
+    return () => {
+      window.removeEventListener("blur", cancel);
+      cancel();
+    };
+  });
 
   // Arrow-key nudge (1px, Shift = 10px) — commits through the same
   // path-offset callbacks as a drag, one undo entry per key burst.
@@ -296,6 +320,7 @@ export const DomEditOverlay = memo(function DomEditOverlay({
     gestureRef,
     groupGestureRef,
     blockedMoveRef,
+    onBlockedMoveRef,
     onManualDragStartRef,
     onPathOffsetCommitRef,
     onGroupPathOffsetCommitRef,
@@ -463,6 +488,7 @@ export const DomEditOverlay = memo(function DomEditOverlay({
       onPointerLeave={() => onCanvasPointerLeaveRef.current()}
       onPointerUp={marquee.onPointerUp}
       onPointerCancel={marquee.onPointerCancel}
+      onLostPointerCapture={() => cancelGestureRef.current()}
       onContextMenu={hostInput ? undefined : handleContextMenu}
     >
       {!hostInput && hoverSelection && hoverRect && compRect.width > 0 && (
