@@ -411,8 +411,7 @@ function mixLikeTheGradient(
   right: string,
   ratio: number,
 ): string {
-  const oklab = stops.some((stop) => isModern(stop.color)) || !isLegacy(left) || !isLegacy(right);
-  const space = oklab ? "oklab" : "srgb";
+  const space = stops.some((stop) => isModern(stop.color)) ? "oklab" : "srgb";
   return `color-mix(in ${space}, ${left}, ${right} ${round(ratio * 100)}%)`;
 }
 
