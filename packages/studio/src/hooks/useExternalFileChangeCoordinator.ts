@@ -427,7 +427,6 @@ export function useExternalFileChangeCoordinator({
 
   const processChangeRef = useRef(processChange);
   processChangeRef.current = processChange;
-  // Subscribed once per mount: each resubscribe opened a new /api/events stream, which took a socket per edit.
   useEffect(() => {
     // One decoder for all three transports; the rungs only choose the channel.
     const handler = (delivery?: unknown) => processChangeRef.current(decodeFileChange(delivery));

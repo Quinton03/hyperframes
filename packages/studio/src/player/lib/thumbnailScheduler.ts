@@ -293,7 +293,6 @@ export class ThumbnailScheduler {
     this.activeByBucket[bucket]++;
     this.activeByKind[entry.request.kind]++;
     let slotFree = false;
-    // An aborted load gives its slot back at once: with one composition slot, a stale render must not hold it.
     const freeSlot = () => {
       if (slotFree) return;
       slotFree = true;
