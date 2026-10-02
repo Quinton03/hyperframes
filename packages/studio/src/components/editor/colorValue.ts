@@ -70,8 +70,6 @@ function parseSerializedColor(value: string): ParsedColor | null {
   return null;
 }
 
-// Let the browser convert CSS Color 4 to sRGB without rasterizing a pixel.
-// Pixel readback would quantize alpha and lose RGB entirely for transparent colors.
 let colorContext: CanvasRenderingContext2D | null = null;
 
 function parseBrowserColor(value: string): ParsedColor | null {
@@ -85,13 +83,10 @@ function parseBrowserColor(value: string): ParsedColor | null {
   try {
     colorContext ??= document.createElement("canvas").getContext("2d");
     if (!colorContext) return null;
-    // Invalid assignments leave fillStyle unchanged. Reset it on every call so
-    // invalid input cannot accidentally reuse the previous valid color.
     colorContext.fillStyle = "#000000";
     colorContext.fillStyle = `color(from ${value} srgb r g b / alpha)`;
     return parseSrgbSerialization(colorContext.fillStyle);
   } catch {
-    // Server rendering and DOM-only tests may not provide a canvas context.
     return null;
   }
 }
