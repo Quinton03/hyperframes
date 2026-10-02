@@ -403,7 +403,7 @@ function interpolateGradientStopColor(model: GradientModel, position: number): s
 const LEGACY_COLOR = /^(?:#|(?:rgba?|hsla?|hwb)\(|[a-z]+$)/i;
 
 const isLegacy = (color: string) => LEGACY_COLOR.test(color.trim());
-const isModern = (color: string) => !isLegacy(color) && !/\bvar\(/i.test(color);
+const isModern = (color: string) => !isLegacy(color) && !/^var\(/i.test(color.trim());
 
 function mixLikeTheGradient(
   stops: GradientStop[],

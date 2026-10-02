@@ -97,6 +97,12 @@ describe("insertGradientStop with a browser canvas", () => {
       25,
       "#800080",
     ],
+    [
+      "a modern stop with a var() inside still moves every interval to Oklab",
+      "red 0%, blue 50%, oklch(var(--l, 0.7) 0.1 200) 100%",
+      25,
+      "#8C53A2",
+    ],
   ])("%s", async (_case, stops, position, expected) => {
     const { parseGradient: parse, insertGradientStop: insert } =
       await loadColorModulesWithChromeCanvas();
