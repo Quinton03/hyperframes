@@ -16,7 +16,6 @@ describe("timeline viewport budgets", () => {
       maxMountedTimelineDescendants: 5_000,
       thumbnailCacheBytes: 64 * 1024 * 1024,
       waveformCacheBytes: 16 * 1024 * 1024,
-      concurrentCompositionFetches: 1,
       interactionP95Ms: 50,
       constrainedInteractionP95Ms: 75,
       constrainedFrameIntervalP95Ms: 75,
