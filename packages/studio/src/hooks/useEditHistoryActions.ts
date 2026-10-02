@@ -3,7 +3,10 @@ import { useCallback, useMemo } from "react";
 import { STUDIO_MOTION_PATH } from "../components/editor/studioMotion";
 import { serializeStudioFileMutations } from "../utils/studioFileMutationCoordinator";
 import type { RestoreFiles } from "../utils/gsapUndoRestore";
-import { hasStudioPendingEdits, revertNewestStudioPendingEdit } from "../utils/studioPendingEdits";
+import {
+  hasStudioPendingEdits,
+  paintBackNewestStudioPendingEdit,
+} from "../utils/studioPendingEdits";
 
 interface HistoryResult {
   ok: boolean;
@@ -79,7 +82,7 @@ export function useEditHistoryActions({
       const predicted = editHistory.predict?.(direction) ?? null;
       const predictedShown = predicted ? (showHistoryRestoreNow?.(predicted.files) ?? null) : null;
       const pendingEditShown =
-        !predictedShown && direction === "undo" ? revertNewestStudioPendingEdit() : null;
+        !predictedShown && direction === "undo" ? paintBackNewestStudioPendingEdit() : null;
       const putBack = predictedShown ?? pendingEditShown?.showAgain;
       const claimedAfter =
         direction === "undo" && hasStudioPendingEdits() ? editHistory.claims?.() : undefined;

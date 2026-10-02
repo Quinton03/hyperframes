@@ -121,7 +121,7 @@ export function beginStudioPendingEdit(revert: StudioEditRevert | null) {
   };
 }
 
-export function revertNewestStudioPendingEdit(): {
+export function paintBackNewestStudioPendingEdit(): {
   showAgain: () => void;
   landed: () => Promise<boolean>;
 } | null {
@@ -130,6 +130,10 @@ export function revertNewestStudioPendingEdit(): {
   if (!newest || !revert) return null;
   newest.revert = null;
   return { showAgain: revert(), landed: newest.landed };
+}
+
+export function revertNewestStudioPendingEdit(): (() => void) | null {
+  return paintBackNewestStudioPendingEdit()?.showAgain ?? null;
 }
 
 export async function flushStudioPendingEdits({

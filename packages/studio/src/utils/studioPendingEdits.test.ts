@@ -5,7 +5,7 @@ import {
   beginStudioPendingEdit,
   flushStudioPendingEdits,
   hasStudioPendingEdits,
-  revertNewestStudioPendingEdit,
+  paintBackNewestStudioPendingEdit,
   trackStudioPendingEdit,
   trackedStudioEdit,
 } from "./studioPendingEdits";
@@ -227,11 +227,11 @@ describe("a pending edit undo can paint back", () => {
     shown.length = 0;
     const first = edit("first");
     const second = edit("second");
-    const again = revertNewestStudioPendingEdit();
+    const again = paintBackNewestStudioPendingEdit();
     expect(shown).toEqual(["second undone"]);
     expect(second.reverted()).toBe(true);
     expect(first.reverted()).toBe(false);
-    expect(revertNewestStudioPendingEdit()).toBeNull();
+    expect(paintBackNewestStudioPendingEdit()).toBeNull();
     again!.showAgain();
     expect(shown).toEqual(["second undone", "second again"]);
     first.settle();
@@ -243,7 +243,7 @@ describe("a pending edit undo can paint back", () => {
     const move = edit("move");
     let saved!: () => void;
     trackStudioPendingEdit(new Promise<void>((resolve) => (saved = resolve)));
-    expect(revertNewestStudioPendingEdit()).toBeNull();
+    expect(paintBackNewestStudioPendingEdit()).toBeNull();
     expect(shown).toEqual([]);
     saved();
     move.settle();
@@ -258,7 +258,7 @@ describe("a pending edit undo can paint back", () => {
       trackStudioPendingEdit(new Promise<void>((resolve) => (saved = resolve))),
     );
     move.settle(save);
-    revertNewestStudioPendingEdit();
+    paintBackNewestStudioPendingEdit();
     expect(shown).toEqual(["move undone"]);
     saved();
     await expect(flushStudioPendingEdits()).resolves.toEqual({ status: "clean" });
