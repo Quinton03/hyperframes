@@ -19,6 +19,7 @@ import {
   visibleQuad,
 } from "./geometry.mjs";
 import { frameSamplerScript, scoreTeleport, startFrames, stopFrames } from "./teleport.mjs";
+import { installWebMcpHost } from "../webmcp-host.mjs";
 
 export const VIEWPORT = { width: 1600, height: 900 };
 const STEPS = 20;
@@ -98,18 +99,11 @@ export async function stopServer(child) {
   await exited;
 }
 
-/** Runs in the top frame before Studio: the WebMCP host plus a frame-interval and long-task recorder. */
+/** Runs in the top frame after installWebMcpHost("__editBench"): a frame-interval and long-task recorder. */
 function instrumentPage() {
   if (window.top !== window) return;
-  const tools = new Map();
-  Object.defineProperty(document, "modelContext", {
-    configurable: true,
-    value: { registerTool: async (tool) => void tools.set(tool.name, tool) },
-  });
   const rec = { on: false, frames: [], long: [] };
-  const call = (name, input) =>
-    tools.get(name).execute(input, { signal: new AbortController().signal });
-  window.__editBench = { has: (name) => tools.has(name), call, rec };
+  window.__editBench.rec = rec;
   // The callback's own clock: Chrome stamps a late frame with the vsync it missed, which hides a stall.
   const loop = () => {
     if (rec.on) rec.frames.push(performance.now());
@@ -632,6 +626,7 @@ export async function controlDrag(browser, gesture) {
   try {
     const page = await context.newPage();
     await page.setViewport(VIEWPORT);
+    await page.evaluateOnNewDocument(installWebMcpHost, "__editBench");
     await page.evaluateOnNewDocument(instrumentPage);
     // The real drags run the frame sampler, so the control pays its cost too.
     await page.evaluateOnNewDocument(frameSamplerScript);
@@ -785,6 +780,7 @@ export async function inStudio({ browser, spec, dir, files, url, evidence }, dri
     (evidence.shots[name] = await page.screenshot({ type: "jpeg", quality: 70 }));
   try {
     await page.setViewport(VIEWPORT);
+    await page.evaluateOnNewDocument(installWebMcpHost, "__editBench");
     await page.evaluateOnNewDocument(instrumentPage);
     await page.evaluateOnNewDocument(frameSamplerScript);
     await page.goto(url);

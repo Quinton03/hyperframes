@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { launchStudioChrome } from "./chrome-executable.mjs";
+import { installWebMcpHost } from "./webmcp-host.mjs";
 
 const STUDIO_URL = process.env.STUDIO_URL;
 const PROJECT_DIR = process.env.STUDIO_PROJECT_DIR;
@@ -63,19 +64,7 @@ const rounds = [];
 try {
   const page = await browser.newPage();
   await page.setViewport({ width: 1600, height: 900 });
-  await page.evaluateOnNewDocument(() => {
-    if (window.top !== window) return;
-    const tools = new Map();
-    Object.defineProperty(document, "modelContext", {
-      configurable: true,
-      value: { registerTool: async (tool) => void tools.set(tool.name, tool) },
-    });
-    window.__undoPool = {
-      has: (name) => tools.has(name),
-      call: (name, input) =>
-        tools.get(name).execute(input, { signal: new AbortController().signal }),
-    };
-  });
+  await page.evaluateOnNewDocument(installWebMcpHost, "__undoPool");
   const call = (name, input) =>
     Promise.race([
       page.evaluate((n, i) => window.__undoPool.call(n, i), name, input),
