@@ -18,6 +18,7 @@ try {
       "build",
       "packages/studio/src/components/editor/colorValue.ts",
       "packages/studio/src/components/editor/gradientValue.ts",
+      "packages/studio/src/components/editor/inlineTextStyleRead.ts",
       "--target",
       "browser",
       "--outdir",
@@ -35,10 +36,11 @@ try {
   });
   const page = await browser.newPage();
   const results = await page.evaluate(
-    async (colorUrl, gradientUrl) => {
+    async (colorUrl, gradientUrl, readUrl) => {
       const { parseCssColor, toColorPickerValue, mergeColorWithExistingAlpha, resolvePickerColor } =
         await import(colorUrl);
       const { parseGradient, insertGradientStop } = await import(gradientUrl);
+      const { readFirstPaintedElement, readInlineStyleSpread } = await import(readUrl);
       const inputs = [
         "white",
         "rebeccapurple",
@@ -67,16 +69,24 @@ try {
       document.body.append(element);
       const frame = document.createElement("iframe");
       frame.srcdoc =
-        '<html style="color-scheme: dark"><body><span style="color: light-dark(white, red)">x</span></body></html>';
+        '<html style="color-scheme: dark"><body><div contenteditable="true" style="color: green">' +
+        '<span style="color: light-dark(white, red)">x</span></div></body></html>';
       await new Promise((loaded) => {
         frame.onload = loaded;
         document.body.append(frame);
       });
-      const darkSpan = frame.contentDocument.querySelector("span");
+      const darkDoc = frame.contentDocument;
+      const darkSelection = darkDoc.createRange();
+      darkSelection.selectNodeContents(darkDoc.querySelector("div"));
+      const darkAuthored = readInlineStyleSpread(darkSelection, "color")[0];
       return {
         colors,
-        darkParse: parseCssColor(darkSpan.style.color),
-        darkPicker: resolvePickerColor(darkSpan.style.color, darkSpan, "#ffffff"),
+        darkParse: parseCssColor(darkAuthored),
+        darkPicker: resolvePickerColor(
+          darkAuthored,
+          readFirstPaintedElement(darkSelection),
+          "#ffffff",
+        ),
         picker: toColorPickerValue(getComputedStyle(element).color),
         alpha: mergeColorWithExistingAlpha("#123456", "color(srgb 0.4 0 0.6 / 0.25)"),
         gradient: insertGradientStop(gradient, 50).stops[1].color,
@@ -85,6 +95,7 @@ try {
     },
     moduleUrl("colorValue"),
     moduleUrl("gradientValue"),
+    moduleUrl("inlineTextStyleRead"),
   );
   const expected = [
     [255, 255, 255, 1],

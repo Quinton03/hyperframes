@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { applyInlineStyle } from "./inlineTextStyleRange";
-import { readInlineStyle, readInlineStyleSpread } from "./inlineTextStyleRead";
+import {
+  readFirstPaintedElement,
+  readInlineStyle,
+  readInlineStyleSpread,
+} from "./inlineTextStyleRead";
 import { resolvePickerColor } from "./colorValue";
 import type { InlineTextEditSession } from "../../hooks/useInlineTextEdit";
 
@@ -250,7 +254,7 @@ function placeOverSelection(
     colours,
     pickerColour: resolvePickerColor(
       styles.color ?? colours[0],
-      rangeStartElement(range),
+      readFirstPaintedElement(range),
       DEFAULT_COLOR,
     ),
   };
@@ -260,9 +264,4 @@ function isBold(weight: string | undefined): boolean {
   if (!weight) return false;
   if (weight === "bold" || weight === "bolder") return true;
   return Number.parseInt(weight, 10) >= 600;
-}
-
-function rangeStartElement(range: Range): Element | null {
-  const node = range.startContainer;
-  return node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
 }
