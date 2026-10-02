@@ -6,7 +6,6 @@ import type { CaptureOptions, EngineConfig, ExtractedFrames } from "@hyperframes
 import {
   DEFAULT_CONFIG,
   DrawElementCaptureError,
-  classifyCaptureFailure,
   executeParallelCapture,
   mergeWorkerFrames,
 } from "@hyperframes/engine";

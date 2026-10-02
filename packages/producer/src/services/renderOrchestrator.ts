@@ -2396,9 +2396,6 @@ export function resolveParallelRouterRetryPlan(args: {
  * of calibration, so a generic capture failure on that pinned count is
  * exactly the scenario the pin itself introduced risk for.
  *
- * A one-worker stream that loses its loopback connection before the first frame also retries, with the
- * file server recreated first when its health probe fails (resolvePreFrameLoopbackLoss).
- *
  * Includes OOM (previously excluded — see PR history): every worker's
  * `executeWorkerTask` closes its capture session in a `finally` that awaits
  * `closeCaptureSession` → `releaseBrowser`, which SIGKILLs the Chrome process
