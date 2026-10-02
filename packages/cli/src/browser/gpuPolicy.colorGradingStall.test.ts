@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   ensureBrowser: vi.fn(),
@@ -13,11 +13,18 @@ vi.mock("@hyperframes/engine", () => ({
   resolveBrowserGpuMode: mocks.resolveBrowserGpuMode,
 }));
 
-import { detectColorGradingGpuStallRisk } from "./gpuPolicy.js";
+import { compositionUsesColorGrading, detectColorGradingGpuStallRisk } from "./gpuPolicy.js";
 
 const GRADED_HTML =
   '<div data-composition-id="main"><img data-color-grading=\'{"adjust":{"saturation":-1}}\' src="a.jpg" /></div>';
 const UNGRADED_HTML = '<div data-composition-id="main"><img src="a.jpg" /></div>';
+
+describe("compositionUsesColorGrading", () => {
+  it("detects data-color-grading on any element, not just the composition root", () => {
+    expect(compositionUsesColorGrading(GRADED_HTML)).toBe(true);
+    expect(compositionUsesColorGrading(UNGRADED_HTML)).toBe(false);
+  });
+});
 
 describe("detectColorGradingGpuStallRisk", () => {
   beforeEach(() => {
@@ -25,15 +32,11 @@ describe("detectColorGradingGpuStallRisk", () => {
     mocks.ensureBrowser.mockResolvedValue({ executablePath: "/chrome", source: "cache" });
   });
 
-  afterEach(() => {
-    vi.resetAllMocks();
-  });
-
   it("warns when the composition uses color grading and no hardware GPU is found", async () => {
     mocks.resolveBrowserGpuMode.mockResolvedValue("software");
     const warning = await detectColorGradingGpuStallRisk(GRADED_HTML, "auto");
     expect(warning).toContain("data-color-grading");
-    expect(warning).toContain("SwiftShader");
+    expect(warning).toContain("software WebGL");
     expect(warning).toContain("--timeout");
   });
 

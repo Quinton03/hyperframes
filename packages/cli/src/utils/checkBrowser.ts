@@ -158,11 +158,6 @@ export async function runBrowserCheck(
   const html = await bundleWithLocalizedFonts(project.dir);
   await preResolveHostileMediaProxies(project.dir, html, options.autoProxy);
   const requestedGpuMode = options.browserGpuMode ?? resolveCliChromeGpuMode();
-  // Printed eagerly (not just recorded as a finding) because the risk this
-  // flags is a navigation timeout — if it fires, `runBrowserCheck` throws
-  // before ever returning a report, so a finding pushed to `drafts` would be
-  // discarded along with the whole in-flight result (see runCheckPipeline's
-  // catch, which replaces browser with emptyBrowserResult() on that path).
   const colorGradingGpuWarning = await detectColorGradingGpuStallRisk(html, requestedGpuMode);
   if (colorGradingGpuWarning) console.warn(`\n[hyperframes] ${colorGradingGpuWarning}`);
   const server = await serveStaticProjectHtml(
@@ -173,14 +168,6 @@ export async function runBrowserCheck(
     options.autoProxy,
   );
   const drafts: RuntimeDraft[] = [];
-  if (colorGradingGpuWarning) {
-    drafts.push({
-      code: "color_grading_gpu_stall_risk",
-      severity: "warning",
-      message: colorGradingGpuWarning,
-      time: 0,
-    });
-  }
   let currentTime = 0;
   let chromeBrowser: import("puppeteer-core").Browser | undefined;
 
