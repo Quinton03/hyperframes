@@ -120,13 +120,19 @@ it("a second undo pressed while the same edit saves undoes the edit before it", 
   const { hook, file, save, readFile } = await studio();
   save("B");
   await act(() =>
-    hook().recordEdit({ label: "Moved Title", files: { "index.html": { before: "A", after: "B" } } }),
+    hook().recordEdit({
+      label: "Moved Title",
+      files: { "index.html": { before: "A", after: "B" } },
+    }),
   );
   await vi.waitFor(() => expect(hook().undoLabel).toBe("Moved Title"));
   const atKey = hook().claims();
   save("C");
   await act(() =>
-    hook().recordEdit({ label: "Moved Card", files: { "index.html": { before: "B", after: "C" } } }),
+    hook().recordEdit({
+      label: "Moved Card",
+      files: { "index.html": { before: "B", after: "C" } },
+    }),
   );
 
   const first = await act(() => hook().undo({ readFile, claimedAfter: atKey }));

@@ -516,8 +516,16 @@ it("refuses a tween whose selector also animates a sibling, before it plans anyt
   el.className = "card";
   const sibling = document.body.appendChild(document.createElement("div"));
   sibling.className = "card";
-  const shared = tween({ targetSelector: ".card", properties: { x: 100 }, resolvedStart: 0, duration: 1 });
+  const shared = tween({
+    targetSelector: ".card",
+    properties: { x: 100 },
+    resolvedStart: 0,
+    duration: 1,
+  });
 
-  expect(planValueEdit(selection, shared, { x: 40 }, null)).toEqual({ ok: false, reason: "shared-tween" });
+  expect(planValueEdit(selection, shared, { x: 40 }, null)).toEqual({
+    ok: false,
+    reason: "shared-tween",
+  });
   sibling.remove();
 });
