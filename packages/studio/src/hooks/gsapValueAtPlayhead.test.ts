@@ -311,6 +311,63 @@ describe("a resize on a layer whose scale GSAP animates, at the playhead", () =>
   });
 });
 
+describe("a resize inside one gesture, on a tween that mixes size and position", () => {
+  it("writes the size and the anchor move once, into the tween the file has", async () => {
+    const keys = tween({
+      id: "#box-to-0",
+      propertyGroup: undefined,
+      method: "to",
+      properties: {},
+      resolvedStart: 0,
+      duration: 3,
+      keyframes: {
+        format: "object-array",
+        keyframes: [
+          { percentage: 66.667, properties: { x: 60, width: 280 }, ease: "none" },
+          { percentage: 100, properties: { x: 120, width: 320 }, ease: "none" },
+        ],
+      },
+    });
+    el.setAttribute("data-hf-studio-original-box-width", "260");
+    el.setAttribute("data-hf-studio-original-box-height", "160");
+    el.setAttribute("data-hf-drag-gsap-base-x", "50");
+    el.setAttribute("data-hf-drag-gsap-base-y", "30");
+    const live = liveTween(el, { start: 0, duration: 3, vars: { keyframes: [] } });
+    usePlayerStore.setState({ currentTime: 1 });
+    // A gesture buffers its writes: the file the intercept reads back stays as it was.
+    const commitMutation = vi.fn();
+    const outcome = await tryGsapResizeIntercept(
+      selection,
+      { width: 300, height: 200 },
+      [keys],
+      previewWith(el, [live]),
+      commitMutation,
+      async () => [keys],
+      { x: -40, y: -40 },
+    );
+    expect(outcome).toMatchObject({ status: "persisted", ownsDragOffset: true });
+    expect(commitMutation.mock.calls.map((call) => call[1])).toEqual([
+      expect.objectContaining({
+        type: "replace-with-keyframes",
+        animationId: "#box-to-0",
+        keyframes: [
+          {
+            percentage: 33.333,
+            properties: { width: 300, height: 200, x: 10, y: -10 },
+            ease: "none",
+          },
+          {
+            percentage: 66.667,
+            properties: { x: 60, width: 280, height: 160, y: 30 },
+            ease: "none",
+          },
+          { percentage: 100, properties: { x: 120, width: 320, height: 160, y: 30 }, ease: "none" },
+        ],
+      }),
+    ]);
+  });
+});
+
 describe("a rotate on a GSAP-animated layer, at the playhead", () => {
   it("changes the keyframe two flat tweens meet at, on the tween that states it", async () => {
     const spin = (id: string, start: number, duration: number, rotation: number) =>

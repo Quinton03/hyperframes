@@ -9,7 +9,7 @@
  * easing, or seek position.
  */
 import type { GsapAnimation, PropertyGroupName } from "@hyperframes/core/gsap-parser";
-import { isXYPositionWrite } from "@hyperframes/parsers/gsap-constants";
+import { isXYPositionWrite, PROPERTY_GROUPS } from "@hyperframes/parsers/gsap-constants";
 import type { DomEditSelection } from "../components/editor/domEditingTypes";
 import { usePlayerStore } from "../player/store/playerStore";
 
@@ -54,64 +54,29 @@ const ROTATION_CHANNEL_SET = new Set<string>(ROTATION_CHANNELS);
 // ── Property-group tween resolution ───────────────────────────────────────
 
 /**
- * Find the tween for a given property group, splitting a legacy mixed tween
- * if necessary. Returns the resolved animation or null if none exists.
- *
- * Resolution order:
- * 1. Tween already tagged with `propertyGroup === group`
- * 2. Legacy mixed tween (`!propertyGroup`) → split via server mutation,
- *    re-fetch, then return the group tween
- * 3. null — caller must handle the missing-tween case
+ * The tween to edit for a property group: a tween tagged with it, else a legacy tween that mixes
+ * it with other groups. A mixed tween is edited in place, never split first: inside a gesture the
+ * split is only buffered, so ids read after it are stale and the edit lands beside the old tween.
  */
 export async function resolveGroupTween(
   group: PropertyGroupName,
   animations: GsapAnimation[],
-  selection: DomEditSelection,
-  commitMutation: GsapDragCommitCallbacks["commitMutation"],
+  _selection: DomEditSelection,
+  _commitMutation: GsapDragCommitCallbacks["commitMutation"],
   fetchFallbackAnimations?: () => Promise<GsapAnimation[]>,
 ): Promise<{ anim: GsapAnimation; animations: GsapAnimation[] } | null> {
-  // 1. Already-split group tween — pick the one closest to the current
-  // playhead so a drag at t=6s edits the tween at 4s, not the one at 1.5s.
-  const groupAnims = animations.filter((a) => a.propertyGroup === group);
-  const groupAnim = pickClosestToPlayhead(groupAnims);
-  if (groupAnim) return { anim: groupAnim, animations };
-
-  // 2. Legacy mixed tween — split it, then re-fetch
-  const legacyMixed = animations.find((a) => !a.propertyGroup);
-  if (legacyMixed) {
-    await commitMutation(
-      selection,
-      { type: "split-into-property-groups", animationId: legacyMixed.id },
-      { label: "Split mixed tween into property groups", skipReload: true },
-    );
-    if (fetchFallbackAnimations) {
-      const fresh = await fetchFallbackAnimations();
-      const freshGroupAnim = fresh.find((a) => a.propertyGroup === group);
-      if (freshGroupAnim) return { anim: freshGroupAnim, animations: fresh };
-    }
-  }
-
-  // 3. Try fallback fetch (no split needed, just wasn't in the initial list)
-  if (!legacyMixed && fetchFallbackAnimations) {
-    const fresh = await fetchFallbackAnimations();
-    const freshGroupAnim = fresh.find((a) => a.propertyGroup === group);
-    if (freshGroupAnim) return { anim: freshGroupAnim, animations: fresh };
-
-    // Fallback: legacy mixed in the fresh list
-    const freshLegacy = fresh.find((a) => !a.propertyGroup);
-    if (freshLegacy) {
-      await commitMutation(
-        selection,
-        { type: "split-into-property-groups", animationId: freshLegacy.id },
-        { label: "Split mixed tween into property groups", skipReload: true },
-      );
-      const reFetched = await fetchFallbackAnimations();
-      const reFetchedGroup = reFetched.find((a) => a.propertyGroup === group);
-      if (reFetchedGroup) return { anim: reFetchedGroup, animations: reFetched };
-    }
-  }
-
-  return null;
+  const inGroup = (list: GsapAnimation[]) => {
+    const tagged = list.filter((a) => a.propertyGroup === group);
+    const props = new Set(PROPERTY_GROUPS[group]);
+    const mixed = list.filter((a) => !a.propertyGroup && animationWritesAnyProperty(a, props));
+    return pickClosestToPlayhead(tagged.length > 0 ? tagged : mixed);
+  };
+  const anim = inGroup(animations);
+  if (anim) return { anim, animations };
+  if (!fetchFallbackAnimations) return null;
+  const fresh = await fetchFallbackAnimations();
+  const freshAnim = inGroup(fresh);
+  return freshAnim ? { anim: freshAnim, animations: fresh } : null;
 }
 
 // ── High-level intercept ───────────────────────────────────────────────────

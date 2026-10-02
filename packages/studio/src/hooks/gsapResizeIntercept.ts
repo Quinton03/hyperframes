@@ -23,7 +23,7 @@ import {
   findSizeSetAnimation,
 } from "./gsapDragCommit";
 import type { GsapDragCommitCallbacks } from "./gsapDragCommit";
-import { computeDraggedGsapPosition } from "./draggedGsapPosition";
+import { computeDraggedGsapPosition, restoreDragOffset } from "./draggedGsapPosition";
 import { pickClosestToPlayhead, readGsapPositionFromIframe } from "./gsapPositionDetection";
 import { commitWholePropertyOffset } from "./gsapWholePropertyOffsetCommit";
 import { commitGsapPositionFromDrag } from "./gsapDragPositionCommit";
@@ -41,6 +41,7 @@ import { commitValueAtPlayhead } from "./gsapValueAtPlayhead";
 import { preflightGsapResizeIntercept, resizeRoute } from "./gsapResizePreflight";
 
 const SIZE_PROPS = new Set(["width", "height"]);
+const POSITION_XY = new Set(["x", "y"]);
 
 /**
  * The element's box before the resize draft ran, in CSS pixels.
@@ -69,6 +70,44 @@ function preGestureBoxSize(el: HTMLElement): Record<string, number> {
   return { ...(width != null && { width }), ...(height != null && { height }) };
 }
 
+/** A size write at the playhead. When the same tween animates position, the resize's anchor move
+ *  goes into this one write: a second write to the tween in the same gesture would plan on stale ids. */
+async function commitSizeAtPlayhead(
+  selection: DomEditSelection,
+  anim: GsapAnimation,
+  size: Record<string, number>,
+  iframe: HTMLIFrameElement | null,
+  dragOffset: { x: number; y: number } | undefined,
+  callbacks: GsapDragCommitCallbacks,
+): Promise<GsapEditOutcome> {
+  const selector = selectorFromSelection(selection);
+  const moves = !!dragOffset && (dragOffset.x !== 0 || dragOffset.y !== 0) && !!selector;
+  const anchor =
+    moves && animationWritesAnyProperty(anim, POSITION_XY)
+      ? computeDraggedGsapPosition(
+          selection.element,
+          dragOffset,
+          readGsapPositionFromIframe(iframe, selector) ?? { x: 0, y: 0 },
+        )
+      : null;
+  const written = await commitValueAtPlayhead(
+    selection,
+    anim,
+    anchor ? { ...size, x: anchor.newX, y: anchor.newY } : size,
+    iframe,
+    callbacks,
+    {
+      label: "Resize",
+      backfill: {
+        ...preGestureBoxSize(selection.element),
+        ...(anchor && { x: anchor.baseGsapX, y: anchor.baseGsapY }),
+      },
+      ...(anchor && { beforeReload: () => restoreDragOffset(selection.element) }),
+    },
+  );
+  return written.status === "persisted" && anchor ? { ...written, ownsDragOffset: true } : written;
+}
+
 /**
  * Whether this tween already states scale as `scaleX`/`scaleY`.
  *
@@ -95,6 +134,7 @@ export async function tryGsapResizeIntercept(
   iframe: HTMLIFrameElement | null,
   commitMutation: GsapDragCommitCallbacks["commitMutation"],
   fetchFallbackAnimations?: () => Promise<GsapAnimation[]>,
+  dragOffset?: { x: number; y: number },
 ): Promise<GsapEditOutcome> {
   const fetchedAnimations = fetchFallbackAnimations ? await fetchFallbackAnimations() : [];
   const outcome = preflightGsapResizeIntercept(selection, animations, iframe, fetchedAnimations);
@@ -163,14 +203,11 @@ export async function tryGsapResizeIntercept(
       );
       if (animatedTween) {
         logResize("intercept-route", { route: "keyframed-size", tweenId: animatedTween.id });
-        return commitValueAtPlayhead(
-          selection,
-          animatedTween,
-          { width: roundToLayoutPx(size.width), height: roundToLayoutPx(size.height) },
-          iframe,
-          { commitMutation, fetchAnimations: fetchFallbackAnimations },
-          { label: "Resize", backfill: preGestureBoxSize(selection.element) },
-        );
+        const sized = { width: roundToLayoutPx(size.width), height: roundToLayoutPx(size.height) };
+        return commitSizeAtPlayhead(selection, animatedTween, sized, iframe, dragOffset, {
+          commitMutation,
+          fetchAnimations: fetchFallbackAnimations,
+        });
       }
     }
 
@@ -429,14 +466,13 @@ export async function tryGsapResizeIntercept(
     return { status: "persisted", ownsDragOffset: await finalizeScaleResizeCommit() };
   }
 
-  const written = await commitValueAtPlayhead(
-    selection,
-    anim,
-    resizeProps,
-    iframe,
-    { commitMutation, fetchAnimations: fetchFallbackAnimations },
-    { label: "Resize", backfill: resizeBackfill },
-  );
+  const callbacks = { commitMutation, fetchAnimations: fetchFallbackAnimations };
+  if (resizeGroup === "size")
+    return commitSizeAtPlayhead(selection, anim, resizeProps, iframe, dragOffset, callbacks);
+  const written = await commitValueAtPlayhead(selection, anim, resizeProps, iframe, callbacks, {
+    label: "Resize",
+    backfill: resizeBackfill,
+  });
   if (written.status !== "persisted") return written;
   return { status: "persisted", ownsDragOffset: await finalizeScaleResizeCommit() };
 }

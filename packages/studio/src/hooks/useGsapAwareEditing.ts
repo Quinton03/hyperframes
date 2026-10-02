@@ -392,6 +392,7 @@ export function useGsapAwareEditing({
                 previewIframeRef.current,
                 commitMutation,
                 makeFetchFallback(selection),
+                offset,
               );
               assertGsapEditPersisted(outcome);
               // Saved before the buffered GSAP writes, so their reload stays the gesture's last render.
