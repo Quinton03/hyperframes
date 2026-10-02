@@ -74,29 +74,52 @@ function parseSerializedColor(value: string): ParsedColor | null {
 
 let colorContext: CanvasRenderingContext2D | null = null;
 
+function canResolveInBrowser(value: string): boolean {
+  return (
+    typeof document !== "undefined" &&
+    typeof CSS !== "undefined" &&
+    CSS.supports("color", value) &&
+    !/\bcurrentcolor\b|\bvar\s*\(/i.test(value)
+  );
+}
+
 function parseBrowserColor(value: string): ParsedColor | null {
-  if (
-    typeof document === "undefined" ||
-    typeof CSS === "undefined" ||
-    !CSS.supports("color", value) ||
-    /\bcurrentcolor\b|\bvar\s*\(/i.test(value)
-  )
-    return null;
+  if (!canResolveInBrowser(value)) return null;
   try {
     colorContext ??= document.createElement("canvas").getContext("2d");
     if (!colorContext) return null;
-    colorContext.fillStyle = "transparent";
-    colorContext.fillStyle = `color(from ${value} srgb r g b / alpha)`;
-    return parseSrgbSerialization(colorContext.fillStyle);
+    return (
+      parseCanvasColor(colorContext, value, parseSerializedColor) ??
+      parseCanvasColor(
+        colorContext,
+        `color(from ${value} srgb r g b / alpha)`,
+        parseSrgbSerialization,
+      )
+    );
   } catch {
     return null;
   }
 }
 
-function parseSrgbSerialization(
-  serialized: string | CanvasGradient | CanvasPattern,
+function parseCanvasColor(
+  context: CanvasRenderingContext2D,
+  value: string,
+  parse: (serialized: string) => ParsedColor | null,
 ): ParsedColor | null {
-  if (typeof serialized !== "string") return null;
+  const serialized = readCanvasColor(context, value);
+  return serialized === null ? null : parse(serialized);
+}
+
+function readCanvasColor(context: CanvasRenderingContext2D, value: string): string | null {
+  context.fillStyle = "transparent";
+  context.fillStyle = value;
+  const first = context.fillStyle;
+  context.fillStyle = "white";
+  context.fillStyle = value;
+  return typeof first === "string" && first === context.fillStyle ? first : null;
+}
+
+function parseSrgbSerialization(serialized: string): ParsedColor | null {
   const match = serialized.match(/^color\(srgb ([^ ]+) ([^ ]+) ([^ /)]+)(?: \/ ([^)]+))?\)$/);
   if (!match) return null;
   const channels = match.slice(1, 4).map(Number);
