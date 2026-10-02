@@ -7,9 +7,8 @@ import type { ProducerLogger } from "../../logger.js";
 import type { FileServerHandle, FileServerHealth } from "../fileServer.js";
 
 /**
- * The loss that earns a file-server health probe (and restart when unhealthy) before the retry: a
- * loopback endpoint loss on a one-worker stream before any frame. Whether to retry at all is
- * shouldRetryViaPinnedFallback's call; a bare `Target closed` names no endpoint, so it gets no probe.
+ * A loopback loss on a one-worker stream before any frame earns a file-server health probe (restart when
+ * unhealthy). Retrying is shouldRetryViaPinnedFallback's call; a bare `Target closed` gets no probe.
  */
 export function resolvePreFrameLoopbackLoss(input: {
   failure: CaptureFailure;

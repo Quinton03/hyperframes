@@ -740,12 +740,7 @@ export async function probeFileServerHealth(
   }
 }
 
-/**
- * The probe's failure text with the code that names it. Node's `fetch` reports
- * every connect failure as "fetch failed" and buries `ECONNREFUSED` /
- * `ETIMEDOUT` in `.cause`; Bun's carries `ConnectionRefused` on the error
- * itself. Either way the code is what a restart decision gets read against.
- */
+/** The probe's error text plus its errno code: Node buries the code in `.cause`, Bun sets it on the error. */
 function describeHealthProbeError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   let current: unknown = error;
@@ -759,12 +754,7 @@ function describeHealthProbeError(error: unknown): string {
   return message;
 }
 
-/**
- * The one shape every render-path file server takes: the compiled tree under
- * `workDir`, an ephemeral port, the virtual-time shim first in `<head>`, and
- * the job's fps. Probe discovery, frame capture, and the pre-frame capture
- * retry all construct through here so the three sites cannot drift.
- */
+/** The one render-path file server shape; probe, capture and the pre-frame retry share it so they cannot drift. */
 export function createRenderFileServer(input: {
   projectDir: string;
   workDir: string;
