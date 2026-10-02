@@ -33,6 +33,14 @@ function parseComponent(value: string, scale: number): number {
   return value.endsWith("%") ? (Number(value.slice(0, -1)) * scale) / 100 : Number(value);
 }
 
+const NUMBER = String.raw`(?:\d+(?:\.\d+)?|\.\d+)`;
+const COMMA_RGB = new RegExp(
+  String.raw`^rgba?\(\s*(${NUMBER})\s*,\s*(${NUMBER})\s*,\s*(${NUMBER})(?:\s*,\s*(${NUMBER}))?\s*\)$`,
+);
+const SPACE_RGB = new RegExp(
+  String.raw`^rgba?\(\s*(${NUMBER}%?)\s+(${NUMBER}%?)\s+(${NUMBER}%?)(?:\s*\/\s*(${NUMBER}%?))?\s*\)$`,
+);
+
 function parseSerializedColor(value: string): ParsedColor | null {
   const trimmed = value.trim().toLowerCase();
   if (!trimmed) return null;
@@ -51,13 +59,7 @@ function parseSerializedColor(value: string): ParsedColor | null {
     };
   }
 
-  const rgba =
-    trimmed.match(
-      /^rgba?\(\s*(\d*\.?\d+)\s*,\s*(\d*\.?\d+)\s*,\s*(\d*\.?\d+)(?:\s*,\s*(\d*\.?\d+))?\s*\)$/,
-    ) ??
-    trimmed.match(
-      /^rgba?\(\s*(\d*\.?\d+%?)\s+(\d*\.?\d+%?)\s+(\d*\.?\d+%?)(?:\s*\/\s*(\d*\.?\d+%?))?\s*\)$/,
-    );
+  const rgba = trimmed.match(COMMA_RGB) ?? trimmed.match(SPACE_RGB);
   if (rgba) {
     return {
       red: clampChannel(parseComponent(rgba[1], 255)),
@@ -83,7 +85,7 @@ function parseBrowserColor(value: string): ParsedColor | null {
   try {
     colorContext ??= document.createElement("canvas").getContext("2d");
     if (!colorContext) return null;
-    colorContext.fillStyle = "#000000";
+    colorContext.fillStyle = "transparent";
     colorContext.fillStyle = `color(from ${value} srgb r g b / alpha)`;
     return parseSrgbSerialization(colorContext.fillStyle);
   } catch {
