@@ -234,6 +234,30 @@ export function planValueAtPlayhead(edit: PlayheadEdit): PlayheadEditPlan {
   };
 }
 
+/** commitValueAtPlayhead's plan, writing nothing, so a group can plan every member first. */
+export function planValueEdit(
+  selection: DomEditSelection,
+  anim: GsapAnimation,
+  values: Record<string, number>,
+  iframe: HTMLIFrameElement | null,
+  { backfill, holdFromStart }: Pick<PlayheadEdit, "backfill" | "holdFromStart"> = {},
+): PlayheadEditPlan {
+  // One keyframe of a tween its siblings share would move them all.
+  if (tweenReach(anim, selection.element) === "shared") return refuse("shared-tween");
+  const { activeKeyframePct, currentTime } = usePlayerStore.getState();
+  const tween = findParsedTween(iframe, selection.element, anim);
+  const timed = withExactStepTimes(anim, tween);
+  return planValueAtPlayhead({
+    anim: timed.duration == null && tween ? { ...timed, duration: tween.duration?.() } : timed,
+    at: activeKeyframePct != null ? { percentage: activeKeyframePct } : { time: currentTime },
+    values,
+    backfill,
+    holdFromStart,
+    implicitEndValue: parsedImplicitEndValue(tween),
+    parsedEase: parsedTweenEase(iframe, tween),
+  });
+}
+
 /** Writes `values` into `anim` at the playhead (or the keyframe selected in the lane). */
 export async function commitValueAtPlayhead(
   selection: DomEditSelection,
@@ -247,21 +271,8 @@ export async function commitValueAtPlayhead(
   },
 ): Promise<GsapEditOutcome> {
   await materializeIfDynamic(anim, iframe, callbacks.commitMutation, selection);
-  // One keyframe of a tween its siblings share would move them all.
-  if (tweenReach(anim, selection.element) === "shared")
-    return { status: "blocked", reason: "keyframes-uneditable", detail: "shared-tween" };
-  const { activeKeyframePct, setActiveKeyframePct, currentTime } = usePlayerStore.getState();
-  const tween = findParsedTween(iframe, selection.element, anim);
-  const timed = withExactStepTimes(anim, tween);
-  const plan = planValueAtPlayhead({
-    anim: timed.duration == null && tween ? { ...timed, duration: tween.duration?.() } : timed,
-    at: activeKeyframePct != null ? { percentage: activeKeyframePct } : { time: currentTime },
-    values,
-    backfill: options.backfill,
-    holdFromStart: options.holdFromStart,
-    implicitEndValue: parsedImplicitEndValue(tween),
-    parsedEase: parsedTweenEase(iframe, tween),
-  });
+  const { activeKeyframePct, setActiveKeyframePct } = usePlayerStore.getState();
+  const plan = planValueEdit(selection, anim, values, iframe, options);
   if (!plan.ok) return { status: "blocked", reason: "keyframes-uneditable", detail: plan.reason };
   await callbacks.commitMutation(selection, plan.mutation, {
     label: options.label,

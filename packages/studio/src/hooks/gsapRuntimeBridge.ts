@@ -14,7 +14,7 @@ import type { DomEditSelection } from "../components/editor/domEditingTypes";
 import { usePlayerStore } from "../player/store/playerStore";
 
 import { readAllAnimatedProperties, readGsapProperty } from "./gsapRuntimeReaders";
-import { commitGsapPositionFromDrag } from "./gsapDragPositionCommit";
+import { commitGsapPositionFromDrag, gsapPositionFromDragOutcome } from "./gsapDragPositionCommit";
 import { commitValueAtPlayhead } from "./gsapValueAtPlayhead";
 import {
   commitStaticGsapPosition,
@@ -170,6 +170,59 @@ function oneUndoStep(
     commit(selection, mutation, { ...options, coalesceKey, coalesceMs: Number.POSITIVE_INFINITY });
 }
 
+const isPositionWriteOf = (selector: string) => (a: GsapAnimation) =>
+  a.targetSelector === selector && isXYPositionWrite(a);
+
+/** The one position write a self-heal keeps when holds fight over `selector`, else null. */
+function positionWriteKeeper(animations: GsapAnimation[], selector: string): GsapAnimation | null {
+  const dupes = animations.filter(isPositionWriteOf(selector));
+  // Real tweens one after another are a motion, not a conflict: only holds can fight.
+  if (dupes.length < 2 || dupes.filter((a) => !isInstantHold(a)).length > 1) return null;
+  return dupes.find((a) => a.keyframes) ?? dupes.find((a) => (a.duration ?? 0) > 0) ?? dupes[0]!;
+}
+
+/** Where a drag writes. With no live motion and no keyframed tween (a hold, or a
+ *  zero-length keyframed tween) the position belongs in a `tl.set`, never keyframes. */
+function dragRoute(
+  posAnim: GsapAnimation | null,
+  iframe: HTMLIFrameElement | null,
+  selector: string,
+  altKey?: boolean,
+): "static" | "whole-path" | "at-playhead" {
+  const hasNonHold = hasNonHoldTweenForElement(iframe, selector, undefined, POSITION_CHANNELS);
+  const hasKeyframedPosTween = !!posAnim?.keyframes && resolveTweenDuration(posAnim) > 0;
+  if (!hasNonHold && !hasKeyframedPosTween) return "static";
+  // Alt-drag shifts the whole path; with auto-keyframe off (#1808) that is the default.
+  return altKey || !usePlayerStore.getState().autoKeyframeEnabled ? "whole-path" : "at-playhead";
+}
+
+/** The commit's route and keyframe plan, writing nothing, so a group refuses whole. */
+async function planDrag(
+  selection: DomEditSelection,
+  offset: { x: number; y: number },
+  allAnimations: GsapAnimation[],
+  iframe: HTMLIFrameElement | null,
+  options: { altKey?: boolean },
+): Promise<GsapEditOutcome> {
+  const selector = selectorFromSelection(selection);
+  if (!selector) return { status: "blocked", reason: "no-selector" };
+  const own = tweensForThisElement(selection, allAnimations);
+  const keeper = positionWriteKeeper(own, selector);
+  const animations = keeper
+    ? own.filter((a) => a === keeper || !isPositionWriteOf(selector)(a))
+    : own;
+  const resolved = await resolveGroupTween("position", animations, selection, async () => {});
+  const posAnim = resolved?.anim ?? findGsapPositionAnimation(animations, selector);
+  const route = dragRoute(posAnim, iframe, selector, options.altKey);
+  if (route === "static") return { status: "persisted" };
+  if (!posAnim) {
+    return { status: "blocked", reason: "source-uneditable", detail: "no-position-tween" };
+  }
+  if (route === "whole-path") return { status: "persisted" };
+  const gsapPos = readGsapPositionFromIframe(iframe, selector) ?? { x: 0, y: 0 };
+  return gsapPositionFromDragOutcome(selection, posAnim, offset, gsapPos, iframe);
+}
+
 /** Commits a drag through the GSAP script. Callers reject `blocked` (the gesture layer
  *  restores its drafts) and save `element-offset` on the element itself. */
 export async function tryGsapDragIntercept(
@@ -194,7 +247,12 @@ export async function tryGsapDragIntercept(
       fetchAllAnimations,
       options?.group,
     );
-    if (preflight.status !== "persisted" || options?.preflightOnly) return preflight;
+    if (preflight.status !== "persisted") return preflight;
+    if (options?.preflightOnly) {
+      return options.group
+        ? planDrag(selection, offset, allAnimations, iframe, options)
+        : preflight;
+    }
   }
   const animations = tweensForThisElement(selection, allAnimations);
   const fetchFallbackAnimations =
@@ -211,14 +269,10 @@ export async function tryGsapDragIntercept(
   // the live keyframed/real tween if present (else any), strip the rest, so the
   // commit below updates ONE write instead of fighting duplicates.
   let workingAnimations = animations;
-  const isPosWrite = (a: GsapAnimation) => a.targetSelector === selector && isXYPositionWrite(a);
-  if (animations.filter(isPosWrite).length > 1 && fetchFallbackAnimations) {
+  if (animations.filter(isPositionWriteOf(selector)).length > 1 && fetchFallbackAnimations) {
     const fresh = await fetchFallbackAnimations();
-    const dupes = fresh.filter(isPosWrite);
-    // Real tweens one after another are a motion, not a conflict: only holds can fight.
-    if (dupes.length > 1 && dupes.filter((a) => !isInstantHold(a)).length <= 1) {
-      const keeper =
-        dupes.find((a) => a.keyframes) ?? dupes.find((a) => (a.duration ?? 0) > 0) ?? dupes[0]!;
+    const keeper = positionWriteKeeper(fresh, selector);
+    if (keeper) {
       await commitMutation(
         selection,
         {
@@ -254,26 +308,8 @@ export async function tryGsapDragIntercept(
   }
 
   const gsapPos = readGsapPositionFromIframe(iframe, selector) ?? { x: 0, y: 0 };
-
-  // STATIC case (single source of truth = GSAP timeline): the element has no LIVE
-  // keyframed/tweened position motion. Use the strict non-hold check — a leftover
-  // position-hold `set` (after a delete-all, or a stale parse that lags it) must
-  // NOT count as live motion. Either way the position belongs in a
-  // `tl.set("#el",{x,y})`, not a keyframe conversion: re-nudge an existing set in
-  // place (idempotent), else add a new one. This also covers the stale-cache
-  // phantom — committing a set is correct because the element genuinely has no live motion.
-  const hasNonHold = hasNonHoldTweenForElement(iframe, selector, undefined, POSITION_CHANNELS);
-  // A KEYFRAMED position tween — even one that's currently a flat constant ("hold",
-  // e.g. 0% and 100% identical) — is still an animation the user is building, so a
-  // drag must add/update a keyframe, NOT fall back to a static `set`. Without this,
-  // dragging an element whose position tween is constant writes a `gsap.set` that
-  // fights the tween (the "drag didn't create a keyframe / didn't persist" bug). The
-  // static path is only for elements with NO keyframed position tween (truly static,
-  // or just a leftover position-hold `set`).
-  // A zero-duration keyframed tween is a static HOLD, not a live animation —
-  // treat it as static so the drag heals it instead of feeding it more keyframes.
-  const hasKeyframedPosTween = !!posAnim?.keyframes && resolveTweenDuration(posAnim) > 0;
-  if (!hasNonHold && !hasKeyframedPosTween) {
+  const route = dragRoute(posAnim, iframe, selector, options?.altKey);
+  if (route === "static") {
     const existingSet =
       posAnim && isInstantHold(posAnim) && posAnim.targetSelector === selector
         ? posAnim
@@ -311,12 +347,7 @@ export async function tryGsapDragIntercept(
   }
 
   const cbs = { commitMutation, fetchAnimations: fetchFallbackAnimations };
-  // Alt-drag already means "shift the whole path" — the global auto-keyframe
-  // toggle (#1808) just makes that the default while it's off, so a manual
-  // edit on an already-animated element nudges the animation instead of
-  // inserting/updating a keyframe at the playhead.
-  const autoKeyframeEnabled = usePlayerStore.getState().autoKeyframeEnabled;
-  if (options?.altKey || !autoKeyframeEnabled) {
+  if (route === "whole-path") {
     await commitWholePathOffset(selection, posAnim, offset, gsapPos, iframe, selector, cbs);
   } else {
     return commitGsapPositionFromDrag(selection, posAnim, offset, gsapPos, iframe, cbs);

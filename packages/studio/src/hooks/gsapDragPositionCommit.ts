@@ -11,7 +11,7 @@ import {
   parkPlayheadOnKeyframe,
 } from "./gsapDragCommit";
 import type { GsapEditOutcome } from "./gsapEditOutcome";
-import { commitValueAtPlayhead } from "./gsapValueAtPlayhead";
+import { commitValueAtPlayhead, planValueEdit } from "./gsapValueAtPlayhead";
 
 /**
  * The tween's keyframes with one inserted at `percentage`. Any existing keyframe
@@ -36,6 +36,28 @@ export function buildTemporalArcKeyframes(
       })),
     { percentage, properties },
   ].sort((a, b) => a.percentage - b.percentage);
+}
+
+/** commitGsapPositionFromDrag's refusal, decided without writing. */
+export function gsapPositionFromDragOutcome(
+  selection: DomEditSelection,
+  anim: GsapAnimation,
+  studioOffset: { x: number; y: number },
+  gsapPos: { x: number; y: number },
+  iframe: HTMLIFrameElement | null,
+): GsapEditOutcome {
+  if (anim.arcPath?.enabled) return { status: "persisted" };
+  const { newX, newY, baseGsapX, baseGsapY } = computeDraggedGsapPosition(
+    selection.element,
+    studioOffset,
+    gsapPos,
+  );
+  const plan = planValueEdit(selection, anim, { x: newX, y: newY }, iframe, {
+    backfill: { x: baseGsapX, y: baseGsapY },
+  });
+  return plan.ok
+    ? { status: "persisted" }
+    : { status: "blocked", reason: "keyframes-uneditable", detail: plan.reason };
 }
 
 // fallow-ignore-next-line code-duplication

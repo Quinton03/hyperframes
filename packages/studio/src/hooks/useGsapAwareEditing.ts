@@ -243,10 +243,10 @@ export function useGsapAwareEditing({
       const preflightAnimations = new Map<DomEditSelection, GsapAnimation[]>();
       // Members saved on themselves, each with its route: true for its CSS translate.
       const offsetMembers = new Map<DomEditSelection, boolean>();
-      // Prove every member can be written before the first mutation, so a blocked one never leaves
-      // siblings half moved. Preflights write nothing and share one parse per file: run together.
+      // Prove every member can be written, keyframe plan included, before the first mutation, so a
+      // blocked one never leaves siblings half moved. Preflights write nothing and share one parse.
       const preflightResults = await Promise.allSettled(
-        updates.map(async ({ selection, plainTranslate }) => {
+        updates.map(async ({ selection, next, plainTranslate }) => {
           if (plainTranslate ?? !gsapWritesPosition(selection.element)) {
             refuseGsapTakeover(selection.element, toastRefusal ? showToast : () => {});
             return void offsetMembers.set(selection, true);
@@ -255,7 +255,7 @@ export function useGsapAwareEditing({
           preflightAnimations.set(selection, animations);
           const outcome = await tryGsapDragIntercept(
             selection,
-            { x: 0, y: 0 },
+            next,
             animations,
             previewIframeRef.current,
             coalescedCommit,
