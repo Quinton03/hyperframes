@@ -9,7 +9,11 @@ import {
   DomEditPersistUnresolvableError,
   warnDomEditPersistNoOp,
 } from "./domEditPersistFailure";
-import { formatUnsafeFieldList, postPatchElement } from "./useDomEditCommitsHelpers";
+import {
+  formatUnsafeFieldList,
+  postPatchElement,
+  writePreparedContent,
+} from "./useDomEditCommitsHelpers";
 import { importedFontFaceCssFor } from "../utils/studioFontHelpers";
 import { countStudioManualEditSave } from "../components/editor/manualEditsDom";
 import type { CutoverResult } from "../utils/sdkCutover";
@@ -108,9 +112,10 @@ export function useDomEditPersist({
         });
       }
 
-      // An imported font takes the server patch, which writes its @font-face with the edit; the SDK
-      // serializes only the patched DOM. The SDK re-reads in the file queue; this read is its fallback.
-      if (onTrySdkPersist && !font) {
+      // An imported font or a prepareContent takes the server patch: the SDK serializes only the
+      // patched DOM. The SDK re-reads in the file queue; this read is its fallback.
+      const prepare = options?.prepareContent;
+      if (onTrySdkPersist && !font && !prepare) {
         const originalContent = await readTarget();
         if (originalContent === null) return;
         const cutover = await onTrySdkPersist(selection, operations, originalContent, targetPath, {
@@ -134,7 +139,7 @@ export function useDomEditPersist({
         coalesceKey: options?.coalesceKey,
         coalesceMs: options?.coalesceMs,
       };
-      // Read, server patch and history hold the file's queue, so no save lands between them.
+      // Read, server patch, follow-up write and history hold the file's queue, so no save lands between them.
       const saved = await serializeStudioFileMutations(writeProjectFile, [targetPath], async () => {
         const originalContent = await readTarget();
         if (originalContent === null) return null;
@@ -143,7 +148,15 @@ export function useDomEditPersist({
 
         const patchedContent =
           typeof patchData.content === "string" ? patchData.content : originalContent;
-        const finalContent = patchedContent;
+        const finalContent = prepare
+          ? await writePreparedContent(
+              targetPath,
+              patchedContent,
+              prepare,
+              writeProjectFile,
+              showToast,
+            )
+          : patchedContent;
 
         await editHistory.recordEdit({
           ...history,
