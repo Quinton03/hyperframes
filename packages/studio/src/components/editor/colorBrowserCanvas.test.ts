@@ -21,6 +21,8 @@ const CHROME_147_RELATIVE_SRGB: Record<string, string> = {
   "oklch(0.7 0.15 200 / 0.25)": "color(srgb -0.316663 0.724435 0.764448 / 0.25)",
   "color-mix(in oklab, oklch(0.7 0.15 200), red 50%)": "color(srgb 0.698277 0.535308 0.473819)",
   "color-mix(in srgb, #ff000000, #0000ffff 50%)": "color(srgb 0 0 1 / 0.5)",
+  "color-mix(in srgb, hwb(0 0% 0%), hwb(240 0% 0%) 50%)": "color(srgb 0.5 0 0.5)",
+  "color-mix(in oklab, red, blue 50%)": "color(srgb 0.550402 0.325634 0.636508)",
 };
 
 async function loadColorModulesWithChromeCanvas() {
@@ -78,5 +80,22 @@ describe("insertGradientStop with a browser canvas", () => {
     const model = parse(`linear-gradient(90deg, ${left} 0%, ${right} 100%)`);
     expect(model).not.toBeNull();
     expect(insert(model!, 50).stops[1].color).toBe(expected);
+  });
+
+  it.each([
+    ["hwb stops mix in sRGB like rgb()", "hwb(0 0% 0%) 0%, hwb(240 0% 0%) 100%", 50, "#800080"],
+    [
+      "one modern stop moves every interval to Oklab",
+      "red 0%, blue 50%, oklch(0.7 0.15 200) 100%",
+      25,
+      "#8C53A2",
+    ],
+  ])("%s", async (_case, stops, position, expected) => {
+    const { parseGradient: parse, insertGradientStop: insert } =
+      await loadColorModulesWithChromeCanvas();
+    const model = parse(`linear-gradient(90deg, ${stops})`);
+    expect(model).not.toBeNull();
+    const inserted = insert(model!, position).stops.find((stop) => stop.position === position);
+    expect(inserted?.color).toBe(expected);
   });
 });

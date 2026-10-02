@@ -386,7 +386,7 @@ function interpolateGradientStopColor(model: GradientModel, position: number): s
   const leftColor = left.color;
   const rightColor = right.color;
   const ratio = (clampedPosition - left.position) / Math.max(1, right.position - left.position);
-  const mixed = parseCssColor(mixLikeTheGradient(leftColor, rightColor, ratio));
+  const mixed = parseCssColor(mixLikeTheGradient(sortedStops, leftColor, rightColor, ratio));
   if (mixed) return formatStopColor(mixed);
 
   const leftParsed = leftColor ? parseCssColor(leftColor) : null;
@@ -400,11 +400,15 @@ function interpolateGradientStopColor(model: GradientModel, position: number): s
   return formatStopColor({ red, green, blue, alpha });
 }
 
-const LEGACY_COLOR = /^(?:#|(?:rgba?|hsla?)\(|[a-z]+$)/i;
+const LEGACY_COLOR = /^(?:#|(?:rgba?|hsla?|hwb)\(|[a-z]+$)/i;
 
-function mixLikeTheGradient(left: string, right: string, ratio: number): string {
-  const space =
-    LEGACY_COLOR.test(left.trim()) && LEGACY_COLOR.test(right.trim()) ? "srgb" : "oklab";
+function mixLikeTheGradient(
+  stops: GradientStop[],
+  left: string,
+  right: string,
+  ratio: number,
+): string {
+  const space = stops.every((stop) => LEGACY_COLOR.test(stop.color.trim())) ? "srgb" : "oklab";
   return `color-mix(in ${space}, ${left}, ${right} ${round(ratio * 100)}%)`;
 }
 
