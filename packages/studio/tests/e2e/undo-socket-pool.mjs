@@ -12,8 +12,6 @@ const PROJECT_DIR = process.env.STUDIO_PROJECT_DIR;
 const ROUNDS = Number(process.env.UNDO_ROUNDS || 3);
 // Unpinned, the undo is sent in under 20 ms; behind pinned media it waited 780-961 ms.
 const STALL_LIMIT_MS = Number(process.env.UNDO_STALL_LIMIT_MS || 250);
-// Five, with the live-updates stream as the sixth: that fills the pool media and Studio shared before.
-const PINNED_MEDIA = 5;
 const VIDEOS = 8;
 
 if (!STUDIO_URL || !PROJECT_DIR) {
@@ -119,6 +117,10 @@ try {
   cdp.on("Network.loadingFinished", finish);
   cdp.on("Network.loadingFailed", finish);
   // A socket is held by a response whose body is still being read.
+  // Chrome gives a host six sockets. Under the CLI the /api/events stream holds one, so five videos fill the rest;
+  // Vite's dev server sends live updates over its HMR WebSocket instead of SSE, so there all six must be videos.
+  const pinnedNeeded = () =>
+    [...requests.values()].some((r) => r.type === "EventSource" && !r.done) ? 5 : 6;
   const pinnedMedia = () =>
     [...requests.values()].filter((r) => r.type === "Media" && r.headers && !r.done).length;
 
@@ -140,9 +142,9 @@ try {
     if (!(await until(() => readIndex() !== before, 10_000)))
       throw new Error(`round ${round}: the edit never reached disk`);
     // Without pinned media the gate would pass on any build, so it refuses to measure.
-    if (!(await until(() => pinnedMedia() >= PINNED_MEDIA, 30_000))) {
+    if (!(await until(() => pinnedMedia() >= pinnedNeeded(), 30_000))) {
       failures.push(
-        `round ${round}: only ${pinnedMedia()} media responses held open; the fixture must pin ${PINNED_MEDIA}`,
+        `round ${round}: only ${pinnedMedia()} media responses held open; the fixture must pin ${pinnedNeeded()}`,
       );
       break;
     }
@@ -163,6 +165,8 @@ try {
     const reverted = await until(() => readIndex() === before, 5_000);
     const stallMs = undo?.timing ? Math.round(undo.timing.sendStart) : null;
     rounds.push({ round, pinned, stallMs, reverted });
+    // Round 0 is exempt until the fix for the first undo of a GSAP-free film, which takes back only part, lands.
+    if (!reverted && round > 0) failures.push(`round ${round}: the undo did not restore the file`);
     if (stallMs == null)
       failures.push(`round ${round}: the undo's POST history/step never answered`);
     else if (stallMs > STALL_LIMIT_MS)
