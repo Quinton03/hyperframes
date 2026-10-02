@@ -26,6 +26,29 @@ function recordingCallbacks(): {
   };
 }
 
+/** Rotates a 2s `#box` tween made of `fields` to 50deg at its end; returns what was committed. */
+async function rotateTo50AtEnd(fields: Record<string, unknown>) {
+  const anim = {
+    id: "#box-rotate",
+    targetSelector: "#box",
+    method: "to",
+    resolvedStart: 0,
+    duration: 2,
+    ...fields,
+  } as unknown as GsapAnimation;
+  const { mutations, callbacks } = recordingCallbacks();
+  await commitWholePropertyOffset(
+    selection(),
+    anim,
+    { rotation: 50 },
+    100,
+    null,
+    callbacks,
+    "Rotate",
+  );
+  return mutations;
+}
+
 describe("commitWholePropertyOffset", () => {
   it("shifts every keyframe of a keyframed tween by the delta at the nearest keyframe", async () => {
     const anim = {
@@ -162,36 +185,13 @@ describe("commitWholePropertyOffset", () => {
 
   it("keeps a linear flat tween linear: its ease becomes the keyframes' easeEach", async () => {
     // A tween-level ease leaves each percentage segment power1.inOut, so the box drifts mid-segment.
-    const anim = {
-      id: "#box-rotate",
-      targetSelector: "#box",
-      method: "to",
-      resolvedStart: 0,
-      duration: 2,
-      ease: "none",
-      properties: { rotation: 40 },
-    } as unknown as GsapAnimation;
-    const { mutations, callbacks } = recordingCallbacks();
-    await commitWholePropertyOffset(
-      selection(),
-      anim,
-      { rotation: 50 },
-      100,
-      null,
-      callbacks,
-      "Rotate",
-    );
+    const mutations = await rotateTo50AtEnd({ ease: "none", properties: { rotation: 40 } });
     expect(mutations[0]).toMatchObject({ type: "replace-with-keyframes", easeEach: "none" });
     expect(mutations[0]).not.toHaveProperty("ease", "none");
   });
 
   it("keeps a keyframed tween's easeEach", async () => {
-    const anim = {
-      id: "#box-rotate",
-      targetSelector: "#box",
-      method: "to",
-      resolvedStart: 0,
-      duration: 2,
+    const mutations = await rotateTo50AtEnd({
       keyframes: {
         easeEach: "none",
         keyframes: [
@@ -199,17 +199,7 @@ describe("commitWholePropertyOffset", () => {
           { percentage: 100, properties: { rotation: 40 } },
         ],
       },
-    } as unknown as GsapAnimation;
-    const { mutations, callbacks } = recordingCallbacks();
-    await commitWholePropertyOffset(
-      selection(),
-      anim,
-      { rotation: 50 },
-      100,
-      null,
-      callbacks,
-      "Rotate",
-    );
+    });
     expect(mutations[0]).toMatchObject({ easeEach: "none" });
   });
 });

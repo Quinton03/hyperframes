@@ -63,6 +63,31 @@ const fromXLive = (end: number) =>
     { from: true },
   );
 
+/** Two linear `to` tweens of `group` on `#box`, 0-2s then 2-3s, their live copies and a commit recorder. */
+function backToBack(
+  group: "size" | "scale" | "rotation",
+  firstEnd: Record<string, number>,
+  secondEnd: Record<string, number>,
+) {
+  const flat = (start: number, duration: number, properties: Record<string, number>) =>
+    tween({
+      id: `#box-to-${start * 1000}-${group}`,
+      propertyGroup: group,
+      method: "to",
+      properties,
+      resolvedStart: start,
+      duration,
+      ease: "none",
+    });
+  const tweens = [flat(0, 2, firstEnd), flat(2, 1, secondEnd)];
+  const live = tweens.map((a) =>
+    liveTween(el, { start: a.resolvedStart!, duration: a.duration!, vars: a.properties }),
+  );
+  const commitMutation = vi.fn();
+  const written = () => commitMutation.mock.calls.map((call) => call[1]);
+  return { tweens, live, commitMutation, written };
+}
+
 describe("a move on a GSAP-animated layer, at the playhead", () => {
   it("adds a keyframe inside a from() tween and keeps its end where GSAP parsed it", async () => {
     const { outcome, mutations } = await drag([fromX], [fromXLive(40)], {
@@ -230,31 +255,20 @@ describe("where two tweens meet at the playhead", () => {
 
 describe("a resize on a layer whose size GSAP animates, at the playhead", () => {
   it("adds a size keyframe inside the tween at the playhead", async () => {
-    const grow = (id: string, start: number, duration: number, width: number, height: number) =>
-      tween({
-        id,
-        propertyGroup: "size",
-        method: "to",
-        properties: { width, height },
-        resolvedStart: start,
-        duration,
-        ease: "none",
-      });
-    const first = grow("#box-to-0-size", 0, 2, 300, 200);
-    const second = grow("#box-to-2000-size", 2, 1, 360, 240);
-    const live = [first, second].map((a) =>
-      liveTween(el, { start: a.resolvedStart!, duration: a.duration!, vars: a.properties }),
+    const { tweens, live, commitMutation, written } = backToBack(
+      "size",
+      { width: 300, height: 200 },
+      { width: 360, height: 240 },
     );
     usePlayerStore.setState({ currentTime: 1 });
-    const commitMutation = vi.fn();
     await tryGsapResizeIntercept(
       selection,
       { width: 330, height: 210 },
-      [first, second],
+      tweens,
       previewWith(el, live),
       commitMutation,
     );
-    expect(commitMutation.mock.calls.map((call) => call[1])).toEqual([
+    expect(written()).toEqual([
       expect.objectContaining({
         type: "replace-with-keyframes",
         animationId: "#box-to-0-size",
@@ -270,34 +284,23 @@ describe("a resize on a layer whose size GSAP animates, at the playhead", () => 
 
 describe("a resize on a layer whose scale GSAP animates, at the playhead", () => {
   it("adds a scale keyframe inside the tween at the playhead and leaves the next tween alone", async () => {
-    const grow = (id: string, start: number, duration: number, scale: number) =>
-      tween({
-        id,
-        propertyGroup: "scale",
-        method: "to",
-        properties: { scale },
-        resolvedStart: start,
-        duration,
-        ease: "none",
-      });
-    const first = grow("#box-to-0-scale", 0, 2, 1.25);
-    const second = grow("#box-to-2000-scale", 2, 1, 1.5);
+    const { tweens, live, commitMutation, written } = backToBack(
+      "scale",
+      { scale: 1.25 },
+      { scale: 1.5 },
+    );
     el.setAttribute("data-hf-studio-original-box-width", "240");
     el.setAttribute("data-hf-studio-original-box-height", "160");
-    const live = [first, second].map((a) =>
-      liveTween(el, { start: a.resolvedStart!, duration: a.duration!, vars: a.properties }),
-    );
     usePlayerStore.setState({ currentTime: 1 });
-    const commitMutation = vi.fn();
     // Dropped at 1.5x the box with a live scale of 1.125, the playhead's value of the first tween.
     await tryGsapResizeIntercept(
       selection,
       { width: 320, height: 213.333 },
-      [first, second],
+      tweens,
       previewWith(el, live, { scaleX: 1.125, scaleY: 1.125 }),
       commitMutation,
     );
-    const writes = commitMutation.mock.calls.map((call) => call[1]);
+    const writes = written();
     expect(writes[0]).toMatchObject({
       type: "replace-with-keyframes",
       animationId: "#box-to-0-scale",
@@ -370,31 +373,14 @@ describe("a resize inside one gesture, on a tween that mixes size and position",
 
 describe("a rotate on a GSAP-animated layer, at the playhead", () => {
   it("changes the keyframe two flat tweens meet at, on the tween that states it", async () => {
-    const spin = (id: string, start: number, duration: number, rotation: number) =>
-      tween({
-        id,
-        propertyGroup: "rotation",
-        method: "to",
-        properties: { rotation },
-        resolvedStart: start,
-        duration,
-        ease: "none",
-      });
-    const first = spin("#box-to-0-rotation", 0, 2, 20);
-    const second = spin("#box-to-2000-rotation", 2, 1, 40);
+    const { tweens, live, commitMutation, written } = backToBack(
+      "rotation",
+      { rotation: 20 },
+      { rotation: 40 },
+    );
     usePlayerStore.setState({ currentTime: 2 });
-    const commitMutation = vi.fn();
-    const live = [first, second].map((a) =>
-      liveTween(el, { start: a.resolvedStart!, duration: a.duration!, vars: a.properties }),
-    );
-    await tryGsapRotationIntercept(
-      selection,
-      25,
-      [first, second],
-      previewWith(el, live),
-      commitMutation,
-    );
-    expect(commitMutation.mock.calls.map((call) => call[1])).toEqual([
+    await tryGsapRotationIntercept(selection, 25, tweens, previewWith(el, live), commitMutation);
+    expect(written()).toEqual([
       expect.objectContaining({
         type: "replace-with-keyframes",
         animationId: "#box-to-0-rotation",

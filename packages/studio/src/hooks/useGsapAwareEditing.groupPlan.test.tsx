@@ -7,10 +7,8 @@ import type { DomEditSelection } from "../components/editor/domEditingTypes";
 import type { DomEditGroupPathOffsetCommit } from "../components/editor/domEditOverlayGestures";
 import { usePlayerStore } from "../player/store/playerStore";
 import { trackStudioEditBlocked } from "../utils/studioSaveDiagnostics";
-import { mountReactHarness } from "./domSelectionTestHarness";
 import { GSAP_EDIT_BLOCK_COPY } from "./gsapEditOutcome";
-import { useGsapAwareEditing } from "./useGsapAwareEditing";
-import { useGsapInteractionFailureTelemetry } from "./useGsapInteractionFailureTelemetry";
+import { mountGsapAwareEditing } from "./useGsapAwareEditing.testHelpers";
 
 vi.mock("../utils/studioSaveDiagnostics", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../utils/studioSaveDiagnostics")>()),
@@ -68,29 +66,15 @@ function mountGroup(animations: GsapAnimation[]) {
   });
   const showToast = vi.fn();
   const stageElementPositionOffset = vi.fn(() => ({ save: vi.fn(), rollback: vi.fn() }));
-  let groupCommit!: (updates: DomEditGroupPathOffsetCommit[]) => Promise<void>;
-  function Harness() {
-    groupCommit = useGsapAwareEditing({
-      domEditSelection: null,
-      selectedGsapAnimations: [],
-      gsapCommitMutation: commitMutation,
-      previewIframeRef: { current: iframe },
-      showToast,
-      bumpGsapCache: vi.fn(),
-      makeFetchFallback: () => async () => animations,
-      trackGsapInteractionFailure: useGsapInteractionFailureTelemetry("index.html", showToast),
-      stageElementPositionOffset,
-      handleDomBoxSizeCommit: vi.fn(),
-      handleDomRotationCommit: vi.fn(),
-      commitPositionPatchToHtml: vi.fn(),
-      addGsapAnimation: vi.fn(),
-      convertToKeyframes: vi.fn(),
-      setArcPath: vi.fn(),
-      updateArcSegment: vi.fn(),
-    }).handleGsapAwareGroupPathOffsetCommit;
-    return null;
-  }
-  const root = mountReactHarness(<Harness />);
+  const { editing, root } = mountGsapAwareEditing({
+    gsapCommitMutation: commitMutation,
+    previewIframeRef: { current: iframe },
+    showToast,
+    makeFetchFallback: () => async () => animations,
+    stageElementPositionOffset,
+  });
+  const groupCommit = (updates: DomEditGroupPathOffsetCommit[]) =>
+    editing().handleGsapAwareGroupPathOffsetCommit(updates);
   const updates = elements.map((element) => ({
     selection: {
       element,

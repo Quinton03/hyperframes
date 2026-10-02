@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi, type Mock } from "vitest";
 import {
   createStudioApi,
   openProjectHistory,
@@ -216,10 +216,8 @@ function Nudge({ target, save }: { target: HTMLElement; save: () => Promise<void
   return null;
 }
 
-it("an undo pressed while a nudge waits for more keys never shows the move before it undone", async () => {
-  const s = await studio();
-  await s.edit();
-  resetNudgeKeys();
+/** A nudge save that waits for `finish()`, then writes and records the nudge as the real save does. */
+function queuedNudgeSave(s: Awaited<ReturnType<typeof studio>>) {
   let finish!: () => void;
   const save = vi.fn(async () => {
     await new Promise<void>((resolve) => (finish = resolve));
@@ -229,6 +227,24 @@ it("an undo pressed while a nudge waits for more keys never shows the move befor
       files: { "index.html": { before: AFTER, after: NUDGED } },
     });
   });
+  return { save, finish: () => finish() };
+}
+
+/** Mounts the nudge, presses ArrowRight once and waits for its save; returns the nudge's translate reader. */
+async function pressNudge(s: Awaited<ReturnType<typeof studio>>, save: Mock<() => Promise<void>>) {
+  s.mount(createElement(Nudge, { target: s.element("box"), save }));
+  act(() => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", cancelable: true }));
+  });
+  await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  return () => s.element("box").style.getPropertyValue("translate");
+}
+
+it("an undo pressed while a nudge waits for more keys never shows the move before it undone", async () => {
+  const s = await studio();
+  await s.edit();
+  resetNudgeKeys();
+  const { save, finish } = queuedNudgeSave(s);
   s.mount(createElement(Nudge, { target: s.element("box"), save }));
   act(() => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", cancelable: true }));
@@ -254,21 +270,8 @@ it("an undo pressed while a nudge's save is queued shows the nudge undone in the
   const s = await studio();
   await s.edit();
   resetNudgeKeys();
-  let finish!: () => void;
-  const save = vi.fn(async () => {
-    await new Promise<void>((resolve) => (finish = resolve));
-    writeFileSync(s.path, NUDGED);
-    await s.history().recordEdit({
-      label: "Move layer",
-      files: { "index.html": { before: AFTER, after: NUDGED } },
-    });
-  });
-  s.mount(createElement(Nudge, { target: s.element("box"), save }));
-  act(() => {
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", cancelable: true }));
-  });
-  await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-  const nudge = () => s.element("box").style.getPropertyValue("translate");
+  const { save, finish } = queuedNudgeSave(s);
+  const nudge = await pressNudge(s, save);
   expect(nudge()).not.toBe("");
 
   const undone = s.actions().undo();
@@ -288,18 +291,13 @@ async function failingNudge(s: Awaited<ReturnType<typeof studio>>) {
   const save = vi.fn(
     () => new Promise<void>((_, reject) => (fail = () => reject(new Error("The save failed.")))),
   );
-  s.mount(createElement(Nudge, { target: s.element("box"), save }));
-  act(() => {
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", cancelable: true }));
-  });
-  await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  const nudge = await pressNudge(s, save);
   const steps: string[] = [];
   const real = globalThis.fetch;
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
     if (/\/history\/(step|undo)$/.test(url)) steps.push(url);
     return real(url, init);
   });
-  const nudge = () => s.element("box").style.getPropertyValue("translate");
   return { fail: () => fail(), steps, nudge };
 }
 

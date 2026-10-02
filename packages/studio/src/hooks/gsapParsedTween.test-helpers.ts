@@ -1,4 +1,7 @@
+import { vi } from "vitest";
+import { classifyTweenPropertyGroup } from "@hyperframes/core/gsap-parser";
 import type { GsapAnimation } from "@hyperframes/core/gsap-parser";
+import { usePlayerStore } from "../player/store/playerStore";
 
 /** A property's `[start, end]` as GSAP parsed it from the file when the tween first rendered. */
 type Ends = Record<string, [number, number]>;
@@ -43,3 +46,30 @@ export function previewWith(
 
 export const tween = (fields: Partial<GsapAnimation>): GsapAnimation =>
   ({ targetSelector: "#box", propertyGroup: "position", ...fields }) as GsapAnimation;
+
+/** A `to` tween on `#el` from 0, grouped as the parser would; duration 0 is an immediate-render hold. */
+export function elTween(
+  id: string,
+  properties: Record<string, number>,
+  duration: number,
+  ease?: string,
+): GsapAnimation {
+  return {
+    id,
+    targetSelector: "#el",
+    propertyGroup: classifyTweenPropertyGroup(properties),
+    method: "to",
+    properties,
+    position: 0,
+    resolvedStart: 0,
+    duration,
+    ...(duration === 0 ? { extras: { immediateRender: "__raw:true" } } : ease && { ease }),
+  } as unknown as GsapAnimation;
+}
+
+/** Per-test cleanup for the intercept sweeps: mocks, the playhead store and the document. */
+export function resetGsapEditState(): void {
+  vi.restoreAllMocks();
+  usePlayerStore.setState({ currentTime: 0, activeKeyframePct: null });
+  document.body.innerHTML = "";
+}

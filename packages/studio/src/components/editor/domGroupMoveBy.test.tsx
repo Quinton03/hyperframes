@@ -7,7 +7,6 @@ import { STUDIO_OFFSET_X_PROP, STUDIO_OFFSET_Y_PROP } from "./manualEdits";
 import { isStudioManualEditGestureLiveIn } from "./manualEditsDom";
 import { readTranslatePx } from "./plainTranslate";
 import { moveDomGroupBy } from "./domGroupMoveBy";
-import { mountReactHarness } from "../../hooks/domSelectionTestHarness";
 import { GsapEditBlockedError } from "../../hooks/gsapEditOutcome";
 
 Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true);
@@ -33,8 +32,7 @@ vi.mock("../../utils/studioSaveDiagnostics", async (importOriginal) => ({
   trackStudioSaveFailure: vi.fn(),
 }));
 
-import { useGsapAwareEditing } from "../../hooks/useGsapAwareEditing";
-import { useGsapInteractionFailureTelemetry } from "../../hooks/useGsapInteractionFailureTelemetry";
+import { mountGsapAwareEditing } from "../../hooks/useGsapAwareEditing.testHelpers";
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -90,29 +88,9 @@ function mountGroupCommit() {
   const showToast = vi.fn();
   const save = vi.fn().mockResolvedValue(undefined);
   const stageElementPositionOffset = vi.fn(() => ({ save, rollback: vi.fn() }));
-  let commit!: (u: DomEditGroupPathOffsetCommit[], o?: { refusalToast?: boolean }) => Promise<void>;
-  function Harness() {
-    commit = useGsapAwareEditing({
-      domEditSelection: null,
-      selectedGsapAnimations: [],
-      gsapCommitMutation: vi.fn().mockResolvedValue(undefined),
-      previewIframeRef: { current: null },
-      showToast,
-      bumpGsapCache: vi.fn(),
-      makeFetchFallback: () => vi.fn().mockResolvedValue([]),
-      trackGsapInteractionFailure: useGsapInteractionFailureTelemetry("index.html", showToast),
-      stageElementPositionOffset,
-      handleDomBoxSizeCommit: vi.fn(),
-      handleDomRotationCommit: vi.fn(),
-      commitPositionPatchToHtml: vi.fn(),
-      addGsapAnimation: vi.fn(),
-      convertToKeyframes: vi.fn(),
-      setArcPath: vi.fn(),
-      updateArcSegment: vi.fn(),
-    }).handleGsapAwareGroupPathOffsetCommit;
-    return null;
-  }
-  const root = mountReactHarness(<Harness />);
+  const { editing, root } = mountGsapAwareEditing({ showToast, stageElementPositionOffset });
+  const commit = (u: DomEditGroupPathOffsetCommit[], o?: { refusalToast?: boolean }) =>
+    editing().handleGsapAwareGroupPathOffsetCommit(u, o);
   const moveBy = (moves: Parameters<typeof moveDomGroupBy>[0]) =>
     act(() => moveDomGroupBy(moves, (u) => commit(u, { refusalToast: false })));
   return {
