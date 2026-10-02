@@ -210,14 +210,15 @@ export function usePreviewPersistence({
       // multi-file, sub-comp, or a permanent soft-reload failure.
       const projectId = usePlayerStore.getState().timelineProjectId;
       const nestedFiles = await settleNestedReads(
-        projectId
-          ? readUndoNestedFiles(
-              previewIframeRef.current,
-              activeCompPathRef.current,
-              restore.files,
-              (path) => readProjectFileContent(projectId, path),
-            )
-          : null,
+        readUndoNestedFiles(
+          previewIframeRef.current,
+          activeCompPathRef.current,
+          restore.files,
+          (path) =>
+            projectId
+              ? readProjectFileContent(projectId, path)
+              : Promise.reject(new Error("No project is open to read nested files from.")),
+        ),
       );
       const strategy = applyUndoRestoreToPreview(
         previewIframeRef.current,
