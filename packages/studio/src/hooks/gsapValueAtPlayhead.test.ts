@@ -7,7 +7,7 @@ import { GSAP_EDIT_BLOCK_COPY } from "./gsapEditOutcome";
 import { liveTween, previewWith, tween } from "./gsapParsedTween.test-helpers";
 import { tryGsapResizeIntercept } from "./gsapResizeIntercept";
 import { tryGsapDragIntercept, tryGsapRotationIntercept } from "./gsapRuntimeBridge";
-import { planValueAtPlayhead, type PlayheadEdit } from "./gsapValueAtPlayhead";
+import { planValueAtPlayhead, planValueEdit, type PlayheadEdit } from "./gsapValueAtPlayhead";
 
 let el: HTMLElement;
 let selection: DomEditSelection;
@@ -510,4 +510,14 @@ describe("planValueAtPlayhead", () => {
     const anim = { ...kf([{ percentage: 100, properties: { x: 20 } }]), ease: "power2.out" };
     expect(plan({ anim, values: { x: 5 } })).toEqual({ ok: false, reason: "eased-keyframes" });
   });
+});
+
+it("refuses a tween whose selector also animates a sibling, before it plans anything", () => {
+  el.className = "card";
+  const sibling = document.body.appendChild(document.createElement("div"));
+  sibling.className = "card";
+  const shared = tween({ targetSelector: ".card", properties: { x: 100 }, resolvedStart: 0, duration: 1 });
+
+  expect(planValueEdit(selection, shared, { x: 40 }, null)).toEqual({ ok: false, reason: "shared-tween" });
+  sibling.remove();
 });
