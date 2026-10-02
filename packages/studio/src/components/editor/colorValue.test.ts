@@ -8,6 +8,7 @@ import {
   toColorPickerValue,
   toHexColor,
 } from "./colorValue";
+import { loadColorModulesWithChromeCanvas } from "./colorCanvasTestUtils";
 
 describe("parseCssColor", () => {
   it("parses rgb values", () => {
@@ -44,7 +45,7 @@ describe("parseCssColor", () => {
     },
   );
 
-  describe("in a browser without relative colour syntax", () => {
+  describe("with a browser canvas", () => {
     afterEach(() => {
       vi.unstubAllGlobals();
       vi.resetModules();
@@ -54,33 +55,15 @@ describe("parseCssColor", () => {
       ["red", { red: 255, green: 0, blue: 0, alpha: 1 }],
       ["hsl(210 40% 50%)", { red: 77, green: 128, blue: 179, alpha: 1 }],
       ["rgb(100%, 0%, 0%)", { red: 255, green: 0, blue: 0, alpha: 1 }],
+      ["oklch(0.7 0.15 200)", { red: 0, green: 185, blue: 195, alpha: 1 }],
+      ["oklch(0.7 0.15 200 / 0.25)", { red: 0, green: 185, blue: 195, alpha: 0.25 }],
+      ["hsl(0 100% 50% / 0.001)", { red: 255, green: 0, blue: 0, alpha: 0.001 }],
       ["inherit", null],
-    ])(
-      "resolves %s from the canvas's legacy serialization, or null if it rejects it",
-      async (input, expected) => {
-        const legacy: Record<string, string> = {
-          transparent: "rgba(0, 0, 0, 0)",
-          white: "#ffffff",
-          red: "#ff0000",
-          "hsl(210 40% 50%)": "#4d80b3",
-          "rgb(100%, 0%, 0%)": "#ff0000",
-        };
-        let fillStyle = "#000000";
-        const context = {
-          get fillStyle() {
-            return fillStyle;
-          },
-          set fillStyle(next: string) {
-            fillStyle = legacy[next] ?? fillStyle;
-          },
-        };
-        vi.stubGlobal("CSS", { supports: () => true });
-        vi.stubGlobal("document", { createElement: () => ({ getContext: () => context }) });
-        vi.resetModules();
-        const { parseCssColor: parseFresh } = await import("./colorValue");
-        expect(parseFresh(input)).toEqual(expected);
-      },
-    );
+      ["currentcolor", null],
+    ])("resolves %s through the canvas, or null if it must not", async (input, expected) => {
+      const { parseCssColor: parseFresh } = await loadColorModulesWithChromeCanvas();
+      expect(parseFresh(input)).toEqual(expected);
+    });
   });
 
   it("parses transparent", () => {

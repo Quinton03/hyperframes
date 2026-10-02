@@ -84,17 +84,16 @@ function canResolveInBrowser(value: string): boolean {
 }
 
 function parseBrowserColor(value: string): ParsedColor | null {
-  if (!canResolveInBrowser(value)) return null;
   try {
+    if (!canResolveInBrowser(value)) return null;
     colorContext ??= document.createElement("canvas").getContext("2d");
     if (!colorContext) return null;
     return (
-      parseCanvasColor(colorContext, value, parseSerializedColor) ??
       parseCanvasColor(
         colorContext,
         `color(from ${value} srgb r g b / alpha)`,
         parseSrgbSerialization,
-      )
+      ) ?? parseCanvasColor(colorContext, value, parseSerializedColor)
     );
   } catch {
     return null;

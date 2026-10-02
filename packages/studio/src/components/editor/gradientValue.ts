@@ -1,5 +1,5 @@
 import { roundToCenti } from "../../utils/rounding";
-import { parseCssColor } from "./colorValue";
+import { parseCssColor, type ParsedColor } from "./colorValue";
 
 export type GradientKind = "linear" | "radial" | "conic";
 
@@ -385,20 +385,35 @@ function interpolateGradientStopColor(model: GradientModel, position: number): s
 
   const leftColor = left.color;
   const rightColor = right.color;
+  const ratio = (clampedPosition - left.position) / Math.max(1, right.position - left.position);
+  const mixed = parseCssColor(mixLikeTheGradient(leftColor, rightColor, ratio));
+  if (mixed) return formatStopColor(mixed);
+
   const leftParsed = leftColor ? parseCssColor(leftColor) : null;
   const rightParsed = rightColor ? parseCssColor(rightColor) : null;
   if (!leftParsed || !rightParsed) return left.color;
 
-  const ratio = (clampedPosition - left.position) / Math.max(1, right.position - left.position);
   const red = blendChannel(leftParsed.red, rightParsed.red, ratio);
   const green = blendChannel(leftParsed.green, rightParsed.green, ratio);
   const blue = blendChannel(leftParsed.blue, rightParsed.blue, ratio);
-  const alpha = round(leftParsed.alpha + (rightParsed.alpha - leftParsed.alpha) * ratio);
+  const alpha = leftParsed.alpha + (rightParsed.alpha - leftParsed.alpha) * ratio;
+  return formatStopColor({ red, green, blue, alpha });
+}
 
+const LEGACY_COLOR = /^(?:#|(?:rgba?|hsla?)\(|[a-z]+$)/i;
+
+function mixLikeTheGradient(left: string, right: string, ratio: number): string {
+  const space =
+    LEGACY_COLOR.test(left.trim()) && LEGACY_COLOR.test(right.trim()) ? "srgb" : "oklab";
+  return `color-mix(in ${space}, ${left}, ${right} ${round(ratio * 100)}%)`;
+}
+
+function formatStopColor(color: ParsedColor): string {
+  const { red, green, blue } = color;
+  const alpha = round(color.alpha);
   if (alpha >= 1) {
     return `#${formatHex(red)}${formatHex(green)}${formatHex(blue)}`.toUpperCase();
   }
-
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 

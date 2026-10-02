@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildDefaultGradientModel,
   insertGradientStop,
   parseGradient,
   serializeGradient,
 } from "./gradientValue";
+import { loadColorModulesWithChromeCanvas } from "./colorCanvasTestUtils";
 
 describe("parseGradient", () => {
   it("parses linear gradients", () => {
@@ -85,5 +86,23 @@ describe("insertGradientStop", () => {
         { color: "#ffffff", position: 100 },
       ],
     });
+  });
+});
+
+describe("insertGradientStop with a browser canvas", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it.each([
+    ["oklch(0.7 0.15 200)", "red", "#B28979"],
+    ["#ff000000", "#0000ffff", "rgba(0, 0, 255, 0.5)"],
+  ])("gives %s to %s the midpoint the browser paints", async (left, right, expected) => {
+    const { parseGradient: parse, insertGradientStop: insert } =
+      await loadColorModulesWithChromeCanvas();
+    const model = parse(`linear-gradient(90deg, ${left} 0%, ${right} 100%)`);
+    expect(model).not.toBeNull();
+    expect(insert(model!, 50).stops[1].color).toBe(expected);
   });
 });
