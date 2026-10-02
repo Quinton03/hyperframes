@@ -342,9 +342,7 @@
         parsePx(style.borderBottomWidth) +
         parsePx(style.borderLeftWidth) >
       0;
-    // Paint here means background colour, background image or border width only. A border-radius
-    // shapes the box without painting it, so a transparent, borderless, rounded box is not an
-    // overflow constraint. box-shadow, outline and filters are deliberately not read either.
+    // A border-radius shapes the box without painting it; box-shadow, outline and filters are not read.
     return hasBackground || hasImage || hasBorder;
   }
 
@@ -645,9 +643,7 @@
     return element.hasAttribute("data-layout-allow-overlap");
   }
 
-  // Alpha must come from colorAlpha's argument-position parse, never from a
-  // `", 0)"` string suffix: that suffix also matches fully-opaque 3-value rgb()
-  // colours whose blue channel is zero, e.g. pure red/green/yellow.
+  // Never a `", 0)` suffix check: that also matches opaque zero-blue colours like rgb(255, 0, 0).
   function isTransparentColor(color) {
     return !color || color === "transparent" || colorAlpha(color) === 0;
   }

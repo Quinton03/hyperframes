@@ -410,10 +410,7 @@ describe("layout-audit.browser", () => {
     expect(found[0]?.selector).toBe("#bubble");
   });
 
-  // The paint half of the constraint decision (`hasPaint` → `isConstraintCandidate`): each source
-  // `hasPaint` reads makes the padded box its own constraint on its own. The zero-blue colours
-  // end in the same `", 0)"` as a transparent `rgba(..., 0)`, so a string-suffix check would
-  // read them as unpainted.
+  // Each paint source `hasPaint` reads makes the padded box its own overflow constraint on its own.
   it.each<[string, Partial<CSSStyleDeclaration>]>([
     ["rgb(0, 255, 0)", { backgroundColor: "rgb(0, 255, 0)" }],
     ["rgb(255, 0, 0)", { backgroundColor: "rgb(255, 0, 0)" }],
@@ -441,10 +438,7 @@ describe("layout-audit.browser", () => {
     expect(found[0]?.selector).toBe("#bubble");
   });
 
-  // The same padded box with no paint source, or with only a property `hasPaint` does not read,
-  // is not its own constraint: the text measures against the root, where it fits. A border-radius
-  // shapes the box without painting it; box-shadow and outline are a declared non-read (a card
-  // whose only silhouette is a shadow is measured against its ancestor).
+  // Without paint the box is not its own constraint, so the text measures against the root and fits.
   it.each<[string, Partial<CSSStyleDeclaration>]>([
     ["no paint source", {}],
     ["a border-radius", { borderTopLeftRadius: "28px" }],
@@ -472,10 +466,7 @@ describe("layout-audit.browser", () => {
     },
   );
 
-  // Declared blind spot, kept declared: `colorAlpha` matches only `rgb()`/`rgba()`, so a
-  // background computed to a non-sRGB serialisation with a zero alpha — `oklch(0.5 0.1 200 / 0)`,
-  // `color(display-p3 1 0 0 / 0)`, `lab(50 0 0 / 0)` — reads as opaque and the padded box
-  // becomes its own constraint although it renders nothing. Widening the parse is a separate change.
+  // Known gap: `colorAlpha` reads only rgb()/rgba(), so `oklch(... / 0)` and friends read as opaque.
   it.todo(
     "does not treat a padded, non-clipping box whose only paint is a transparent non-sRGB background as its own constraint",
   );
@@ -1286,11 +1277,8 @@ describe("layout-audit.browser coordinate-frame findings", () => {
     expect(issues[0]).toMatchObject({ severity: "warning", selector: "#gradient-hero" });
   });
 
-  // `isPaintedPanel` with the geometry half held fixed (one <div> breaching the right canvas
-  // edge by 280px; media tags are excluded upstream and owned by frame_out_of_frame). Only
-  // background-image, background-color and border widths decide paint, each on its own, with
-  // the thresholds pinned at their boundaries. The box-shadow / outline / radius rows set
-  // properties the predicate never reads — they guard that those stay unread.
+  // `isPaintedPanel` with the breach geometry fixed: each paint source alone, thresholds pinned at
+  // their boundaries; the shadow / outline / radius rows guard that those stay unread.
   it.each<[string, boolean, Partial<CSSStyleDeclaration>]>([
     ["a legacy rgba() transparent background", false, { backgroundColor: "rgba(0, 0, 0, 0)" }],
     [
@@ -2976,9 +2964,7 @@ describe("layout-audit.browser occlusion", () => {
     expect(occluded?.coveredFraction).toBe(1);
   });
 
-  // `rgb(r, g, 0)` ends in the same `", 0)"` as a transparent
-  // `rgba(..., 0)`, so a string-suffix transparency check silently exempted
-  // opaque red/green/yellow occluders from occlusion entirely.
+  // `rgb(r, g, 0)` ends in the same `", 0)"` as a transparent `rgba(..., 0)`.
   it.each(["rgb(0, 255, 0)", "rgb(255, 0, 0)", "rgb(255, 255, 0)"])(
     "flags an opaque %s occluder whose blue channel is zero",
     (backgroundColor) => {
