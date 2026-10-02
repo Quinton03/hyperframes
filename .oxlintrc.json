@@ -45,6 +45,26 @@
         "react-hooks/rules-of-hooks": "error",
         "react-hooks/exhaustive-deps": "warn"
       }
+    },
+    {
+      "files": ["packages/studio/src/**/*.ts", "packages/studio/src/**/*.tsx"],
+      "excludeFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/*TestUtils.ts",
+        "**/*TestUtils.tsx",
+        "**/*TestHarness.ts",
+        "**/*TestHarness.tsx"
+      ],
+      "rules": {
+        "no-restricted-globals": [
+          "error",
+          {
+            "name": "fetch",
+            "message": "Use studioApiFetch (utils/studioApiFetch.ts): it keeps Studio's requests off the preview media's sockets."
+          }
+        ]
+      }
     }
   ]
 }

@@ -4,6 +4,7 @@ import type { TimelineElement } from "../player/store/playerStore";
 import type { DomEditSelection } from "../components/editor/domEditing";
 import type { TimelineAssetKind } from "./timelineAssetDrop";
 import { roundToCenti } from "./rounding";
+import { studioApiFetch } from "./studioApiFetch";
 
 export interface EditingFile {
   path: string;
@@ -401,7 +402,7 @@ export async function resolveAssetHasAudio(
   assetPath: string,
 ): Promise<boolean | null> {
   try {
-    const response = await fetch(mediaMetadataUrl(projectId, assetPath));
+    const response = await studioApiFetch(mediaMetadataUrl(projectId, assetPath));
     if (!response.ok) return null;
     const data: unknown = await response.json();
     const metadata = isPlainRecord(data) ? data.metadata : undefined;

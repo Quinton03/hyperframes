@@ -83,6 +83,7 @@ function send(url: string, payload: string): void {
   // Prefer fetch with keepalive (survives page navigation). sendBeacon is a
   // fallback for older runtimes where fetch isn't available.
   try {
+    // eslint-disable-next-line no-restricted-globals -- PostHog is another host: no Studio socket
     void fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

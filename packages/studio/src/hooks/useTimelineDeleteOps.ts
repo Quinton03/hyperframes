@@ -21,6 +21,7 @@ import type {
   TimelineGroupCommitOptions,
   TimelineGroupMoveChange,
 } from "./useTimelineGroupEditing";
+import { studioApiFetch } from "../utils/studioApiFetch";
 
 /** Apply already-resolved ripple changes to the surviving elements for the
  *  optimistic store update after a delete. Pure — no IO. */
@@ -132,7 +133,7 @@ export function useTimelineDeleteOps({
                   throw new Error(`Timeline element ${target.id} is missing a patchable target`);
                 }
 
-                const removeResponse = await fetch(
+                const removeResponse = await studioApiFetch(
                   buildProjectApiPath(
                     pid,
                     `/file-mutations/remove-element/${encodeURIComponent(targetPath)}`,

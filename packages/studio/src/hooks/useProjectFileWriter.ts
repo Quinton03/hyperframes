@@ -6,6 +6,7 @@ import {
   StudioSaveNetworkError,
 } from "../utils/studioSaveDiagnostics";
 import { studioExpectedFileVersion, studioWriteHeaders } from "../utils/studioFileVersion";
+import { studioApiFetch } from "../utils/studioApiFetch";
 
 export interface UseProjectFileWriterOptions {
   projectId: string | null;
@@ -31,7 +32,7 @@ export function useProjectFileWriter({ projectId }: UseProjectFileWriterOptions)
   const readProjectFile = useCallback(
     async (path: string): Promise<string> => {
       if (!projectId) throw new Error("No active project");
-      const response = await fetch(
+      const response = await studioApiFetch(
         `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(path)}`,
       );
       if (!response.ok) throw new Error(`Failed to read ${path}`);
@@ -46,7 +47,7 @@ export function useProjectFileWriter({ projectId }: UseProjectFileWriterOptions)
   const readOptionalProjectFile = useCallback(
     async (path: string): Promise<string> => {
       if (!projectId) throw new Error("No active project");
-      const response = await fetch(
+      const response = await studioApiFetch(
         `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(path)}?optional=1`,
       );
       if (!response.ok) throw new Error(`Failed to read ${path}`);
@@ -63,7 +64,7 @@ export function useProjectFileWriter({ projectId }: UseProjectFileWriterOptions)
       const writeProjectId = projectId;
       let expectedVersion = await studioExpectedFileVersion(fileVersions, path, expectedContent);
       if (expectedVersion === undefined) {
-        const preflight = await fetch(
+        const preflight = await studioApiFetch(
           `/api/projects/${encodeURIComponent(writeProjectId)}/files/${encodeURIComponent(path)}`,
         );
         if (preflight.ok) {
@@ -86,7 +87,7 @@ export function useProjectFileWriter({ projectId }: UseProjectFileWriterOptions)
         // the retry can produce a second filesystem receipt that must be suppressed independently.
         let response: Response;
         try {
-          response = await fetch(
+          response = await studioApiFetch(
             `/api/projects/${encodeURIComponent(writeProjectId)}/files/${encodeURIComponent(path)}`,
             {
               method: "PUT",

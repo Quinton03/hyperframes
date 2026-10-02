@@ -104,6 +104,7 @@ async function flushEvents(): Promise<void> {
   const timeout = setTimeout(() => controller.abort(), FLUSH_TIMEOUT_MS);
 
   try {
+    // eslint-disable-next-line no-restricted-globals -- PostHog is another host: no Studio socket
     await fetch(`${POSTHOG_HOST}/batch/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

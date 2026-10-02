@@ -1,4 +1,5 @@
 import { buildProjectApiPath } from "../../utils/projectRouting";
+import { studioApiFetch } from "../../utils/studioApiFetch";
 
 export async function probeSourceElement(
   projectId: string,
@@ -6,7 +7,7 @@ export async function probeSourceElement(
   target: { id?: string; hfId?: string; selector?: string; selectorIndex?: number },
 ): Promise<boolean> {
   try {
-    const response = await fetch(
+    const response = await studioApiFetch(
       buildProjectApiPath(
         projectId,
         `/file-mutations/probe-element/${encodeURIComponent(sourceFile)}`,
