@@ -199,6 +199,9 @@ const statKey = (file: { size: number; mtimeMs: number; ctimeMs: number }, swept
     ? ""
     : `${file.size}:${file.mtimeMs}:${file.ctimeMs}`;
 
+type ListedFile = ReturnType<typeof listProjectFiles>[number];
+const COPY_LATER_ABOVE_BYTES = 1024 ** 2;
+
 const sameWho = (a: HistoryWho, b: HistoryWho) => a.kind === b.kind && a.name === b.name;
 
 /** Cuts a change at the overwritten `at`: [kept before it, claimed after]; `at` unknown or not kept claims all. */
@@ -294,6 +297,7 @@ class Engine {
   outside: Group | null = null;
   /** A coalescing claim, open until another key, its idle timer, an operation, a window, or another write. */
   claimed: { group: Group; key: string; timer?: NodeJS.Timeout } | null = null;
+  adopting = new Map<string, Promise<void>>();
   /** Per path and hash an API write left, the hash of the bytes it replaced, until walked or written past. */
   overwritten = new Map<string, Map<string, string>>();
   stopHearing: (() => void) | undefined;
@@ -387,6 +391,10 @@ class Engine {
       const cached = cache.get(path);
       this.tracked.set(path, { hash, stat: cached?.hash === hash ? cached.stat : "" });
     }
+    const left = this.readAdopting();
+    const unadopted = (file: { path: string }) =>
+      left.has(file.path) && !this.tracked.has(file.path);
+    this.adoptMediaInBackground(listProjectFiles(this.dir).filter(unadopted), Date.now());
     // What changed while the project was closed is one outside entry, or the closed window's.
     this.reopenClosedWindow();
     await this.settleAll();
@@ -441,7 +449,8 @@ class Engine {
 
   async firstOpen(): Promise<void> {
     const sweptAt = Date.now();
-    for (const file of listProjectFiles(this.dir)) {
+    const files = listProjectFiles(this.dir);
+    for (const file of files.filter((file) => file.size <= COPY_LATER_ABOVE_BYTES)) {
       const hash = await this.storeIfPresent(file.path);
       if (this.whereFolder() !== "here") throw this.replaced();
       if (hash !== null) this.tracked.set(file.path, { hash, stat: statKey(file, sweptAt) });
@@ -449,6 +458,47 @@ class Engine {
     this.log.baseline = this.manifest();
     this.persistLog();
     this.saveStatCache();
+    this.adoptMediaInBackground(
+      files.filter((file) => file.size > COPY_LATER_ABOVE_BYTES),
+      sweptAt,
+    );
+  }
+
+  adoptMediaInBackground(files: ListedFile[], sweptAt: number): void {
+    let copied = Promise.resolve();
+    for (const file of files) {
+      copied = copied.then(() => this.adopt(file, sweptAt));
+      this.adopting.set(file.path, copied);
+    }
+    this.saveAdopting();
+  }
+
+  saveAdopting(): void {
+    const file = join(this.home, "adopting.json");
+    if (!this.adopting.size) return rmSync(file, { force: true });
+    mkdirSync(this.home, { recursive: true });
+    replaceFileAtomically(file, JSON.stringify([...this.adopting.keys()]), 0o644);
+  }
+
+  async adopt(file: ListedFile, sweptAt: number) {
+    try {
+      const hash = await this.storeIfPresent(file.path);
+      await this.queue(async () => {
+        this.adopting.delete(file.path);
+        this.saveAdopting();
+        if (hash === null || this.whereFolder() !== "here") return;
+        const change = { path: file.path, before: null, after: hash };
+        const found = this.overwrittenBy(change, undefined, new Set());
+        const start = found && this.blobs.has(found) ? found : hash;
+        this.tracked.set(file.path, { hash, stat: statKey(file, sweptAt) });
+        this.log.baseline.set(file.path, start);
+        if (start !== hash) addChange(this.outsideGroup(), file.path, start, hash);
+        this.persistLog({ type: "baseline", files: Object.fromEntries(this.log.baseline) });
+        this.saveStatCache();
+      });
+    } catch (error) {
+      if (!(error instanceof HistoryClosedError)) this.options.onError?.(error);
+    }
   }
 
   manifest(): Manifest {
@@ -461,6 +511,16 @@ class Engine {
       return new Map(Object.entries(files as Record<string, Tracked>));
     } catch {
       return new Map();
+    }
+  }
+
+  readAdopting(): Set<string> {
+    try {
+      return new Set(
+        JSON.parse(readFileSync(join(this.home, "adopting.json"), "utf-8")) as string[],
+      );
+    } catch {
+      return new Set();
     }
   }
 
@@ -480,7 +540,7 @@ class Engine {
     const sweptAt = Date.now();
     const changedAt = (file: { mtimeMs: number; ctimeMs: number }) =>
       Math.min(sweptAt, Math.max(file.mtimeMs, file.ctimeMs));
-    const seen = listProjectFiles(this.dir);
+    const seen = listProjectFiles(this.dir).filter((file) => !this.adopting.has(file.path));
     const heard = new Map(this.overwritten);
     const present = new Set(seen.map((file) => file.path));
     const removed = [...this.tracked.keys()]
@@ -1037,8 +1097,10 @@ class Engine {
       projectId: this.projectId,
       beginWindow: (who, label, options = {}) =>
         this.beginWindow(who, label, options.idleMs ?? this.options.maxGroupMs ?? 30_000),
-      claim: (who, label, paths, options = {}) =>
-        this.queue(() => this.claimNow(who, label, paths, options)),
+      claim: async (who, label, paths, options = {}) => {
+        await Promise.all(paths.map((path) => this.adopting.get(this.logPath(path))));
+        return this.queue(() => this.claimNow(who, label, paths, options));
+      },
       noteChange: (path) => {
         if (!this.closed) this.noteChange(path);
       },
