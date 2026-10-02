@@ -37,7 +37,7 @@ describe("parseCssColor", () => {
     expect(parseCssColor(input)).toEqual(expected);
   });
 
-  it.each(["", "#12", "notacolor", "currentcolor", "none", "rgb(1..2, 3, 4)"])(
+  it.each(["", "#12", "notacolor", "currentcolor", "none", "rgb(1..2, 3, 4)", "rgb(1. 2 3)"])(
     "rejects %s without a browser",
     (input) => {
       expect(parseCssColor(input)).toBeNull();

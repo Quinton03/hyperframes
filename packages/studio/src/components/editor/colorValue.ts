@@ -40,7 +40,7 @@ function parseSerializedColor(value: string): ParsedColor | null {
     return { red: 0, green: 0, blue: 0, alpha: 0 };
   }
 
-  const hex = trimmed.match(/^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
+  const hex = trimmed.match(/^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/);
   if (hex) {
     const digits = hex[1].length <= 4 ? [...hex[1]].map((digit) => digit + digit).join("") : hex[1];
     return {
@@ -53,9 +53,11 @@ function parseSerializedColor(value: string): ParsedColor | null {
 
   const rgba =
     trimmed.match(
-      /^rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)(?:\s*,\s*([0-9.]+))?\s*\)$/,
+      /^rgba?\(\s*(\d*\.?\d+)\s*,\s*(\d*\.?\d+)\s*,\s*(\d*\.?\d+)(?:\s*,\s*(\d*\.?\d+))?\s*\)$/,
     ) ??
-    trimmed.match(/^rgba?\(\s*([\d.]+%?)\s+([\d.]+%?)\s+([\d.]+%?)(?:\s*\/\s*([\d.]+%?))?\s*\)$/);
+    trimmed.match(
+      /^rgba?\(\s*(\d*\.?\d+%?)\s+(\d*\.?\d+%?)\s+(\d*\.?\d+%?)(?:\s*\/\s*(\d*\.?\d+%?))?\s*\)$/,
+    );
   if (rgba) {
     return {
       red: clampChannel(parseComponent(rgba[1], 255)),
@@ -112,9 +114,7 @@ function parseSrgbSerialization(
 }
 
 export function parseCssColor(value: string): ParsedColor | null {
-  const parsed = parseSerializedColor(value);
-  if (parsed && Object.values(parsed).every(Number.isFinite)) return parsed;
-  return parseBrowserColor(value.trim());
+  return parseSerializedColor(value) ?? parseBrowserColor(value.trim());
 }
 
 export function toColorPickerValue(value: string): string {
