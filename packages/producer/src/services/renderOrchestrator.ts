@@ -2396,16 +2396,8 @@ export function resolveParallelRouterRetryPlan(args: {
  * of calibration, so a generic capture failure on that pinned count is
  * exactly the scenario the pin itself introduced risk for.
  *
- * An ordinary one-worker stream also gets one retry when it loses its loopback
- * connection (file server or DevTools port) before the first frame — see
- * resolvePreFrameLoopbackLoss for the exact shape. There is no worker
- * count to reduce, but the failed stage has already closed its session and
- * encoder; replanning forces screenshot capture and the second invoke creates
- * fresh resources, recreating the file server first when its health probe
- * fails. The loopback gate is deliberately narrow — a Chrome killed by a host
- * shutdown looks exactly like `Target closed`, so it never qualifies here;
- * whether such a shape retries at all is decided by `isTransientCaptureError`
- * below, which covers every transient browser failure routing-independently.
+ * A one-worker stream that loses its loopback connection before the first frame also retries, with the
+ * file server recreated first when its health probe fails (resolvePreFrameLoopbackLoss).
  *
  * Includes OOM (previously excluded — see PR history): every worker's
  * `executeWorkerTask` closes its capture session in a `finally` that awaits
@@ -4739,14 +4731,13 @@ async function executeRenderPipeline(input: {
         try {
           streamingRes = await invokeStreaming();
         } catch (err) {
-          // drawElement self-verification, a sequential no-progress deadline,
-          // or an ordinary single-worker stream losing its loopback connection
-          // before the first frame restarts the whole render from a fresh
-          // screenshot session. When an inversion/router pinned the worker
-          // count, other capture-stage failures (host timeout, worker crash,
-          // OOM) can use that same tested baseline. The stage closes the failed
-          // session before throwing; probeSession (if any) was consumed by it.
-          // See shouldRetryViaPinnedFallback for exactly which errors qualify.
+          // drawElement self-verification or a sequential no-progress deadline
+          // restarts the whole render from a fresh screenshot session. When an
+          // inversion/router pinned the worker count, other capture-stage
+          // failures (host timeout, worker crash, OOM) can use that same tested
+          // baseline. The stage closes the failed session before throwing;
+          // probeSession (if any) was consumed by it. See
+          // shouldRetryViaPinnedFallback for exactly which errors qualify.
           const isVerifyError = isDrawElementVerificationError(err);
           const isDeCaptureError = isDrawElementCaptureError(err);
           const isDeStall = isDeRendererStallError(err);

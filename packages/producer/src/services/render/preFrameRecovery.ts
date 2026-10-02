@@ -7,18 +7,9 @@ import type { ProducerLogger } from "../../logger.js";
 import type { FileServerHandle, FileServerHealth } from "../fileServer.js";
 
 /**
- * Pre-frame loopback recovery for an ordinary one-worker screenshot stream.
- *
- * The streaming stage can lose its loopback connection — to the file server or
- * to Chrome's DevTools port — before the first frame is captured. That is the
- * only transient shape this path retries, and this function is its single
- * owner: the failure must name a loopback endpoint (`isLoopbackConnectionLoss`),
- * the stream must be single-worker (a multi-worker stream has its own adaptive
- * retry), and no frame may have been written yet (a later loss is a different
- * failure and would restart the whole render from frame 0 on the slower
- * path). A bare `Target closed` — Chrome killed by SIGTERM on a host that is
- * going away — carries no endpoint and is deliberately excluded, matching
- * the encoder-interruption rule in `shouldRetryViaPinnedFallback`.
+ * The one transient shape the pre-frame recovery retries: a loopback endpoint loss on a one-worker
+ * stream before any frame is written. A bare `Target closed` (Chrome killed by a host shutdown) names
+ * no endpoint and is excluded, matching the encoder-interruption rule in shouldRetryViaPinnedFallback.
  */
 export function resolvePreFrameLoopbackLoss(input: {
   failure: CaptureFailure;
@@ -29,15 +20,7 @@ export function resolvePreFrameLoopbackLoss(input: {
   return isLoopbackConnectionLoss(input.failure) ? input.failure : undefined;
 }
 
-/**
- * Decide whether the retry needs a fresh file server and perform the restart.
- * The restart rebinds the caller's active server; nothing is returned.
- *
- * The probe result is passed in (not taken here) so the caller can start it
- * while the failed browser session is still closing. The restart keys on the
- * probe, not on the reported endpoint: a bare loopback timeout cannot prove
- * which listener was gone, so the file server's own health is the evidence.
- */
+/** Restart the file server when its own health probe fails: a loopback timeout cannot name the listener. */
 export async function recoverPreFrameFileServer(input: {
   failure: LoopbackConnectionLoss;
   fileServer: Pick<FileServerHandle, "url" | "port">;

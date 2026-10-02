@@ -117,14 +117,7 @@ function messageOf(error: unknown): string {
 
 const CAUSE_CHAIN_DEPTH = 5;
 
-/**
- * Every message reachable from `error` through `.cause` (and the members of
- * an `AggregateError`), top-level first. undici flattens a failed connect to
- * a top-level `"fetch failed"` whose `.cause` carries the errno message, and a
- * `localhost` connect that tried both address families surfaces as an
- * `AggregateError` with an empty own message, so classification must read the
- * whole chain — the same walk `isDrawElementVerificationError` performs.
- */
+/** Messages along `.cause` and AggregateError members, top-level first: undici wraps connect errors. */
 function collectMessages(error: unknown): string[] {
   const messages: string[] = [];
   let current: unknown = error;
@@ -146,8 +139,7 @@ function collectMessages(error: unknown): string[] {
   return messages;
 }
 
-// Node/Bun errno text is unbracketed (`connect ETIMEDOUT ::1:49152`); Chrome
-// URLs bracket IPv6 (`http://[::1]:49152/`). Both name the same loopback.
+// Node/Bun spell IPv6 `connect ETIMEDOUT ::1:49152`; Chrome URLs bracket it: `http://[::1]:49152/`.
 const LOOPBACK_HOST = String.raw`(127\.0\.0\.1|localhost|\[::1\]|::1)`;
 const LOOPBACK_CONNECTION_LOSS_PATTERNS = [
   new RegExp(String.raw`connect (?:ETIMEDOUT|ECONNREFUSED|ECONNRESET) ${LOOPBACK_HOST}:(\d+)`, "i"),
@@ -157,12 +149,7 @@ const LOOPBACK_CONNECTION_LOSS_PATTERNS = [
   ),
 ];
 
-/**
- * The loopback endpoint a connection-loss error names, when it names one.
- * Only loopback hosts qualify: the render's file server and Chrome's DevTools
- * endpoint both live there, so a lost loopback connection is the signal the
- * pre-frame recovery acts on. A remote host that times out stays fatal.
- */
+/** The loopback endpoint (file server or DevTools) a connection loss names; a remote host stays fatal. */
 function loopbackConnectionLossEndpoint(text: string): CaptureEndpointDiagnostic | undefined {
   for (const pattern of LOOPBACK_CONNECTION_LOSS_PATTERNS) {
     const match = pattern.exec(text);
@@ -232,9 +219,7 @@ interface CaptureFailureKindInput {
 
 const CANCELLATION_PATTERN = /(?:render|capture)?_?cancelled|AbortError/i;
 
-// Order matters: cancellation and memory exhaustion outrank everything, a
-// protocol timeout outranks a loopback host mentioned in the same text, and
-// authoring/io are the fall-through.
+// Cancellation and memory outrank everything; a protocol timeout outranks a loopback host in its text.
 const ORDERED_KIND_MATCHERS: ReadonlyArray<
   readonly [CaptureFailureKind, (input: CaptureFailureKindInput) => boolean]
 > = [
@@ -267,8 +252,6 @@ export function classifyCaptureFailure(
   }
   const messages = collectMessages(error);
   const message = messages[0] ?? messageOf(error);
-  // Patterns match against the whole cause chain so a wrapped connect failure
-  // classifies by the errno it carries, not by the wrapper's generic text.
   const chainText = messages.join("\n");
   const lossEndpoint = loopbackConnectionLossEndpoint(chainText);
   const endpoint = error instanceof CaptureFailure ? error.endpoint : lossEndpoint;
@@ -293,13 +276,7 @@ export function isTransientBrowserError(error: unknown): boolean {
   return classifyCaptureFailure(error).kind === "transient_browser";
 }
 
-/**
- * A transient failure that names the loopback endpoint whose connection was
- * lost — the file server or Chrome's DevTools port. This is the only
- * transient shape the producer's pre-frame recovery retries on an ordinary
- * one-worker stream; a bare `Target closed` (Chrome killed by SIGTERM) carries
- * no endpoint and stays outside it.
- */
+/** A transient failure naming a lost loopback endpoint; a bare `Target closed` (SIGTERM) names none. */
 export type LoopbackConnectionLoss = CaptureFailure & {
   endpoint: Readonly<CaptureEndpointDiagnostic>;
 };

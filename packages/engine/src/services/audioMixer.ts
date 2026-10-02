@@ -453,23 +453,12 @@ function downloadFailure(error: unknown, elementId: string): AudioProcessingFail
   };
 }
 
-/**
- * Whether a failed mix may try a local fallback (drop volume automation, drop
- * `normalize=0`). A retryable failure — external interruption, managed
- * deadline/inactivity, missing FFmpeg — is the caller's to retry; rerunning it
- * here would burn a second full timeout and report the fallback's failure in
- * place of the first one. Cancellation is never retried locally.
- */
+/** A retryable failure (interruption, managed deadline, missing FFmpeg) is the caller's to retry. */
 function canRetryMixLocally(result: RunFfmpegResult, signal: AbortSignal | undefined): boolean {
   return !result.success && !signal?.aborted && !ffmpegFailure("mix", result).retryable;
 }
 
-/**
- * Which of a failed mix and its automation-dropping rerun the caller reports.
- * A successful rerun degrades the automation away; a rerun that was itself
- * interrupted or hit its deadline is the failure the caller must see (and
- * retry), not the automation error it was trying to work around.
- */
+/** An interrupted or timed-out rerun is the failure to report, not the automation error it worked around. */
 function resolveAutomationRerun(
   original: RunFfmpegResult,
   rerun: RunFfmpegResult,
@@ -1124,8 +1113,6 @@ async function mixGroupMembers(
   }
 
   if (signal?.aborted) {
-    // Same canonical shape as every other cancelled audio stage: a user
-    // cancel is not a system FFmpeg fault.
     const cancelledDetail = "Group sub-mix cancelled";
     return {
       success: false,
