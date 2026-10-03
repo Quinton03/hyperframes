@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, win32 } from "node:path";
 import { tmpdir } from "node:os";
-import type { CaptureOptions, EngineConfig, ExtractedFrames } from "@hyperframes/engine";
+import type {
+  CaptureOptions,
+  EngineConfig,
+  ExtractedFrames,
+  FrameLookupTable,
+} from "@hyperframes/engine";
 import {
   DEFAULT_CONFIG,
   DrawElementCaptureError,
@@ -81,6 +86,7 @@ import {
 import {
   applyRenderModeHints,
   createCompiledFrameSrcResolver,
+  createRenderVideoFrameInjector,
   materializeExtractedFramesForCompiledDir,
   projectBrowserEndToCompositionTimeline,
   resolveDeviceScaleFactor,
@@ -758,6 +764,43 @@ describe("createCompiledFrameSrcResolver", () => {
     expect(
       resolver("/tmp/hf-job/compiled/__hyperframes_video_frames/video?q=1/frame_00001.jpg"),
     ).toBe("/__hyperframes_video_frames/video%3Fq%3D1/frame_00001.jpg");
+  });
+});
+
+describe("createRenderVideoFrameInjector", () => {
+  it("hands the page a served frame URL, never an inline base64 frame", async () => {
+    const compiledDir = mkdtempSync(join(tmpdir(), "hf-render-inject-"));
+    try {
+      const frameDir = join(compiledDir, "__hyperframes_video_frames", "clip");
+      mkdirSync(frameDir, { recursive: true });
+      const framePath = join(frameDir, "frame_00001.jpg");
+      writeFileSync(framePath, Buffer.alloc(64, 7));
+      const frameLookup = {
+        frameDirs: () => [],
+        getActiveFramePayloads: () => new Map([["clip", { framePath, frameIndex: 0 }]]),
+      } as unknown as FrameLookupTable;
+      const sent: string[] = [];
+      const page = {
+        evaluate: vi.fn(async (_fn: unknown, items: unknown) => {
+          if (!Array.isArray(items)) return undefined;
+          return items
+            .filter(
+              (item): item is { videoId: string; dataUri: string } => typeof item === "object",
+            )
+            .map((item) => {
+              sent.push(item.dataUri);
+              return item.videoId;
+            });
+        }),
+      };
+
+      const hook = createRenderVideoFrameInjector(frameLookup, DEFAULT_CONFIG, compiledDir);
+      await hook!(page as never, 0);
+
+      expect(sent).toEqual(["/__hyperframes_video_frames/clip/frame_00001.jpg"]);
+    } finally {
+      rmSync(compiledDir, { recursive: true, force: true });
+    }
   });
 });
 
