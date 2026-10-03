@@ -37,13 +37,14 @@ import {
   useSafeGsapCommitMutation,
 } from "./useSafeGsapCommitMutation";
 import { studioWriteHeaders } from "../utils/studioFileVersion";
+import { studioApiFetch } from "../utils/studioApiFetch";
 
 async function mutateGsapScript(
   projectId: string,
   sourceFile: string,
   mutation: Record<string, unknown>,
 ): Promise<MutationResult> {
-  const res = await fetch(
+  const res = await studioApiFetch(
     `/api/projects/${encodeURIComponent(projectId)}/gsap-mutations/${encodeURIComponent(sourceFile)}`,
     {
       method: "POST",
@@ -62,7 +63,7 @@ async function mutateGsapScriptBatch(
   sourceFile: string,
   mutations: Record<string, unknown>[],
 ): Promise<MutationResult> {
-  const res = await fetch(
+  const res = await studioApiFetch(
     `/api/projects/${encodeURIComponent(projectId)}/gsap-mutations-batch/${encodeURIComponent(sourceFile)}`,
     {
       method: "POST",

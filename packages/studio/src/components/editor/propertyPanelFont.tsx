@@ -19,6 +19,7 @@ import {
   type LocalFontData,
 } from "./propertyPanelHelpers";
 import { useTrackDesignInput } from "../../contexts/DesignPanelInputContext";
+import { studioApiFetch } from "../../utils/studioApiFetch";
 
 /* ------------------------------------------------------------------ */
 /*  Font helper functions                                              */
@@ -176,7 +177,7 @@ export function FontFamilyField({
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/fonts")
+    void studioApiFetch("/api/fonts")
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { fonts?: string[] } | null) => {
         if (cancelled || !Array.isArray(data?.fonts)) return;
@@ -191,7 +192,7 @@ export function FontFamilyField({
   useEffect(() => {
     let cancelled = false;
     setLoadingGoogleFonts(true);
-    void fetch("/api/fonts/google")
+    void studioApiFetch("/api/fonts/google")
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { fonts?: string[] } | null) => {
         if (cancelled || !Array.isArray(data?.fonts)) return;
@@ -333,7 +334,7 @@ export function FontFamilyField({
 
   const importSystemFont = async (family: string): Promise<ImportedFontAsset | null> => {
     if (!onImportFonts) return null;
-    const response = await fetch(`/api/fonts/file?family=${encodeURIComponent(family)}`);
+    const response = await studioApiFetch(`/api/fonts/file?family=${encodeURIComponent(family)}`);
     if (!response.ok) return null;
     const blob = await response.blob();
     const ext = response.headers.get("Content-Disposition")?.match(/\.(\w+)"?$/)?.[1] ?? "ttf";

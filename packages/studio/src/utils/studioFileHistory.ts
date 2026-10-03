@@ -2,6 +2,7 @@ import { buildProjectApiPath } from "./projectRouting";
 import type { MutableRefObject } from "react";
 import { serializeStudioFileMutations } from "./studioFileMutationCoordinator";
 import { createStudioSaveHttpError } from "./studioSaveDiagnostics";
+import { studioApiFetch } from "./studioApiFetch";
 
 export interface RecordEditInput {
   label: string;
@@ -49,7 +50,7 @@ interface SaveProjectFilesWithHistoryInput {
 }
 
 export async function readProjectFileContent(pid: string, path: string): Promise<string> {
-  const response = await fetch(buildProjectApiPath(pid, `/files/${encodeURIComponent(path)}`));
+  const response = await studioApiFetch(buildProjectApiPath(pid, `/files/${encodeURIComponent(path)}`));
   if (!response.ok) {
     throw await createStudioSaveHttpError(response, `Failed to read ${path}`);
   }

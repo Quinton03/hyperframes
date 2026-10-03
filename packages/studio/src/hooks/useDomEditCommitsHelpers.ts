@@ -7,6 +7,7 @@ import { buildProjectApiPath } from "../utils/projectRouting";
 import type { DomEditPatchBatch } from "./domEditCommitTypes";
 import { formatFieldsSuffix } from "./gsapScriptCommitHelpers";
 import { studioWriteHeaders } from "../utils/studioFileVersion";
+import { studioApiFetch } from "../utils/studioApiFetch";
 
 export function formatUnsafeFieldList(fields: Array<{ path: string }>): string {
   return fields.map((field) => field.path).join(", ");
@@ -99,7 +100,7 @@ function isAtomicElementPatchFile(value: unknown): value is AtomicElementPatchFi
 export async function patchElementBatches(projectId: string, batches: DomEditPatchBatch[]) {
   const body = JSON.stringify({ batches });
   try {
-    const response = await fetch(
+    const response = await studioApiFetch(
       `/api/projects/${encodeURIComponent(projectId)}/file-mutations/patch-element-batches`,
       {
         method: "POST",
@@ -178,7 +179,7 @@ export async function postPatchElement(
   body: unknown,
   showToast: ShowToast,
 ): Promise<PatchElementResponse> {
-  const response = await fetch(
+  const response = await studioApiFetch(
     buildProjectApiPath(
       projectId,
       `/file-mutations/patch-element/${encodeURIComponent(targetPath)}`,

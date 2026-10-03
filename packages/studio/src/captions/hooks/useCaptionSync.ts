@@ -5,6 +5,7 @@ import { useMountEffect } from "../../hooks/useMountEffect";
 import { trackEvent } from "../../telemetry/client";
 import type { CaptionStyle } from "../types";
 import { studioWriteHeaders } from "../../utils/studioFileVersion";
+import { studioApiFetch } from "../../utils/studioApiFetch";
 
 interface CaptionOverrideEntry {
   wordId?: string;
@@ -93,7 +94,7 @@ export function useCaptionSync(projectId: string | null) {
     const seqAtSave = editSeqRef.current;
     const overrides = buildOverrides(state.model);
 
-    fetch(buildProjectApiPath(pid, `/files/${encodeURIComponent("caption-overrides.json")}`), {
+    studioApiFetch(buildProjectApiPath(pid, `/files/${encodeURIComponent("caption-overrides.json")}`), {
       method: "PUT",
       headers: { "Content-Type": "text/plain", ...studioWriteHeaders() },
       body: JSON.stringify(overrides, null, 2),
@@ -171,7 +172,7 @@ export function useCaptionSync(projectId: string | null) {
 
     let data: { content?: string };
     try {
-      const res = await fetch(
+      const res = await studioApiFetch(
         buildProjectApiPath(pid, `/files/${encodeURIComponent("caption-overrides.json")}`),
       );
       if (!res.ok) return; // no overrides file yet — normal

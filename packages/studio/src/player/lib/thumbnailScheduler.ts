@@ -293,6 +293,16 @@ export class ThumbnailScheduler {
     entry.controller = controller;
     this.activeByBucket[bucket]++;
     this.activeByKind[entry.request.kind]++;
+    let slotFree = false;
+    // An aborted load gives its slot back at once: with one composition slot, a stale render must not hold it.
+    const freeSlot = () => {
+      if (slotFree) return;
+      slotFree = true;
+      this.activeByBucket[bucket]--;
+      this.activeByKind[entry.request.kind]--;
+      this.pump();
+    };
+    controller.signal.addEventListener("abort", freeSlot, { once: true });
     this.notify(entry);
 
     const pending = this.loadWithTimeout(entry, controller);
@@ -314,8 +324,7 @@ export class ThumbnailScheduler {
       })
       .finally(() => {
         if (entry.controller === controller) entry.controller = null;
-        this.activeByBucket[bucket]--;
-        this.activeByKind[entry.request.kind]--;
+        freeSlot();
         this.pump();
       });
   }

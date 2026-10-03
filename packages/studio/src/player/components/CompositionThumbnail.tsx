@@ -4,6 +4,7 @@ import { useThumbnailStripSize } from "../../hooks/useThumbnailStripSize";
 import { createThumbnailKey, type ThumbnailPriority } from "../lib/thumbnailScheduler";
 import { TIMELINE_VIEWPORT_BUDGETS } from "../lib/timelineViewportBudgets";
 import { computeThumbnailStrip, probeImageAspect } from "./thumbnailUtils";
+import { studioApiFetch } from "../../utils/studioApiFetch";
 
 interface CompositionThumbnailProps {
   previewUrl: string;
@@ -86,7 +87,7 @@ export function compositionPathOfPreviewUrl(previewUrl: string): string {
 }
 
 async function loadCompositionImage(url: string, signal: AbortSignal) {
-  const response = await fetch(url, { signal });
+  const response = await studioApiFetch(url, { signal });
   if (!response.ok) throw new Error(`Composition thumbnail failed (${response.status})`);
   const blob = await response.blob();
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");

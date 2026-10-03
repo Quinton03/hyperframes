@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { buildProjectApiPath } from "../../utils/projectRouting";
 import type { PreviewCompositionSize } from "../../utils/previewCompositionSize";
+import { studioApiFetch } from "../../utils/studioApiFetch";
 
 /** Frame 0 as the thumbnail route last rendered it; `cachedOnly` never starts a render. */
 function previewPosterUrl(projectId: string, cachedOnly: boolean): string {
@@ -65,7 +66,7 @@ export function usePreviewPoster(
   const renderMissingPoster = useCallback(() => {
     if (missingForRef.current !== visit || liveReadyForRef.current !== visit) return;
     missingForRef.current = null;
-    void fetch(previewPosterUrl(projectId, false)).catch(() => {});
+    void studioApiFetch(previewPosterUrl(projectId, false)).catch(() => {});
   }, [visit, projectId]);
   const onLiveReadyToShowChange = useCallback(
     (ready: boolean) => {

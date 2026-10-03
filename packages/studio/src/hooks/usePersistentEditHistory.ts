@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { HistoryListItem, HistoryResult } from "@hyperframes/studio-server";
 import { studioFileContentVersion, studioWriteHeaders } from "../utils/studioFileVersion";
 import type { RestoreFiles } from "../utils/gsapUndoRestore";
+import { studioApiFetch } from "../utils/studioApiFetch";
 
 interface RecordEditInput {
   label: string;
@@ -118,7 +119,7 @@ async function post(
   body: object,
   headers: Record<string, string> = {},
 ): Promise<{ ok: true; body: unknown } | { ok: false; status: number; error: string }> {
-  const response = await fetch(url, {
+  const response = await studioApiFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
@@ -194,7 +195,7 @@ export function usePersistentEditHistory({ projectId }: UsePersistentEditHistory
   const refresh = useCallback(async () => {
     if (!projectId) return;
     const seen = own.changes();
-    const response = await fetch(historyUrl(projectId)).catch(() => null);
+    const response = await studioApiFetch(historyUrl(projectId)).catch(() => null);
     const next = response?.ok ? ((await response.json()) as HistoryView) : EMPTY;
     if (projectIdRef.current !== projectId) return;
     setView(next);

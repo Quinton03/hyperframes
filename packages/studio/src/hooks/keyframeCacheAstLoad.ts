@@ -14,6 +14,7 @@ import {
   synthesizeFlatTweenKeyframes,
   type MergeableKeyframe,
 } from "./gsapTweenSynth";
+import { studioApiFetch } from "../utils/studioApiFetch";
 
 export { resolveSelectorElementIds };
 
@@ -79,7 +80,7 @@ async function requestParsedAnimations(
 ): Promise<ParsedGsapAnimations | null> {
   if (!isPreviewBooted(projectId) && !(await whenPreviewBooted(projectId))) return null;
   try {
-    const res = await fetch(
+    const res = await studioApiFetch(
       `/api/projects/${encodeURIComponent(projectId)}/gsap-animations/${encodeURIComponent(sourceFile)}`,
       // Always re-read the freshly-parsed source; no per-call timestamp (which
       // would defeat caching forever and is a deterministic-render no-no).
