@@ -11,7 +11,7 @@ export function selectionChromeVars(rect: OverlayRect): Record<`--${string}`, st
   };
 }
 
-/** A gesture's per-move update: one element's properties, no React render and no layout for a move. */
+/** A gesture's per-move update: one element's properties, no render of the overlay; a move needs no layout. */
 export function writeSelectionChromeVars(chrome: HTMLElement, rect: OverlayRect): void {
   for (const [name, value] of Object.entries(selectionChromeVars(rect))) {
     chrome.style.setProperty(name, value);

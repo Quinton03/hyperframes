@@ -173,12 +173,11 @@ export function DomEditSelectionChrome({
   const canManipulate = allowCanvasMovement && !readOnly;
 
   return (
-    <>
+    // Holds the geometry variables for the plane and the crop frame; takes no box of its own.
+    <div ref={chromeRef} className="contents" style={selectionChromeVars(overlayRect)}>
       <div
-        ref={chromeRef}
         className="pointer-events-none absolute inset-0"
         style={{
-          ...selectionChromeVars(overlayRect),
           transformOrigin:
             "calc(var(--hf-sel-x) + var(--hf-sel-w) / 2) calc(var(--hf-sel-y) + var(--hf-sel-h) / 2)",
           transform: "rotate(var(--hf-sel-angle))",
@@ -281,6 +280,6 @@ export function DomEditSelectionChrome({
           onStyleCommit={onStyleCommit}
         />
       )}
-    </>
+    </div>
   );
 }

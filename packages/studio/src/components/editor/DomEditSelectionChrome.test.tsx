@@ -4,6 +4,7 @@ import React, { act, createRef } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import type { DomEditSelection } from "./domEditing";
+import type { OverlayRect } from "./domEditOverlayGeometry";
 import { DomEditGroupChrome, DomEditSelectionChrome } from "./DomEditSelectionChrome";
 import { NO_OVERLAY_RECT_DRAFT } from "./selectionChromeVars";
 
@@ -64,8 +65,12 @@ describe("DomEditSelectionChrome crop composition", () => {
       );
     });
     const chrome = host.querySelector<HTMLElement>('[data-dom-edit-selection-box="true"]')!;
-    expect(chrome.parentElement!.style.getPropertyValue("--hf-sel-x")).toBe("44px");
-    expect(chrome.parentElement!.style.getPropertyValue("--hf-sel-w")).toBe("220px");
+    expect(chrome.closest<HTMLElement>(".contents")!.style.getPropertyValue("--hf-sel-x")).toBe(
+      "44px",
+    );
+    expect(chrome.closest<HTMLElement>(".contents")!.style.getPropertyValue("--hf-sel-w")).toBe(
+      "220px",
+    );
     expect(chrome.style.width).toBe("var(--hf-sel-w)");
     expect(chrome.style.background).toBe("");
     expect(chrome.className).not.toMatch(/bg-/);
@@ -132,7 +137,55 @@ describe("DomEditSelectionChrome crop composition", () => {
       if (node.style.transform.includes("rotate(")) rotations.push(node.style.transform);
     }
     expect(rotations).toHaveLength(1);
-    expect(Number.parseFloat(rotations[0]!.slice("rotate(".length))).toBeCloseTo(30, 5);
+    expect(Number.parseFloat(/rotate\(([^)]*)\)/.exec(rotations[0]!)![1]!)).toBeCloseTo(30, 5);
+    act(() => root.unmount());
+  });
+});
+
+describe("DomEditSelectionChrome during a gesture", () => {
+  it("re-renders the crop frame for a size change only; a move follows the chrome's variables", () => {
+    const element = document.createElement("div");
+    element.style.clipPath = "inset(10px)";
+    document.body.append(element);
+    let draft: OverlayRect | null = null;
+    const listeners = new Set<() => void>();
+    const store = {
+      get: () => draft,
+      subscribe: (l: () => void) => (listeners.add(l), () => void listeners.delete(l)),
+    };
+    const publish = (next: OverlayRect) =>
+      act(() => ((draft = next), listeners.forEach((l) => l())));
+    const rect = { left: 10, top: 20, width: 200, height: 100, editScaleX: 1, editScaleY: 1 };
+    const { selection, host, root } = selectionFixture(element, "#c", true);
+    act(() => {
+      root.render(
+        <DomEditSelectionChrome
+          selection={selection}
+          overlayRect={rect}
+          allowCanvasMovement
+          allowBodyDrag
+          boxRef={createRef()}
+          chromeRef={createRef()}
+          overlayRectDraft={store}
+          boxChromeClass=""
+          boxClipPath={undefined}
+          selectionKey="c"
+          groupSelectionCount={0}
+          gestures={{ startGesture: vi.fn() } as never}
+          onStyleCommit={vi.fn()}
+          onBoxClick={vi.fn()}
+        />,
+      );
+    });
+    const frame = host.querySelector<HTMLElement>("[data-dom-edit-crop-frame]")!;
+    const before = frame.style.cssText;
+    expect(frame.style.transform).toContain("var(--hf-sel-x, 10px) - 10px");
+
+    publish({ ...rect, left: 60, top: 70 });
+    expect(frame.style.cssText).toBe(before);
+
+    publish({ ...rect, width: 260, height: 130 });
+    expect(frame.style.width).toBe("260px");
     act(() => root.unmount());
   });
 });

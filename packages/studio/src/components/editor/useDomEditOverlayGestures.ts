@@ -86,8 +86,8 @@ export function createDomEditOverlayGestureHandlers(opts: UseDomEditOverlayGestu
       height: g.originHeight,
       editScaleX: g.editScaleX,
       editScaleY: g.editScaleY,
-      // Every draft rect must carry the element's rotation: the rotation wrapper
-      // renders rotate(overlayRect.angle), so an omitted angle straightens the
+      // Every draft rect must carry the element's rotation: the chrome plane rotates
+      // by the rect's angle (--hf-sel-angle), so an omitted angle straightens the
       // chrome for the duration of the draft (the "straightens while moving" bug).
       angle: g.actualRotation,
     });

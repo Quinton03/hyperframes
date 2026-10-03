@@ -119,8 +119,14 @@ export function DomEditCropHandles({
   overlayRectDraft = NO_OVERLAY_RECT_DRAFT,
   onStyleCommit,
 }: DomEditCropHandlesProps) {
-  const rect =
-    useSyncExternalStore(overlayRectDraft.subscribe, overlayRectDraft.get) ?? overlayRect;
+  // A move follows the chrome's variables below; only a size change needs this to re-render.
+  const resized = useSyncExternalStore(overlayRectDraft.subscribe, () => {
+    const draft = overlayRectDraft.get();
+    return draft && (draft.width !== overlayRect.width || draft.height !== overlayRect.height)
+      ? draft
+      : null;
+  });
+  const rect = resized ?? overlayRect;
   const gestureRef = useRef<CropGestureState | null>(null);
   const [dragging, setDragging] = useState(false);
   const [hotEdge, setHotEdge] = useState<CropEdge | null>(null);
@@ -289,7 +295,7 @@ export function DomEditCropHandles({
           top: frame.top,
           width: frame.width,
           height: frame.height,
-          transform: frame.angleDeg !== 0 ? `rotate(${frame.angleDeg}deg)` : undefined,
+          transform: `translate(calc(var(--hf-sel-x, ${rect.left}px) - ${rect.left}px), calc(var(--hf-sel-y, ${rect.top}px) - ${rect.top}px)) rotate(${frame.angleDeg}deg)`,
         }}
       >
         {/* Dim the cropped-away area whenever the element is cropped and selected,
