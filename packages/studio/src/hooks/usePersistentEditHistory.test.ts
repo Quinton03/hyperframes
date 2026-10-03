@@ -187,6 +187,47 @@ it("gives a claim back when its undo fails, so the next press targets that edit 
   expect(posted.filter((p) => p === "undo" || p === "step")).toEqual(["undo", "undo"]);
 });
 
+it("does not give back a claim on an edit another press has already undone", async () => {
+  const { hook, file, save, readFile } = await studio();
+  save("B");
+  await act(() =>
+    hook().recordEdit({
+      label: "Moved Title",
+      files: { "index.html": { before: "A", after: "B" } },
+    }),
+  );
+  await vi.waitFor(() => expect(hook().undoLabel).toBe("Moved Title"));
+  const atKey = hook().claims();
+  save("C");
+  await act(() =>
+    hook().recordEdit({
+      label: "Moved Card",
+      files: { "index.html": { before: "B", after: "C" } },
+    }),
+  );
+  let calls = 0;
+  let queue: Promise<unknown> = Promise.resolve();
+  const serialize = <T>(_paths: readonly string[], task: () => Promise<T>) => {
+    calls += 1;
+    if (calls === 1) return Promise.reject(new Error("save failed"));
+    const run = queue.then(task);
+    queue = run.catch(() => undefined);
+    return run;
+  };
+  const press = () => hook().undo({ readFile, claimedAfter: atKey, serialize });
+
+  const [first, second] = await act(() => Promise.allSettled([press(), press()]));
+  const third = await act(() => press());
+
+  expect(first.status).toBe("rejected");
+  expect(second).toMatchObject({
+    status: "fulfilled",
+    value: { ok: true, label: "Undid: Moved Card" },
+  });
+  expect(third).toMatchObject({ ok: true, label: "Undid: Moved Title" });
+  expect(file()).toBe("A");
+});
+
 it("a drag's edits under one key undo as one step, even before the drag goes idle", async () => {
   const { hook, file, save, readFile } = await studio();
   const writes: Array<[before: string, after: string]> = [

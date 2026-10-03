@@ -90,6 +90,7 @@ function createOwnHistory() {
       };
     },
     stepped: (entry: { id: string; undoes?: string }) => {
+      if (entry.undoes && claimed.id === entry.undoes) claimed = { ...claimed, id: "" };
       const undone = entry.undoes ? own.get(entry.undoes) : undefined;
       if (!undone) return;
       const swapped = Object.entries(undone).map(([path, f]) => [
