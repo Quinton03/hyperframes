@@ -187,11 +187,15 @@ function dragRoute(
   posAnim: GsapAnimation | null,
   iframe: HTMLIFrameElement | null,
   selector: string,
-  altKey?: boolean,
+  altKey: boolean | undefined,
+  fileAnimations: GsapAnimation[] | null,
 ): "static" | "whole-path" | "at-playhead" {
   const hasNonHold = hasNonHoldTweenForElement(iframe, selector, undefined, POSITION_CHANNELS);
   const hasKeyframedPosTween = !!posAnim?.keyframes && resolveTweenDuration(posAnim) > 0;
-  if (!hasNonHold && !hasKeyframedPosTween) return "static";
+  const fileTween = fileAnimations && findGsapPositionAnimation(fileAnimations, selector);
+  const fileAnimatesPosition =
+    !!fileTween && !isInstantHold(fileTween) && resolveTweenDuration(fileTween) > 0;
+  if (!hasNonHold && !hasKeyframedPosTween && !fileAnimatesPosition) return "static";
   // Alt-drag shifts the whole path; with auto-keyframe off (#1808) that is the default.
   return altKey || !usePlayerStore.getState().autoKeyframeEnabled ? "whole-path" : "at-playhead";
 }
@@ -213,7 +217,7 @@ async function planDrag(
     : own;
   const resolved = await resolveGroupTween("position", animations, selection, async () => {});
   const posAnim = resolved?.anim ?? findGsapPositionAnimation(animations, selector);
-  const route = dragRoute(posAnim, iframe, selector, options.altKey);
+  const route = dragRoute(posAnim, iframe, selector, options.altKey, own);
   if (route === "static") return { status: "persisted" };
   if (!posAnim) {
     return { status: "blocked", reason: "source-uneditable", detail: "no-position-tween" };
@@ -308,7 +312,8 @@ export async function tryGsapDragIntercept(
   }
 
   const gsapPos = readGsapPositionFromIframe(iframe, selector) ?? { x: 0, y: 0 };
-  const route = dragRoute(posAnim, iframe, selector, options?.altKey);
+  const fileAnimations = fetchFallbackAnimations ? await fetchFallbackAnimations() : null;
+  const route = dragRoute(posAnim, iframe, selector, options?.altKey, fileAnimations);
   if (route === "static") {
     const existingSet =
       posAnim && isInstantHold(posAnim) && posAnim.targetSelector === selector
@@ -329,8 +334,8 @@ export async function tryGsapDragIntercept(
   // `animations` list can lag behind the file after a prior mutation changed
   // the tween's position/method (which changes the ID). Re-fetch to get the
   // current ID and avoid a stale-ID remove that creates duplicate tweens.
-  if (fetchFallbackAnimations) {
-    const fresh = await fetchFallbackAnimations();
+  if (fileAnimations) {
+    const fresh = fileAnimations;
     const freshMatch =
       fresh.find((a) => a.id === posAnim!.id) ??
       pickClosestToPlayhead(

@@ -155,6 +155,46 @@ describe("tryGsapDragIntercept — stale-parse guard (no resurrection after dele
     expect(mutation.type).not.toBe("add-keyframe");
   });
 
+  // CI 37120535633: a nudge on a flat from() wrote a static set while the preview reloaded.
+  it("keeps the tween route when the file animates position but the runtime reads empty", async () => {
+    const fromTween = {
+      ...stalePositionAnim,
+      id: "#puck-b-from-0-position",
+      method: "from",
+      properties: { x: -60 },
+      position: 0,
+      resolvedStart: 0,
+    } as GsapAnimation;
+    const commitMutation = vi.fn();
+
+    await tryGsapDragIntercept(
+      selection,
+      { x: 5, y: 0 },
+      [fromTween],
+      fakeIframe("puck-b", []),
+      commitMutation,
+      vi.fn().mockResolvedValue([fromTween]),
+    );
+
+    const methods = commitMutation.mock.calls.map(([, mutation]) => mutation.method);
+    expect(methods).not.toContain("set");
+  });
+
+  it("still commits a static set when the current file no longer has the tween", async () => {
+    const commitMutation = vi.fn();
+
+    await tryGsapDragIntercept(
+      selection,
+      { x: -50, y: 30 },
+      [stalePositionAnim],
+      fakeIframe("puck-b", []),
+      commitMutation,
+      vi.fn().mockResolvedValue([]),
+    );
+
+    expect(commitMutation.mock.calls[0]?.[1]).toMatchObject({ type: "add", method: "set" });
+  });
+
   it("forwards one complete instantPatch when atomically updating an existing static set", async () => {
     const commitMutation = vi.fn();
     const iframe = fakeIframe("puck-b", []); // runtime empty → STATIC path
