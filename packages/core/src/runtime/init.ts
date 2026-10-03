@@ -4152,9 +4152,10 @@ export function initSandboxRuntimeModular(): void {
   // timelines in __timelines haven't executed yet (they run in the browser's next
   // microtask). Defer a rebinding attempt to catch them.
   if (externalCompositionsReady) {
-    setTimeout(() => {
+    const deferredRebindTimerId = window.setTimeout(() => {
       maybePublishRenderReady();
     }, 0);
+    registerRuntimeCleanup(() => window.clearTimeout(deferredRebindTimerId));
   }
   let transportTickCount = 0;
   let inTransportTick = false;
