@@ -23,10 +23,10 @@ function renderGrip(row: number): HTMLElement {
   return grip;
 }
 
-function pointer(target: HTMLElement, type: string, clientY: number) {
+function pointer(target: HTMLElement, type: string, clientY: number, buttons = 1) {
   act(() => {
     target.dispatchEvent(
-      new PointerEvent(type, { bubbles: true, button: 0, buttons: 1, pointerId: 1, clientY }),
+      new PointerEvent(type, { bubbles: true, button: 0, buttons, pointerId: 1, clientY }),
     );
   });
 }
@@ -40,6 +40,14 @@ describe("TrackHeightGrip", () => {
     pointer(grip, "pointerup", 130);
     pointer(grip, "pointermove", 400);
     expect(usePlayerStore.getState().trackHeight).toBe(TRACK_H + 10);
+  });
+
+  it("ends the drag on a move with the button up, so a lost release never resizes on hover", () => {
+    const grip = renderGrip(0);
+    pointer(grip, "pointerdown", 100);
+    pointer(grip, "pointermove", 110, 0);
+    pointer(grip, "pointermove", 140);
+    expect(usePlayerStore.getState().trackHeight).toBe(TRACK_H);
   });
 
   it("puts every layer back to the default on a double click", () => {
