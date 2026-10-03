@@ -766,6 +766,14 @@ function reaches(targets: ReadonlySet<string>, path: string): boolean {
   return false;
 }
 
+function filesOnly(paths: readonly string[]): Set<string> {
+  const folders = new Set<string>();
+  for (const path of paths)
+    for (let at = path.indexOf("/"); at > 0; at = path.indexOf("/", at + 1))
+      folders.add(path.slice(0, at));
+  return new Set(paths.filter((path) => !folders.has(path)));
+}
+
 function leavesFolder(rest: string): boolean {
   let depth = 0;
   for (const segment of rest.split("/")) {
@@ -831,7 +839,7 @@ function updateReferences(
     const [from, to] = [oldPath.slice(at + 1), posix.relative(dir, newPath)];
     parentFolderEdits.set(dir, {
       css: referenceEdits(from, to, isDirectory, inside, { targets: null }),
-      other: referenceEdits(from, to, isDirectory, inside, { targets: new Set(inside) }),
+      other: referenceEdits(from, to, isDirectory, inside, { targets: filesOnly(inside) }),
     });
   }
   let updatedCount = 0;
