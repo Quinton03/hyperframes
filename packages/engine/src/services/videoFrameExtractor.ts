@@ -41,6 +41,7 @@ import {
   extractMediaMetadata,
   type VideoMetadata,
 } from "../utils/ffprobe.js";
+import { inputAlphaOpaqueWarning, probeInputAlphaPlane } from "../utils/alphaPlaneProbe.js";
 import {
   analyzeCompositionHdr,
   isHdrColorSpace as isHdrColorSpaceUtil,
@@ -1843,6 +1844,23 @@ export async function extractAllVideoFrames(
   // field exists to fix).
   const sdrToHdrTransfers: Array<HdrTransfer | undefined> = resolvedVideos.map(() => undefined);
   breakdown.hdrProbeMs = Date.now() - phase2ProbeStart;
+
+  // Warning only: an opaque video used as a full-frame background is legitimate.
+  const alphaWarnedSrcs = new Set<string>();
+  if (resolvedVideos.length > 0) {
+    await Promise.all(
+      resolvedVideos.map(async ({ video, videoPath }, index) => {
+        if (signal?.aborted) return;
+        const metadata = videoMetadata[index];
+        if (!metadata?.hasAlpha || !codecMayHaveAlpha(metadata.videoCodec)) return;
+        if (alphaWarnedSrcs.has(video.src)) return;
+        alphaWarnedSrcs.add(video.src);
+        const decoder = decoderForCodec(metadata.videoCodec);
+        if ((await probeInputAlphaPlane(videoPath, decoder, signal)) !== true) return;
+        process.stderr.write(inputAlphaOpaqueWarning(video.src));
+      }),
+    );
+  }
 
   const hdrPreflightStart = Date.now();
   const hdrInfo = analyzeCompositionHdr(videoColorSpaces);

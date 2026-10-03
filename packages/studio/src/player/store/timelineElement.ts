@@ -95,6 +95,17 @@ export interface TimelineElement {
   authoredStartIsMasterTime?: boolean;
   /** Legacy marker for an inline sub-composition child; current rows never set it. */
   expandedHostKey?: string;
+  /** A text layer's words and look, which its row draws live instead of a captured picture. */
+  text?: TimelineText;
+}
+
+export interface TimelineText {
+  value: string;
+  fontFamily?: string;
+  fontWeight?: string;
+  color?: string;
+  /** The layer's own opaque background colour, when it paints one. */
+  background?: string;
 }
 
 type RowClock = Pick<
@@ -156,6 +167,7 @@ export type TimelineElementPatch = Partial<
     | "audioGroupHidden"
     | "audioGroupFxChain"
     | "audioGroupAutomation"
+    | "text"
   >
 >;
 

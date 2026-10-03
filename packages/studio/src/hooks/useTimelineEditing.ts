@@ -1,5 +1,6 @@
 // fallow-ignore-file complexity
 import { useCallback, useRef } from "react";
+import { useStableHandlers } from "./useStableHandlers";
 import { usePlayerStore, type TimelineElement } from "../player";
 import { toAuthoredStart, toCompositionTime } from "../player/store/timelineElement";
 import { useRazorSplit } from "./useRazorSplit";
@@ -508,13 +509,41 @@ export function useTimelineEditing({
     return [...flatMembers, ...domMembers];
   };
 
+  const audioGroupAttribute = {
+    ...setAudioGroupAttribute,
+    // Same two-array member lookup syncStoredGroupAttribute mirrors into
+    // (timelineAudioGroupVolume.ts): a sub-composition's group members have
+    // no flat twin, only a domClipChildren entry, so both are checked.
+    setQuiet: track(
+      guard(audioGroupMembers, setAudioGroupAttribute.setQuiet, (reason, groupId, attr) => {
+        setAudioGroupAttribute.revertLive(groupId, attr);
+        return refused(reason);
+      }),
+    ),
+  };
+  const stableAudioGroupAttribute = useStableHandlers(audioGroupAttribute, projectId);
+  const elementFxAttribute = {
+    ...setElementFxAttribute,
+    setMany: track(guard((edits) => edits.map((edit) => edit.element), setElementsAttribute)),
+    setQuiet: track(
+      guard(
+        (element) => [element],
+        setElementFxAttribute.setQuiet,
+        (reason, element, attr) => {
+          setElementFxAttribute.revertLive(element, attr);
+          return refused(reason);
+        },
+      ),
+    ),
+  };
+  const stableElementFxAttribute = useStableHandlers(elementFxAttribute, projectId);
   // Every write-handler is tracked here, the one place all hand edits
   // converge, so undo never races a write; canEdit gates the same point.
   // Coverage boundary: see the PR body, not every kind resolves an element.
   const trackedRazorSplit = track(
     guard((element) => withLinkPartners([element]), handleRazorSplit),
   );
-  return {
+  const editing = {
     handleTimelineElementMove: track(guard((element) => [element], handleTimelineElementMove)),
     handleTimelineElementResize: track(guard((element) => [element], handleTimelineElementResize)),
     handleToggleTrackHidden: track(
@@ -530,32 +559,8 @@ export function useTimelineEditing({
       }, handleToggleElementHidden),
     ),
     handleAutoGroupCarveSources: track(handleAutoGroupCarveSources),
-    setAudioGroupAttribute: {
-      ...setAudioGroupAttribute,
-      // Same two-array member lookup syncStoredGroupAttribute mirrors into
-      // (timelineAudioGroupVolume.ts): a sub-composition's group members have
-      // no flat twin, only a domClipChildren entry, so both are checked.
-      setQuiet: track(
-        guard(audioGroupMembers, setAudioGroupAttribute.setQuiet, (reason, groupId, attr) => {
-          setAudioGroupAttribute.revertLive(groupId, attr);
-          return refused(reason);
-        }),
-      ),
-    },
-    setElementFxAttribute: {
-      ...setElementFxAttribute,
-      setMany: track(guard((edits) => edits.map((edit) => edit.element), setElementsAttribute)),
-      setQuiet: track(
-        guard(
-          (element) => [element],
-          setElementFxAttribute.setQuiet,
-          (reason, element, attr) => {
-            setElementFxAttribute.revertLive(element, attr);
-            return refused(reason);
-          },
-        ),
-      ),
-    },
+    setAudioGroupAttribute: stableAudioGroupAttribute,
+    setElementFxAttribute: stableElementFxAttribute,
     handleTimelineElementDelete: track(
       guard((element) => withLinkPartners([element]), linkEditing.handleLinkedElementDelete),
     ),
@@ -591,4 +596,5 @@ export function useTimelineEditing({
       setAudioGroupAttribute.restoreLive(restore);
     },
   };
+  return useStableHandlers(editing, projectId);
 }

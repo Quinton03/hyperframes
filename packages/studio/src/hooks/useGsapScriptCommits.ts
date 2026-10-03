@@ -11,6 +11,7 @@ import {
 } from "../utils/gsapSoftReload";
 import type { SoftReloadResult } from "../utils/gsapSoftReload";
 import { trackStudioEvent } from "../utils/studioTelemetry";
+import { trackKeyframeCommit } from "../utils/keyframeUsage";
 import { serializeStudioFileMutation } from "../utils/studioFileMutationCoordinator";
 import { trackedStudioEdit } from "../utils/studioPendingEdits";
 import {
@@ -392,6 +393,7 @@ export function useGsapScriptCommits({ projectIdRef, activeCompPath, previewIfra
       mutateGsapScript(pid, targetPath, mutation),
     );
     if (!result) return;
+    trackKeyframeCommit([mutation], result, options);
     options.onResult?.(result);
     await finalizeSuccessfulMutation(pid, compositionPath, selection, mutation, targetPath, result, options);
   }, [showToast, finalizeSuccessfulMutation]);
@@ -405,6 +407,7 @@ export function useGsapScriptCommits({ projectIdRef, activeCompPath, previewIfra
       mutateGsapScriptBatch(pid, targetPath, mutations),
     );
     if (!result) return;
+    trackKeyframeCommit(mutations, result, options, calls.map((call) => call.options));
     options.onResult?.(result);
     // Each call brings its own fast-path patch; the batch wrote them all, so the
     // preview sync applies them all rather than just the last call's.

@@ -8,7 +8,7 @@ import { STUDIO_PREVIEW_LAZY_ATTR, STUDIO_PREVIEW_UPCOMING_ATTR } from "../studi
 import { initRuntimeAnalytics, emitAnalyticsEvent } from "./analytics";
 import { injectCompositionCssVariables } from "./getVariables";
 import { createCssAdapter } from "./adapters/css";
-import { createGsapAdapter } from "./adapters/gsap";
+import { createGsapAdapter, rerenderGsapTimelineAt } from "./adapters/gsap";
 import { createAnimeJsAdapter } from "./adapters/animejs";
 import { createLottieAdapter } from "./adapters/lottie";
 import { createThreeAdapter } from "./adapters/three";
@@ -44,7 +44,7 @@ import {
 import { handleErrorForProxy, handleMetadataForProxy, maybeProxyProactively } from "./mediaProxy";
 import { probeAndCacheElementVolume, type VolumeKeyframe } from "./mediaVolumeEnvelope.js";
 import { createPickerModule } from "./picker";
-import { createRuntimePlayer, type RuntimePlayerTransport } from "./player";
+import { createRuntimePlayer, resolveRenderSeekTime, type RuntimePlayerTransport } from "./player";
 import { createRuntimeState } from "./state";
 import {
   collectRuntimeTimelinePayload,
@@ -97,7 +97,7 @@ import {
   isMemberGroupHidden,
 } from "../audioGroups";
 import { clampNativeMediaVolume } from "../audioGain";
-import { quantizeSeekTime, quantizeTimeToFrame } from "../inline-scripts/parityContract";
+import { quantizeTimeToFrame } from "../inline-scripts/parityContract";
 import { createManualEditGestureWatch } from "./manualEditGestureWatch";
 import type {
   HeldSeek,
@@ -3905,15 +3905,15 @@ export function initSandboxRuntimeModular(): void {
     renderSeek: (timeSeconds, options) => {
       heldSeek = null;
       renderCaptureSeekStarted = true;
-      const quantized = quantizeSeekTime(
+      const seekTime = resolveRenderSeekTime(
         Math.max(0, Number(timeSeconds) || 0),
         state.canonicalFps,
-        options?.subFrameDivisions,
+        options,
       );
       webAudio.stopAll();
       clock.detachAudioSource();
       if (clock.isPlaying()) clock.pause();
-      clock.seek(quantized);
+      clock.seek(seekTime);
       state.currentTime = clock.now();
       state.isPlaying = false;
       state.mediaForceSyncNextTick = true;
@@ -4360,11 +4360,8 @@ export function initSandboxRuntimeModular(): void {
         if (typeof tl.totalTime === "function") {
           tl.totalTime(tlSeekTime, suppressEvents);
           if (!suppressEvents && !hasZeroDurationCallbackTween(tl)) {
-            // Preserve GSAP's forced-render nudge for root timelines without
-            // firing callbacks a second time. The first seek is the only
-            // eventful one; the follow-up nudges only refresh computed styles.
-            tl.totalTime(tlSeekTime + 0.001, true);
-            tl.totalTime(tlSeekTime, true);
+            // The first seek is the only eventful one; the re-render only refreshes styles.
+            rerenderGsapTimelineAt({ totalTime: tl.totalTime.bind(tl) }, tlSeekTime);
           }
         } else {
           tl.seek(tlSeekTime, suppressEvents);

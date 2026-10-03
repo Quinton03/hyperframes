@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, type MouseEvent } from "react";
+import { useMemo, useState, useCallback, useRef, type MouseEvent } from "react";
 import { useMountEffect } from "./useMountEffect";
 import { liveTime, usePlayerStore } from "../player";
 import { buildFrameCaptureFilename, buildFrameCaptureUrl } from "../utils/frameCapture";
@@ -35,8 +35,10 @@ export function useFrameCapture({
     return isPlaying ? livePlayheadRef.current : currentTime;
   }, []);
 
+  const [captureStamp, setCaptureStamp] = useState(Date.now);
   const refreshCaptureFrameTime = useCallback(() => {
     setCaptureFrameTime(playheadTime());
+    setCaptureStamp(Date.now());
   }, [playheadTime]);
 
   const handleCaptureFrameClick = useCallback(
@@ -107,13 +109,18 @@ export function useFrameCapture({
     [activeCompPath, playheadTime, projectId, showToast, waitForPendingDomEditSaves],
   );
 
-  const captureFrameHref = projectId
-    ? buildFrameCaptureUrl({
-        projectId,
-        compositionPath: activeCompPath,
-        currentTime: captureFrameTime,
-      })
-    : "#";
+  const captureFrameHref = useMemo(
+    () =>
+      projectId
+        ? buildFrameCaptureUrl({
+            projectId,
+            compositionPath: activeCompPath,
+            currentTime: captureFrameTime,
+            version: captureStamp,
+          })
+        : "#",
+    [projectId, activeCompPath, captureFrameTime, captureStamp],
+  );
   const captureFrameFilename = buildFrameCaptureFilename(activeCompPath, captureFrameTime);
 
   return {

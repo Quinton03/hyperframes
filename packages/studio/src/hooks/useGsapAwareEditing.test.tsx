@@ -74,7 +74,7 @@ function mountResizeHandler(
         size: { width: number; height: number },
         offset?: { x: number; y: number },
         restore?: () => void,
-      ) => Promise<void>)
+      ) => Promise<void | import("../utils/previewFeatureUsage").GeometryCommitResult>)
     | null = null;
   let property: ReturnType<typeof useGsapAwareEditing>["commitAnimatedProperty"] | null = null;
   function Harness() {
@@ -134,13 +134,18 @@ function mountGroupHandler({
     | "handleDomRotationCommit"
   >
 > = {}) {
-  let groupCommit!: (updates: DomEditGroupPathOffsetCommit[]) => Promise<void>;
+  let groupCommit!: (
+    updates: DomEditGroupPathOffsetCommit[],
+  ) => Promise<void | import("../utils/previewFeatureUsage").GeometryCommitResult>;
   let pathOffsetCommit!: (
     selection: DomEditSelection,
     next: { x: number; y: number },
     route?: { plainTranslate?: boolean },
-  ) => Promise<void>;
-  let rotationCommit!: (selection: DomEditSelection, next: RotationCommit) => Promise<void>;
+  ) => Promise<void | import("../utils/previewFeatureUsage").GeometryCommitResult>;
+  let rotationCommit!: (
+    selection: DomEditSelection,
+    next: RotationCommit,
+  ) => Promise<void | import("../utils/previewFeatureUsage").GeometryCommitResult>;
   function Harness() {
     const editing = useGsapAwareEditing({
       domEditSelection: null,
@@ -581,7 +586,7 @@ describe("useGsapAwareEditing anchored resize", () => {
     h.selection.element.setAttribute("data-hf-drag-initial-offset-x", "0");
     h.selection.element.setAttribute("data-hf-drag-initial-offset-y", "0");
 
-    let commit!: Promise<void>;
+    let commit!: Promise<void | import("../utils/previewFeatureUsage").GeometryCommitResult>;
     act(() => {
       commit = h.resize(h.selection, { width: 300, height: 200 }, { x: -50.2, y: -25.6 });
     });
@@ -628,7 +633,7 @@ describe("useGsapAwareEditing anchored resize", () => {
           s: DomEditSelection,
           m: unknown,
           o: { coalesceKey?: string; label?: string; softReload?: boolean },
-        ) => Promise<void>,
+        ) => Promise<void | import("../utils/previewFeatureUsage").GeometryCommitResult>,
         _fetch: unknown,
         options?: { preflightOnly?: boolean },
       ) => {

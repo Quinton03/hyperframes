@@ -57,6 +57,8 @@ export type PlayheadEditPlan =
         keyframes: Keyframe[];
         easeEach?: string;
       };
+      /** A keyframe was added, not only changed: keyframe usage counts it as an add. */
+      added: boolean;
     }
   | { ok: false; reason: PlayheadEditRefusal };
 
@@ -185,6 +187,7 @@ export function planValueAtPlayhead(edit: PlayheadEdit): PlayheadEditPlan {
   }
   if (Object.keys(values).some((prop) => !keyframes.some((kf) => kf.properties[prop] != null)))
     return refuse("implicit-end-unknown");
+  const authored = keyframes.length;
   let position = start;
   let span = duration;
 
@@ -231,6 +234,7 @@ export function planValueAtPlayhead(edit: PlayheadEdit): PlayheadEditPlan {
       keyframes,
       ...(norm.easeEach ? { easeEach: norm.easeEach } : {}),
     },
+    added: keyframes.length > authored,
   };
 }
 
@@ -278,6 +282,7 @@ export async function commitValueAtPlayhead(
     label: options.label,
     softReload: true,
     beforeReload: options.beforeReload,
+    ...(plan.added && { keyframeAction: "add" as const }),
   });
   if (activeKeyframePct != null) {
     setActiveKeyframePct(null);

@@ -1,3 +1,4 @@
+import { parseProjectHashRoute } from "./projectRouting";
 import { resolveStudioDistinctId } from "../telemetry/distinctId";
 import { browserTelemetryAllowed } from "../telemetry/policy";
 import { canaryEventProperties } from "../telemetry/canary";
@@ -42,6 +43,51 @@ function isEnabled(): boolean {
   return browserTelemetryAllowed();
 }
 
+function studioRouteKind(hash: string): "project" | "home" | "other" {
+  if (parseProjectHashRoute(hash)) return "project";
+  if (hash === "" || hash === "#") return "home";
+  return "other";
+}
+
+const ROUTE_IDS_KEY = "hyperframes-studio:routeIds";
+let routeIds: Map<string, string> | undefined;
+
+function isRouteIdEntry(entry: unknown): entry is [string, string] {
+  return (
+    Array.isArray(entry) &&
+    entry.length === 2 &&
+    typeof entry[0] === "string" &&
+    typeof entry[1] === "string" &&
+    /^[0-9a-f]{8}$/.test(entry[1])
+  );
+}
+
+function readRouteIds(): Map<string, string> {
+  try {
+    const stored: unknown = JSON.parse(sessionStorage.getItem(ROUTE_IDS_KEY) ?? "[]");
+    return new Map(Array.isArray(stored) ? stored.filter(isRouteIdEntry) : []);
+  } catch {
+    // Storage may be blocked or corrupt. Keep random IDs in memory instead.
+    return new Map();
+  }
+}
+
+function studioRouteId(hash: string): string {
+  routeIds ??= readRouteIds();
+  const route = hash.split("?")[0];
+  const existing = routeIds.get(route);
+  if (existing !== undefined) return existing;
+  const bytes = crypto.getRandomValues(new Uint8Array(4));
+  const id = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  routeIds.set(route, id);
+  try {
+    sessionStorage.setItem(ROUTE_IDS_KEY, JSON.stringify([...routeIds]));
+  } catch {
+    // The in-memory map still preserves equality when storage is unavailable.
+  }
+  return id;
+}
+
 function getSessionProperties(): EventProperties {
   return {
     studio_version: typeof __STUDIO_VERSION__ !== "undefined" ? __STUDIO_VERSION__ : "dev",
@@ -58,10 +104,9 @@ function getSessionProperties(): EventProperties {
     viewport_width: window.innerWidth,
     viewport_height: window.innerHeight,
     user_agent: navigator.userAgent,
-    // Route slug only — drop the query string, which carries the current
-    // selection (selId / selSelector are the user's own element ids/CSS
-    // selectors) and other view state we must not send to analytics.
-    url_hash: location.hash.replace(/#project\//, "").split("?")[0],
+    // Route names and query parameters are user content. Send only the route kind.
+    url_hash: studioRouteKind(location.hash),
+    url_route_id: studioRouteId(location.hash),
   };
 }
 

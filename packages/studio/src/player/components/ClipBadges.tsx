@@ -24,7 +24,7 @@ function SpeakerGlyph({ muted }: { muted: boolean }) {
 const BADGE_CLASS =
   "timeline-clip__badge inline-flex items-center gap-0.5 rounded-[3px] border bg-black/55 px-1 text-[9px] leading-[14px] whitespace-nowrap";
 const FX_ON = "border-white/40 text-white font-semibold";
-const FX_OFF = "border-white/10 text-white/35";
+const FX_OFF = "border-white/10 text-white/60";
 
 /** Premiere's fx badge — grey with no effects, white with any; hover lists them, click opens the clip menu. */
 export const ClipBadges = memo(function ClipBadges({
@@ -44,21 +44,21 @@ export const ClipBadges = memo(function ClipBadges({
   };
   return (
     <span
-      className="pointer-events-none absolute right-1.5 top-0.5 z-[3] flex gap-1"
+      className="pointer-events-none absolute right-1.5 top-0.5 z-[31] flex max-w-[calc(100%-12px)] gap-1 overflow-hidden"
       data-testid="clip-badges"
     >
       {volume && (
         <span
-          className={`${BADGE_CLASS} border-white/20 text-white/90`}
+          className={`${BADGE_CLASS} min-w-0 overflow-hidden border-white/20 text-white/90`}
           title={volume}
           data-badge="volume"
         >
           <SpeakerGlyph muted={volume === "Muted"} />
-          {volume === "Muted" ? null : <span>{volume}</span>}
+          {volume === "Muted" ? null : <span className="truncate">{volume}</span>}
         </span>
       )}
       <span
-        className={`${BADGE_CLASS} pointer-events-auto cursor-pointer ${hasEffects ? FX_ON : FX_OFF}`}
+        className={`${BADGE_CLASS} pointer-events-auto shrink-0 cursor-pointer ${hasEffects ? FX_ON : FX_OFF}`}
         title={hasEffects ? effects.join(" · ") : "No effects"}
         data-badge="fx"
         data-fx-active={hasEffects ? "true" : "false"}

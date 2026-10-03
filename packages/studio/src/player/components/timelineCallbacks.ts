@@ -1,8 +1,10 @@
 // fallow-ignore-file code-duplication
-// fallow-ignore-file dead-code
 import type { TimelineEditOutcome } from "../../hooks/timelineEditPermission";
 import type { TimelineElement } from "../store/playerStore";
-import type { TimelineMoveOperation } from "../../hooks/timelineMoveAdapter";
+import type {
+  TimelineMoveOperation,
+  TimelineAtomicMoveUpdates,
+} from "../../hooks/timelineMoveAdapter";
 import type { BlockedTimelineEditIntent } from "./timelineEditing";
 import type { PropertyGroupName } from "@hyperframes/core/gsap-parser";
 import type { TimelineKeyframeTarget } from "./timelineKeyframeIdentity";
@@ -50,7 +52,7 @@ export type TimelineLinkEdit =
 export interface TimelineEditCallbacks {
   onMoveElement?: (
     element: TimelineElement,
-    updates: Pick<TimelineElement, "start" | "track">,
+    updates: TimelineAtomicMoveUpdates,
   ) => Promise<void> | void;
   /** Atomic multi-clip move (single undo) for main-track ripple + track-insert.
    *  `coalesceKey` (drag-commit gesture id) merges the move history entry with a
@@ -58,7 +60,7 @@ export interface TimelineEditCallbacks {
    *  widens that entry's fold window when a server round-trip separates the
    *  gesture's records (per-gesture-unique keys keep the fold gesture-scoped). */
   onMoveElements?: (
-    edits: Array<{ element: TimelineElement; updates: Pick<TimelineElement, "start" | "track"> }>,
+    edits: Array<{ element: TimelineElement; updates: TimelineAtomicMoveUpdates }>,
     coalesceKey?: string,
     operation?: TimelineMoveOperation,
     coalesceMs?: number,

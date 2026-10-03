@@ -15,6 +15,7 @@ import {
   type EditHistoryHandle,
   type UseEditHistoryActionsOptions,
 } from "./useEditHistoryActions";
+import { useStableHandlers } from "./useStableHandlers";
 
 function iframeContentWindow(iframe: HTMLIFrameElement | null): Window | null {
   try {
@@ -72,6 +73,7 @@ function tryApplyBeatHistory(
 // ── Types ──
 
 interface UseAppHotkeysParams {
+  projectId?: string | null;
   handleTimelineElementsDelete: (elements: TimelineElement[]) => Promise<void>;
   handleLinkEdit?: LinkShortcutCallbacks["handleLinkEdit"];
   handleTimelineElementDeleteOnly?: LinkShortcutCallbacks["handleTimelineElementDeleteOnly"];
@@ -117,6 +119,7 @@ interface UseAppHotkeysParams {
 // ── Hook ──
 
 export function useAppHotkeys({
+  projectId,
   handleTimelineElementsDelete,
   handleLinkEdit,
   handleTimelineElementDeleteOnly,
@@ -266,9 +269,12 @@ export function useAppHotkeys({
     [],
   );
 
-  return {
-    handleUndo,
-    handleRedo,
-    syncPreviewHotkeys,
-  };
+  return useStableHandlers(
+    {
+      handleUndo,
+      handleRedo,
+      syncPreviewHotkeys,
+    },
+    projectId,
+  );
 }

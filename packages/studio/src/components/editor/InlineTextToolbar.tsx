@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { applyInlineStyle } from "./inlineTextStyleRange";
-import { readInlineStyle, readInlineStyleSpread } from "./inlineTextStyleRead";
-import { parseCssColor, toHexColor } from "./colorValue";
+import {
+  readFirstPaintedElement,
+  readInlineStyle,
+  readInlineStyleSpread,
+} from "./inlineTextStyleRead";
+import { resolvePickerColor } from "./colorValue";
 import type { InlineTextEditSession } from "../../hooks/useInlineTextEdit";
 
 /**
@@ -248,7 +252,11 @@ function placeOverSelection(
     placeBelow,
     styles,
     colours,
-    pickerColour: toPickerColour(styles.color ?? colours[0], doc),
+    pickerColour: resolvePickerColor(
+      styles.color ?? colours[0],
+      readFirstPaintedElement(range, "color"),
+      DEFAULT_COLOR,
+    ),
   };
 }
 
@@ -256,28 +264,4 @@ function isBold(weight: string | undefined): boolean {
   if (!weight) return false;
   if (weight === "bold" || weight === "bolder") return true;
   return Number.parseInt(weight, 10) >= 600;
-}
-
-/** A colour input accepts only `#rrggbb`; normalise any valid CSS colour to it. */
-function toPickerColour(value: string | undefined, doc: Document): string {
-  if (!value) return DEFAULT_COLOR;
-  const parsed = parseCssColor(value);
-  if (parsed) return toHexColor(parsed);
-
-  // Canvas delegates the full CSS colour grammar to the browser, including
-  // named colours that the small serialisation parser intentionally omits.
-  // DOM-only test environments can lack a canvas implementation, in which
-  // case the picker degrades to its explicit default while the swatch remains
-  // truthful because CSS still paints the original value.
-  try {
-    const context = doc.createElement("canvas").getContext("2d");
-    if (!context) return DEFAULT_COLOR;
-    context.fillStyle = DEFAULT_COLOR;
-    context.fillStyle = value;
-    const normalised =
-      typeof context.fillStyle === "string" ? parseCssColor(context.fillStyle) : null;
-    return normalised ? toHexColor(normalised) : DEFAULT_COLOR;
-  } catch {
-    return DEFAULT_COLOR;
-  }
 }

@@ -160,7 +160,7 @@ async function replaceSetWithSingleKeyframe(
       keyframes: [{ percentage: 0, properties: position }],
       ease: setAnim.ease,
     },
-    { label: "Enable keyframes", softReload: true },
+    { label: "Enable keyframes", keyframeAction: "add", softReload: true },
   );
 }
 
@@ -271,6 +271,7 @@ async function extendKeyframedTweenToPlayhead(
     },
     {
       label: "Add keyframe",
+      keyframeAction: "add",
       softReload: true,
       ...commitOverrides,
     },
@@ -378,7 +379,7 @@ export async function promoteSetToKeyframes(
       ],
       ease: setAnim.ease,
     },
-    { label: "Add keyframe", softReload: true },
+    { label: "Add keyframe", keyframeAction: "add", softReload: true },
   );
 }
 
@@ -455,7 +456,7 @@ export async function applyArcKeyframeAtPlayhead(
       }),
       ease: "none",
     },
-    { label: "Add keyframe", softReload: true },
+    { label: "Add keyframe", keyframeAction: "add", softReload: true },
   );
 }
 
@@ -504,6 +505,7 @@ export function useEnableKeyframes(
       enableKeyframesTransactionCounter += 1;
       const coalesceKey = `enable-keyframes:${flatAnim.id}:${enableKeyframesTransactionCounter}`;
       const convertCommitOverrides: Partial<CommitMutationOptions> = {
+        keyframeTelemetry: false,
         skipReload: true,
         coalesceKey,
         coalesceMs: Number.POSITIVE_INFINITY,

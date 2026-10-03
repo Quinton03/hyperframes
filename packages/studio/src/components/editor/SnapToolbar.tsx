@@ -1,3 +1,4 @@
+import { trackPreviewFeatureUsed } from "../../utils/previewFeatureUsage";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { MagnetStraight, GridFour, Path, Ruler, FrameCorners } from "@phosphor-icons/react";
 import { usePlayerStore } from "../../player/store/playerStore";
@@ -16,6 +17,16 @@ export const SnapToolbar = memo(function SnapToolbar() {
   const setMotionPathArmed = usePlayerStore((s) => s.setMotionPathArmed);
   const popoverRef = useRef<HTMLDivElement>(null);
   const gridButtonRef = useRef<HTMLButtonElement>(null);
+  const gridSpacingAtFocus = useRef<number | null>(null);
+  const currentGridSpacing = useRef(prefs.gridSpacing);
+  currentGridSpacing.current = prefs.gridSpacing;
+  const settleGridSpacing = useCallback(() => {
+    const previous = gridSpacingAtFocus.current;
+    gridSpacingAtFocus.current = null;
+    if (previous !== null && previous !== currentGridSpacing.current)
+      trackPreviewFeatureUsed("grid_spacing", "field");
+  }, []);
+  useEffect(() => settleGridSpacing, [settleGridSpacing]);
 
   const updatePrefs = useCallback(
     (patch: Partial<typeof prefs>) => {
@@ -26,10 +37,12 @@ export const SnapToolbar = memo(function SnapToolbar() {
 
   const toggleSnap = useCallback(() => {
     updatePrefs({ snapEnabled: !prefs.snapEnabled });
+    trackPreviewFeatureUsed("snapping", "button");
   }, [prefs.snapEnabled, updatePrefs]);
 
   const toggleGrid = useCallback(() => {
     updatePrefs({ gridVisible: !prefs.gridVisible });
+    trackPreviewFeatureUsed("grid", "button");
   }, [prefs.gridVisible, updatePrefs]);
 
   useEffect(() => {
@@ -41,10 +54,12 @@ export const SnapToolbar = memo(function SnapToolbar() {
       if (e.key === "s" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         updatePrefs({ snapEnabled: !prefs.snapEnabled });
+        if (!e.repeat) trackPreviewFeatureUsed("snapping", "keyboard");
       }
       if (e.key === "g" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         updatePrefs({ gridVisible: !prefs.gridVisible });
+        if (!e.repeat) trackPreviewFeatureUsed("grid", "keyboard");
       }
     };
     document.addEventListener("keydown", handleKeyDown);
@@ -56,11 +71,12 @@ export const SnapToolbar = memo(function SnapToolbar() {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
       if (popoverRef.current?.contains(target) || gridButtonRef.current?.contains(target)) return;
+      settleGridSpacing();
       setGridPopoverOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [gridPopoverOpen]);
+  }, [gridPopoverOpen, settleGridSpacing]);
 
   return (
     <div
@@ -101,7 +117,10 @@ export const SnapToolbar = memo(function SnapToolbar() {
                 ? "bg-studio-accent/20 text-accent-ink"
                 : "bg-black/40 text-white/60 hover:bg-black/60 hover:text-white/80"
             }`}
-            onClick={toggle}
+            onClick={() => {
+              toggle();
+              trackPreviewFeatureUsed(key === "rulerVisible" ? "ruler" : "safe_margins", "button");
+            }}
             title={`${label} ${visible ? "on" : "off"}`}
             aria-label={`Toggle ${label.toLowerCase()}`}
             aria-pressed={visible}
@@ -136,6 +155,7 @@ export const SnapToolbar = memo(function SnapToolbar() {
           onClick={toggleGrid}
           onContextMenu={(e) => {
             e.preventDefault();
+            if (gridPopoverOpen) settleGridSpacing();
             setGridPopoverOpen((v) => !v);
           }}
           title={
@@ -150,7 +170,10 @@ export const SnapToolbar = memo(function SnapToolbar() {
         <button
           type="button"
           className="absolute -right-0.5 -bottom-0.5 rounded-sm p-0.5 text-white/50 hover:text-white/90 bg-black/50"
-          onClick={() => setGridPopoverOpen((v) => !v)}
+          onClick={() => {
+            if (gridPopoverOpen) settleGridSpacing();
+            setGridPopoverOpen((v) => !v);
+          }}
           title="Grid options"
           aria-label="Grid options"
           aria-expanded={gridPopoverOpen}
@@ -173,9 +196,21 @@ export const SnapToolbar = memo(function SnapToolbar() {
                 max={500}
                 step={10}
                 value={prefs.gridSpacing}
+                onFocus={() => {
+                  gridSpacingAtFocus.current = prefs.gridSpacing;
+                }}
+                onBlur={settleGridSpacing}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
                 onChange={(e) => {
                   const val = Number.parseInt(e.target.value, 10);
-                  if (Number.isFinite(val) && val >= 10 && val <= 500) {
+                  if (
+                    Number.isFinite(val) &&
+                    val >= 10 &&
+                    val <= 500 &&
+                    val !== prefs.gridSpacing
+                  ) {
                     updatePrefs({ gridSpacing: val });
                   }
                 }}
@@ -186,7 +221,10 @@ export const SnapToolbar = memo(function SnapToolbar() {
               <input
                 type="checkbox"
                 checked={prefs.snapToGrid}
-                onChange={() => updatePrefs({ snapToGrid: !prefs.snapToGrid })}
+                onChange={() => {
+                  updatePrefs({ snapToGrid: !prefs.snapToGrid });
+                  trackPreviewFeatureUsed("snap_to_grid", "button");
+                }}
                 className="accent-studio-accent"
               />
               <span>Snap to grid</span>

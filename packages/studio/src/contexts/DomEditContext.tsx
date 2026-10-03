@@ -253,7 +253,7 @@ export function DomEditProvider({
   commitMutationRef.current = commitMutation;
 
   const stableCommitMutation = useCallback<DomEditActionsValue["commitMutation"]>(
-    (mutation, options) => commitMutationRef.current(mutation, options),
+    (mutation, options, selection) => commitMutationRef.current(mutation, options, selection),
     [],
   );
 

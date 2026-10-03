@@ -17,6 +17,7 @@ import {
   fstatSync,
   renameSync,
   readdirSync,
+  realpathSync,
   type Dirent,
 } from "node:fs";
 import { resolve, dirname, join } from "node:path";
@@ -666,26 +667,119 @@ function readableText(file: string): string | null {
   }
 }
 
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const SEPARATOR = String.raw`\\{0,2}[\\/]`;
+const REFERENCE_START = String.raw`(?<![\w./\\+-])`;
+const FILE_END = String.raw`(?![\w-]|\.\w)`;
+
+function referencePattern(oldPath: string, isDirectory: boolean): RegExp {
+  const name = oldPath.split("/").map(escapeRegExp).join(SEPARATOR);
+  const end = isDirectory ? `(?=${SEPARATOR})` : FILE_END;
+  return new RegExp(
+    String.raw`${REFERENCE_START}(?<lead>(?:\.{1,2}${SEPARATOR}|${SEPARATOR}){0,4})${name}${end}`,
+    "g",
+  );
+}
+
+// A match inside the longer path of a file or folder that exists (`a.png&b.png`, `other assets/`) is that path's.
+// Existing paths are indexed by the text after the old path, then the text before it, so a match costs a few lookups.
+export function referenceRewriter(
+  oldPath: string,
+  newPath: string,
+  isDirectory: boolean,
+  existing: readonly string[] = [],
+): (text: string) => string {
+  const pattern = referencePattern(oldPath, isDirectory);
+  const around = new Map<string, Map<number, Set<string>>>();
+  const afterLengths = new Set<number>();
+  let window = 0;
+  for (const path of existing) {
+    if (path.length <= oldPath.length) continue;
+    for (const start of occurrences(path, oldPath)) {
+      const [before, after] = [path.slice(0, start), path.slice(start + oldPath.length)];
+      const befores = around.get(after) ?? around.set(after, new Map()).get(after)!;
+      (befores.get(before.length) ?? befores.set(before.length, new Set()).get(before.length)!).add(
+        before,
+      );
+      afterLengths.add(after.length);
+      window = Math.max(window, path.length * 3);
+    }
+  }
+  const normalized = (text: string) => text.replace(/\\{0,2}[\\/]/g, "/");
+  return (text) =>
+    text.replace(pattern, (...args) => {
+      const [match, offset] = [args[0] as string, args.at(-3) as number];
+      const { lead } = args.at(-1) as { lead: string };
+      const at = offset + lead.length;
+      const head = normalized(text.slice(Math.max(0, at - window), at));
+      const tail = normalized(text.slice(offset + match.length, offset + match.length + window));
+      const inLonger = [...afterLengths].some((after) => {
+        const befores = tail.length >= after && around.get(tail.slice(0, after));
+        return (
+          befores &&
+          [...befores].some(
+            ([length, set]) => head.length >= length && set.has(head.slice(head.length - length)),
+          )
+        );
+      });
+      return inLonger ? match : `${lead}${newPath}`;
+    });
+}
+
+function occurrences(text: string, part: string): number[] {
+  const at: number[] = [];
+  for (let i = text.indexOf(part); i >= 0; i = text.indexOf(part, i + 1)) at.push(i);
+  return at;
+}
+
+function projectPaths(
+  root: string,
+  dir = root,
+  prefix = "",
+  ancestors: ReadonlySet<string> = new Set(),
+): string[] {
+  return readableEntries(dir).flatMap((entry) => {
+    const [path, full] = [`${prefix}${entry.name}`, join(dir, entry.name)];
+    const real = entry.name === "node_modules" ? null : directoryReal(entry, full);
+    if (real === null || ancestors.has(real) || !isSafePath(root, full)) return [path];
+    return [path, ...projectPaths(root, full, `${path}/`, new Set([...ancestors, real]))];
+  });
+}
+
+// A directory's real path, through a link, or null for anything else: aliases are paths too.
+function directoryReal(entry: Dirent, full: string): string | null {
+  try {
+    return entry.isDirectory() || (entry.isSymbolicLink() && statSync(full).isDirectory())
+      ? realpathSync(full)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * After a rename, update all references to the old path in project files.
- * Scans HTML, CSS, JS, and JSON files for the old filename/path and replaces.
+ * Scans HTML, CSS, JS, and JSON files for the old path and replaces it where it names that path.
  */
-function updateReferences(projectDir: string, oldPath: string, newPath: string): number {
+function updateReferences(
+  projectDir: string,
+  oldPath: string,
+  newPath: string,
+  isDirectory: boolean,
+): number {
   const textFiles = walkFiles(projectDir, (name) =>
     /\.(html|css|js|jsx|ts|tsx|json|mjs|cjs|md|mdx)$/i.test(name),
   );
 
+  const rewrite = referenceRewriter(oldPath, newPath, isDirectory, projectPaths(projectDir));
   let updatedCount = 0;
   for (const file of textFiles) {
     if (!isSafePath(projectDir, file)) continue;
     const content = readableText(file);
     if (content === null) continue;
 
-    // Only replace full relative paths — never bare filenames, which can
-    // corrupt unrelated content (e.g. "logo.png" inside "my-logo.png").
-    if (!content.includes(oldPath)) continue;
-
-    const updated = content.split(oldPath).join(newPath);
+    const updated = rewrite(content);
     if (updated !== content) {
       replaceFileAtomically(file, updated, statSync(file).mode);
       updatedCount++;
@@ -1393,7 +1487,9 @@ async function applyGsapMutations(
     return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
   }
 
+  const mutationChanges: boolean[] = [];
   for (const mutation of mutations) {
+    const previousScript = block.scriptText;
     const result = await executeGsapMutation(mutation, block, respond, writer);
     if (result instanceof Response) return result;
     let newScript = typeof result === "string" ? result : result.script;
@@ -1406,6 +1502,7 @@ async function applyGsapMutations(
           ? syncPositionHoldsBeforeKeyframes(newScript)
           : (await loadGsapParser()).syncPositionHoldsBeforeKeyframes(newScript);
     }
+    mutationChanges.push(newScript !== previousScript);
     block.scriptText = newScript;
   }
 
@@ -1435,6 +1532,7 @@ async function applyGsapMutations(
     ok: true,
     changed,
     mutated: changed,
+    mutationChanges,
     parsed: parseGsapScriptAcorn(block.scriptText),
     before: beforeHtml,
     after: newHtml,
@@ -3230,11 +3328,12 @@ export function registerFileRoutes(api: Hono, adapter: StudioApiAdapter): void {
       return c.json({ error: "already exists" }, 409);
     }
 
+    const isDirectory = statSync(res.absPath, { throwIfNoEntry: false })?.isDirectory() ?? false;
     ensureDir(res.project.dir, newAbs);
     renameSync(res.absPath, newAbs);
 
     // Update references to the old path across all project files
-    const updatedFiles = updateReferences(res.project.dir, res.filePath, body.newPath);
+    const updatedFiles = updateReferences(res.project.dir, res.filePath, body.newPath, isDirectory);
 
     return c.json({ ok: true, path: body.newPath, updatedReferences: updatedFiles });
   });

@@ -7,8 +7,18 @@ import {
   type DragPreviewContext,
 } from "./timelineClipDragPreview";
 import type { DraggedClipState } from "./timelineClipDragTypes";
-import { commitDraggedClipMove, persistMoveEdits } from "./timelineClipDragCommit";
-import { LANE_H, RULER_H, TRACKS_TOP_PAD, TRACK_H } from "./timelineLayout";
+import {
+  commitDraggedClipMove,
+  persistMoveEdits,
+  type TimelineMoveEdit,
+} from "./timelineClipDragCommit";
+import {
+  LANE_H,
+  RULER_H,
+  TRACKS_TOP_PAD,
+  TRACK_H,
+  createTimelineRowGeometry,
+} from "./timelineLayout";
 import { isMultiDragPassenger } from "./timelineMultiDragPreview";
 import { resolveMultiDragPreview } from "./timelineProviderStateBuilders";
 
@@ -110,6 +120,20 @@ function horizontalDrag(
 }
 
 describe("computeDragPreview — plain horizontal drag never arms a phantom insert (BUG 1)", () => {
+  it("opens the physical seam below a zero-padding ruler and keeps it armed inside the new lane", () => {
+    const geometry = createTimelineRowGeometry([0, 1, 2], [104, 48, 48], { top: 0 });
+    const context = { ...ctx(geometry.rowHeights), rowGeometry: geometry };
+    const { drag, clientX } = horizontalDrag(moodboard, 0.5, 2);
+    const top = computeDragPreview(drag, clientX, 24, context);
+    expect(top.insertRow).toBe(0);
+    const between = computeDragPreview(drag, clientX, 128, context);
+    expect(between.insertRow).toBe(1);
+    const inside = computeDragPreview(between, clientX, 150, context);
+    expect(inside.insertRow).toBe(1);
+    const below = computeDragPreview(inside, clientX, 202, context);
+    expect(below.insertRow).toBeNull();
+  });
+
   it("dragging v-moodboard +2s while grabbing its clip body keeps it a pure time move", () => {
     const { drag, clientX, clientY } = horizontalDrag(moodboard, 0.5, 2);
     const next = computeDragPreview(drag, clientX, clientY, ctx());
@@ -470,11 +494,10 @@ describe("computeDragPreview — the ghost start is the committed start", () => 
       expect(committedStart(ghost, tag, rows)).toBe(10);
     });
 
-    it("the edge of a row is still that row, not a new track", () => {
+    it("a clip aimed at a seam opens a new track at that boundary", () => {
       for (const edge of [0.02, 0.98, 1.02]) {
         const ghost = preview(tag, rows, 2, edge);
-        expect(ghost.insertRow).toBeNull();
-        expect(ghost.previewTrack).toBe(Math.floor(edge));
+        expect(ghost.insertRow).toBe(Math.round(edge));
       }
     });
   });
@@ -550,6 +573,23 @@ describe("computeDragPreview — the ghost start is the committed start", () => 
 });
 
 describe("computeDragPreview — a group move keeps its shape", () => {
+  function commitPreview(
+    ghost: DraggedClipState,
+    elements: TimelineElement[],
+    selectedKeys: ReadonlySet<string>,
+  ) {
+    const onMoveElements = vi.fn<(edits: TimelineMoveEdit[]) => void>();
+    commitDraggedClipMove(ghost, {
+      elements,
+      trackOrder: [0, 1, 2],
+      updateElement: vi.fn(),
+      onMoveElement: vi.fn(),
+      onMoveElements,
+      selectedKeys,
+    });
+    return onMoveElements.mock.calls[0][0];
+  }
+
   it("never bumps the grabbed clip further left than the group's 0 limit", () => {
     const a = clip("a", 1, 0.5, 1, 1);
     const b = clip("b", 2, 7, 2, 1);
@@ -563,19 +603,7 @@ describe("computeDragPreview — a group move keeps its shape", () => {
       selectedKeys,
     });
     expect(ghost).toMatchObject({ previewTrack: 0, insertRow: null, previewStart: 10 });
-    const onMoveElements = vi.fn();
-    commitDraggedClipMove(ghost, {
-      elements,
-      trackOrder: [0, 1, 2],
-      updateElement: vi.fn(),
-      onMoveElement: vi.fn(),
-      onMoveElements,
-      selectedKeys,
-    });
-    const edits = onMoveElements.mock.calls[0][0] as Array<{
-      element: TimelineElement;
-      updates: { start: number };
-    }>;
+    const edits = commitPreview(ghost, elements, selectedKeys);
     const moved = Object.fromEntries(
       edits.map((e) => [e.element.id, e.updates.start - e.element.start]),
     );
@@ -595,19 +623,7 @@ describe("computeDragPreview — a group move keeps its shape", () => {
       ...ctx(undefined, elements),
       selectedKeys,
     });
-    const onMoveElements = vi.fn();
-    commitDraggedClipMove(ghost, {
-      elements,
-      trackOrder: [0, 1, 2],
-      updateElement: vi.fn(),
-      onMoveElement: vi.fn(),
-      onMoveElements,
-      selectedKeys,
-    });
-    const edits = onMoveElements.mock.calls[0][0] as Array<{
-      element: TimelineElement;
-      updates: { start: number; track: number };
-    }>;
+    const edits = commitPreview(ghost, elements, selectedKeys);
     return Object.fromEntries(edits.map((e) => [e.element.id, e.updates]));
   }
 

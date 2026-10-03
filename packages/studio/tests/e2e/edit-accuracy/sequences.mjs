@@ -118,6 +118,13 @@ function mergeSmooth(parts) {
     longTasks: parts.reduce((n, s) => n + s.longTasks, 0),
     intervals,
     work: parts.every((s) => s.work) ? parts.flatMap((s) => s.work) : null,
+    wallTimed: parts.reduce((n, s) => n + s.wallTimed, 0),
+    ...(parts.some((s) => s.unknown) && {
+      unknown: parts
+        .map((s) => s.unknown)
+        .filter(Boolean)
+        .join("; "),
+    }),
   };
 }
 
@@ -257,7 +264,11 @@ async function editText(c, step, state) {
   }
   // Typing with no session open would land on Studio's shortcuts, so a failed open types nothing.
   if (opened) {
-    await page.keyboard.type(step.word);
+    // One key per frame, as the nudges press theirs: a whole word in one frame is no typist's pace.
+    for (const key of step.word) {
+      await page.keyboard.type(key);
+      await nextFrame(page);
+    }
     await page.keyboard.press("Enter");
     await nextFrame(page);
   }

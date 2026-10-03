@@ -1,3 +1,4 @@
+import { trackStudioEvent } from "../../utils/studioTelemetry";
 // @vitest-environment happy-dom
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -422,4 +423,40 @@ describe("useDomEditNudge — a commit that throws", () => {
     await vi.waitFor(() => expect(hasStudioPendingEdits()).toBe(false));
     act(() => root.unmount());
   });
+});
+
+vi.mock("../../utils/studioTelemetry", () => ({ trackStudioEvent: vi.fn() }));
+describe("nudge usage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    __resetForTests();
+  });
+  afterEach(() => vi.useRealTimers());
+  it.each([true, false])(
+    "counts a whole key burst only when the writer changed source (%s)",
+    async (changed) => {
+      const root = createRoot(document.body.appendChild(document.createElement("div")));
+      const element = document.body.appendChild(document.createElement("div"));
+      const commit = vi.fn().mockResolvedValue({ ok: true, changed });
+      act(() =>
+        root.render(
+          <Harness selection={makeSelection("Dot", element)} onPathOffsetCommit={commit} />,
+        ),
+      );
+      act(() => {
+        dispatchArrowRight();
+        dispatchArrowRight();
+      });
+      await act(async () => vi.advanceTimersByTimeAsync(CANVAS_NUDGE_COMMIT_DEBOUNCE_MS + 10));
+      expect(commit).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(trackStudioEvent).mock.calls).toEqual(
+        changed
+          ? [["feature_used", { feature: "nudge", surface: "preview", method: "keyboard" }]]
+          : [],
+      );
+      act(() => root.unmount());
+      element.remove();
+    },
+  );
 });

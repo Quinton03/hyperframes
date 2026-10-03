@@ -586,34 +586,40 @@ function topLevelTasks(trace, { pid, tid }) {
   return tops;
 }
 
-// Thread CPU time, spread evenly over the task, so a loaded machine descheduling the thread does not count as work.
+// Thread CPU time, spread evenly over the task, so a descheduled thread does not count; untimed tasks count wall time.
 const cpuUs = (e, a, b) =>
-  (Math.max(0, Math.min(b, e.ts + e.dur) - Math.max(a, e.ts)) * e.tdur) / (e.dur || 1);
+  (Math.max(0, Math.min(b, e.ts + e.dur) - Math.max(a, e.ts)) * (e.tdur ?? e.dur)) / (e.dur || 1);
 
 /** Main-thread CPU ms inside each frame interval, on the thread that ran the end mark; null when unknown. */
 function mainThreadPerFrame({ frames, mark, trace }) {
   const anchor = trace.find((e) => e.name === TRACE_MARK && e.cat.includes("user_timing"));
-  const tasks = anchor ? topLevelTasks(trace, anchor) : [];
-  // Without the mark or thread CPU time the work is unknown, which fails smoothness alone.
-  if (!anchor || tasks.some((e) => e.tdur === undefined)) return null;
+  // Without the mark the work is unknown, which fails smoothness alone.
+  if (!anchor) return { work: null, wallTimed: 0, unknown: "no end mark in the trace" };
   const toTrace = (ms) => anchor.ts + (ms - mark) * 1000;
-  return frames.slice(1).map((t, i) => {
+  const [from, to] = [toTrace(frames[0]), toTrace(frames.at(-1))];
+  const tasks = topLevelTasks(trace, anchor);
+  const inFrames = (e) => e.ts < to && e.ts + e.dur > from;
+  const wallTimed = tasks.filter((e) => e.tdur === undefined && inFrames(e)).length;
+  const work = frames.slice(1).map((t, i) => {
     const [a, b] = [toTrace(frames[i]), toTrace(t)];
     return tasks.reduce((sum, e) => sum + cpuUs(e, a, b), 0) / 1000;
   });
+  return { work, wallTimed };
 }
 
 const hundredth = (v) => Math.round(v * 100) / 100;
 
 export function smoothness(rec) {
   const intervals = rec.frames.slice(1).map((t, i) => t - rec.frames[i]);
-  const work = mainThreadPerFrame(rec);
+  const { work, wallTimed, unknown } = mainThreadPerFrame(rec);
   return {
     p95: percentile(intervals, 95),
     frames: intervals.length,
     longTasks: rec.long.length,
     intervals: intervals.map(hundredth),
     work: work && work.map(hundredth),
+    wallTimed,
+    ...(unknown && { unknown }),
   };
 }
 

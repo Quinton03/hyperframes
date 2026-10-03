@@ -12,6 +12,7 @@ import type { TimelineClipRenderContext } from "../player/components/TimelineTyp
 import { audioPillFlags } from "../player/components/audioClipLink";
 import { AudioWaveform, rendersWaveform } from "../player/components/AudioWaveform";
 import { ImageThumbnail } from "../player/components/ImageThumbnail";
+import { TextClipContent } from "../player/components/TextClipContent";
 import { AudibleVideoClipContent } from "../player/components/AudibleVideoClipContent";
 import { ClipPeakMarks } from "../player/components/ClipPeakMarks";
 import { clipPeaksUrl, clipSourceWindow } from "../player/components/clipPeakMap";
@@ -184,6 +185,8 @@ export function useRenderClipContent({
         return renderAudioClip(el, pid, sessionEpoch, style.label, context, elements);
       }
 
+      if (el.text) return createElement(TextClipContent, { text: el.text });
+
       // When drilled into a composition, render all inner elements via
       // CompositionThumbnail at their start time — most accurate visual.
       if (activePreviewUrl && el.duration > 0) {
@@ -207,11 +210,7 @@ export function useRenderClipContent({
         });
       }
 
-      const htmlPreviewEligible =
-        el.duration > 0 &&
-        effectiveTimelineDuration > 0 &&
-        el.duration < effectiveTimelineDuration * 0.92 &&
-        !/(backdrop|background|overlay|scrim|mask)/i.test(el.id);
+      const htmlPreviewEligible = el.duration > 0 && effectiveTimelineDuration > 0;
 
       if ((el.tag === "video" || el.tag === "img") && el.src) {
         const mediaSrc = resolveMediaPreviewUrl(el.src, pid, window.location.origin);

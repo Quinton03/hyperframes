@@ -16,6 +16,7 @@ import type { StackingPatch } from "./timelineStackingSync";
 import type { TimelineEditCallbacks } from "./timelineCallbacks";
 import {
   computeDragPreview,
+  createKeyboardClipDrag,
   computeResizePreview,
   trimPreviewTime,
   previewGroupResize,
@@ -29,6 +30,19 @@ import type {
 import { getTimelineElementIndexes } from "../lib/timelineElementIndexes";
 import { dropMisalignedTrimPartners, linkedGestureKeys } from "./audioClipLink";
 import { isLinkedSelectionOn } from "../../utils/linkedClipPreferences";
+import { useTimelineClipCapabilities } from "./timelineReadOnly";
+import { timelineClipFocusId } from "./timelineNavigationIdentity";
+import {
+  handleClipPickupKeyboardEvent,
+  scrollKeyboardInsertRow,
+  timelineKeyboardEventTarget,
+} from "./useTimelineKeyboardActor";
+import {
+  timelineTrackOrderChanged,
+  nextKeyboardInsertRow,
+  keyboardPickupInsertRow,
+  type TimelineTrackInsertLayout,
+} from "./timelineTrackInsertLayout";
 import type { TimelineRowGeometry } from "./timelineLayout";
 import {
   mountTimelineClipDragGestureLifecycle,
@@ -50,17 +64,10 @@ interface UseTimelineClipDragInput {
   ppsRef: React.RefObject<number>;
   durationRef: React.RefObject<number>;
   trackOrderRef: React.RefObject<number[]>;
+  trackInsertLayoutRef?: React.RefObject<TimelineTrackInsertLayout | undefined>;
   rowGeometryRef?: React.RefObject<TimelineRowGeometry>;
-  onMoveElement?: (
-    element: TimelineElement,
-    updates: Pick<TimelineElement, "start" | "track">,
-  ) => Promise<void> | void;
-  onMoveElements?: (
-    edits: Array<{
-      element: TimelineElement;
-      updates: Pick<TimelineElement, "start" | "track">;
-    }>,
-  ) => Promise<void> | void;
+  onMoveElement?: TimelineEditCallbacks["onMoveElement"];
+  onMoveElements?: TimelineEditCallbacks["onMoveElements"];
   onResizeElement?: (
     element: TimelineElement,
     updates: Pick<TimelineElement, "start" | "duration" | "playbackStart">,
@@ -92,6 +99,7 @@ export function useTimelineClipDrag({
   ppsRef,
   durationRef,
   trackOrderRef,
+  trackInsertLayoutRef,
   rowGeometryRef,
   onMoveElement,
   onMoveElements,
@@ -107,6 +115,8 @@ export function useTimelineClipDrag({
   refreshAfterLaneMove,
   sessionEpoch = 0,
 }: UseTimelineClipDragInput) {
+  const getClipCapabilities = useTimelineClipCapabilities();
+  const commitGestureRef = useRef<() => void>(() => {});
   const updateElement = usePlayerStore((s) => s.updateElement);
   const rawBeatTimes = usePlayerStore((s) => s.beatAnalysis?.beatTimes ?? EMPTY_BEAT_TIMES);
   const rawBeatStrengths = usePlayerStore((s) => s.beatAnalysis?.beatStrengths ?? EMPTY_BEAT_TIMES);
@@ -207,7 +217,7 @@ export function useTimelineClipDrag({
   const cancelGestureRef = useRef<
     (options?: { updateReact?: boolean; suppressClick?: boolean }) => boolean
   >(() => false);
-  const beginGesture = useCallback((kind: TimelineGestureKind, pointerId: number) => {
+  const beginGesture = useCallback((kind: TimelineGestureKind, pointerId: number | null) => {
     if (lifecycleRef.current.phase === "active") cancelGestureRef.current();
     lifecycleRef.current = {
       kind,
@@ -310,14 +320,25 @@ export function useTimelineClipDrag({
         pps: ppsRef.current,
         duration: durationRef.current,
         trackOrder: trackOrderRef.current,
+        allowedInsertRows: trackInsertLayoutRef?.current?.allowedRows,
+        groupTracks: trackInsertLayoutRef?.current?.groupTracks,
         rowHeights: rowGeometryRef?.current.rowHeights,
+        rowGeometry: rowGeometryRef?.current,
         elements: elementsRef.current,
         selectedKeys: gestureSelectedKeysRef.current,
         buildSnapTargets,
         audioTracks: dragAudioTracksRef.current,
       });
     },
-    [scrollRef, ppsRef, durationRef, trackOrderRef, rowGeometryRef, buildSnapTargets],
+    [
+      scrollRef,
+      ppsRef,
+      durationRef,
+      trackOrderRef,
+      trackInsertLayoutRef,
+      rowGeometryRef,
+      buildSnapTargets,
+    ],
   );
 
   // Recompute the trim preview for a pointer x. Shared by the pointermove resize
@@ -445,6 +466,8 @@ export function useTimelineClipDrag({
 
   useMountEffect(() =>
     mountTimelineClipDragGestureLifecycle({
+      trackInsertLayoutRef,
+      commitGestureRef,
       onStackingPatchesRef,
       refreshAfterLaneMoveRef,
       readZIndexRef,
@@ -480,8 +503,89 @@ export function useTimelineClipDrag({
   );
 
   useEffect(() => {
+    const movePickup = (drag: DraggedClipState, step: -1 | 1, viewport: HTMLDivElement | null) => {
+      const audioTracks = getTimelineElementIndexes(elementsRef.current).audioTracks;
+      const row = nextKeyboardInsertRow({
+        current: drag.insertRow ?? 0,
+        step,
+        order: trackOrderRef.current,
+        layout: trackInsertLayoutRef?.current,
+        audioTracks,
+        isAudio: audioTracks.has(drag.element.track),
+      });
+      if (row === null) return;
+      publishDraggedClip({ ...drag, insertRow: row });
+      if (viewport && rowGeometryRef)
+        scrollKeyboardInsertRow(viewport, rowGeometryRef.current, row);
+    };
+    const activePickup = (
+      event: KeyboardEvent,
+      drag: DraggedClipState,
+      viewport: HTMLDivElement | null,
+    ) => {
+      handleClipPickupKeyboardEvent(event, {
+        move: (step) => movePickup(drag, step, viewport),
+        commit: commitGestureRef.current,
+        cancel: cancelGestureRef.current,
+        focus: () =>
+          usePlayerStore
+            .getState()
+            .requestTimelineFocus(timelineClipFocusId(drag.element.key ?? drag.element.id)),
+      });
+    };
+    const pickup = (event: KeyboardEvent, viewport: HTMLDivElement) => {
+      const target = timelineKeyboardEventTarget(event.target, viewport);
+      const key = target?.dataset.elId;
+      if (key === undefined || !onMoveElementRef.current) return;
+      const element = getTimelineElementIndexes(elementsRef.current).byKey.get(key);
+      if (!element || !getClipCapabilities(element).canMove) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setShowPopover(false);
+      setRangeSelectionRef.current?.(null);
+      const row = keyboardPickupInsertRow(
+        trackOrderRef.current.indexOf(element.track),
+        trackInsertLayoutRef?.current?.allowedRows,
+      );
+      setDraggedClip(createKeyboardClipDrag(element, row, viewport.scrollLeft, viewport.scrollTop));
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const drag = draggedClipRef.current;
+      const viewport = scrollRef.current;
+      if (drag) {
+        if (drag.pointerId === null) activePickup(event, drag, viewport);
+        return;
+      }
+      if (resizingClipRef.current) return;
+      if (event.key !== " " || event.repeat) return;
+      if (viewport) pickup(event, viewport);
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [
+    getClipCapabilities,
+    publishDraggedClip,
+    rowGeometryRef,
+    scrollRef,
+    setDraggedClip,
+    setRangeSelectionRef,
+    setShowPopover,
+    trackOrderRef,
+    trackInsertLayoutRef,
+  ]);
+
+  useEffect(() => {
     cancelGestureRef.current();
   }, [sessionEpoch]);
+
+  const previousOrderRef = useRef(trackOrderRef.current);
+  useEffect(() => {
+    const order = trackOrderRef.current;
+    const previous = previousOrderRef.current;
+    previousOrderRef.current = order;
+    if (draggedClipRef.current && timelineTrackOrderChanged(previous, order))
+      cancelGestureRef.current();
+  });
 
   return {
     draggedClip,

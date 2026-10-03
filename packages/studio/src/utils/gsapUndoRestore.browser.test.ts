@@ -6,12 +6,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer, { type Browser } from "puppeteer-core";
 import { build } from "vite";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { findSystemChrome } from "../../vite.browser";
 import { writeFixture } from "../../tests/e2e/edit-accuracy/grid.mjs";
 
 const require = createRequire(import.meta.url);
 const CROP = "inset(0px 40px 0px 0px)";
+// Real Chrome on a loaded Windows runner exceeds Vitest's 5s test and 10s hook defaults.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 let browser: Browser;
 let undoBundle: string;
 
@@ -37,7 +39,7 @@ beforeAll(async () => {
   });
   undoBundle = (Array.isArray(out) ? out[0]! : (out as { output: [{ code: string }] })).output[0]
     .code;
-}, 60_000);
+});
 
 afterAll(() => browser?.close());
 

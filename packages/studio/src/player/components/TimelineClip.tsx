@@ -1,6 +1,7 @@
 import { memo, type CSSProperties, type ReactNode } from "react";
 import type { TimelineElement } from "../store/playerStore";
 import {
+  CLIP_TRIM_HIT_PX,
   clipWidthLadder,
   defaultTimelineTheme,
   getClipHandleOpacity,
@@ -70,9 +71,10 @@ export const TimelineClip = memo(function TimelineClip({
   const widthPx = Math.max(el.duration * pps, 4);
   const handleOpacity = getClipHandleOpacity({ isHovered, isSelected, isDragging });
   const displayLabel = `${el.label || el.id || el.tag}${clipSpeedSuffix(el.playbackRate, el.automation)}`;
+  const isAudioClip = isAudioTimelineElement(el);
   const ladder = clipWidthLadder(widthPx);
   const showHandles = handleOpacity > 0.01 && (widthPx >= 32 || isSelected);
-  const showLabel = ladder === "labeled";
+  const showLabel = !isAudioClip || ladder === "labeled";
   const showDefaultText = !hasCustomContent && ladder === "labeled";
   const startLabel = el.start.toFixed(1);
   const endLabel = (el.start + el.duration).toFixed(1);
@@ -88,9 +90,12 @@ export const TimelineClip = memo(function TimelineClip({
   } as CSSProperties;
   const linkColor = linkLabelColor(el.link);
   if (linkColor) Object.assign(themeVariables, { "--clip-link-color": linkColor });
-  const isAudioClip = isAudioTimelineElement(el);
   const hasFades = (isAudioClip || Boolean(el.hasAudio)) && !isGestureActor;
   const fade = useClipFadeDraft(el);
+  const badges =
+    ladder === "labeled" && !isGestureActor ? (
+      <ClipBadges el={el} onOpenMenu={onContextMenu} />
+    ) : null;
   const clipClassName = [
     "timeline-clip",
     "absolute",
@@ -136,12 +141,18 @@ export const TimelineClip = memo(function TimelineClip({
       tabIndex={isGestureActor ? undefined : tabIndex}
       aria-label={`${displayLabel}, ${startLabel} to ${endLabel} seconds`}
       aria-pressed={isGestureActor ? undefined : isSelected}
+      aria-keyshortcuts={isGestureActor || !capabilities.canMove ? undefined : "Space"}
+      aria-description={
+        isGestureActor || !capabilities.canMove
+          ? undefined
+          : "Space picks up. Up and Down choose a new track. Enter drops. Escape cancels."
+      }
       className={clipClassName}
       style={style}
       title={
         isComposition
           ? `${el.compositionSrc} • Double-click to open`
-          : `${displayLabel} • ${el.start.toFixed(1)}s – ${(el.start + el.duration).toFixed(1)}s`
+          : `${displayLabel} • ${startLabel}s – ${endLabel}s`
       }
       onPointerEnter={onHoverStart}
       onPointerLeave={onHoverEnd}
@@ -160,7 +171,7 @@ export const TimelineClip = memo(function TimelineClip({
             left: 0,
             top: 0,
             bottom: 0,
-            width: 14,
+            width: CLIP_TRIM_HIT_PX,
             cursor: "col-resize",
             zIndex: 4,
           }}
@@ -190,7 +201,7 @@ export const TimelineClip = memo(function TimelineClip({
             right: 0,
             top: 0,
             bottom: 0,
-            width: 14,
+            width: CLIP_TRIM_HIT_PX,
             cursor: "col-resize",
             zIndex: 4,
           }}
@@ -210,8 +221,13 @@ export const TimelineClip = memo(function TimelineClip({
           />
         </div>
       )}
-      {showLabel && <span className="timeline-clip__label">{displayLabel}</span>}
-      {showLabel && !isGestureActor && <ClipBadges el={el} onOpenMenu={onContextMenu} />}
+      {showLabel && (
+        <span className="timeline-clip__label">
+          <span className="timeline-clip__name">{displayLabel}</span>
+          {!isAudioClip && badges}
+        </span>
+      )}
+      {isAudioClip && badges}
       {!isGestureActor && el.syncOrigin && <OutOfSyncBadge el={el} />}
       {showDefaultText && (
         <span className="timeline-clip__timecode">

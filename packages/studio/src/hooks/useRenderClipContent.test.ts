@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { CompositionThumbnail, VideoThumbnail } from "../player";
 import { AudioWaveform } from "../player/components/AudioWaveform";
 import { AudibleVideoClipContent } from "../player/components/AudibleVideoClipContent";
+import { TextClipContent } from "../player/components/TextClipContent";
 import { ClipPeakMarks } from "../player/components/ClipPeakMarks";
 
 function unwrapPeakMarks(node: ReactNode): ReactNode {
@@ -278,6 +279,23 @@ describe("useRenderClipContent", () => {
       null,
     );
     expect(isValidElement(content) && content.type).toBe(AudibleVideoClipContent);
+  });
+
+  it("gives a layer spanning the whole film its own frame, whatever its id", () => {
+    usePlayerStore.setState({ thumbnailMode: "adaptive" });
+    for (const id of ["waves", "background-glyphs"]) {
+      const content = renderClipContent({ id, tag: "div", start: 0, duration: 12, track: 0 }, null);
+      expect(isValidElement(content) && content.type).toBe(CompositionThumbnail);
+    }
+  });
+
+  it("draws a text layer's own words instead of capturing them", () => {
+    usePlayerStore.setState({ thumbnailMode: "adaptive" });
+    const content = renderClipContent(
+      { id: "title", tag: "h1", start: 0, duration: 12, track: 0, text: { value: "Ship it" } },
+      null,
+    );
+    expect(isValidElement(content) && content.type).toBe(TextClipContent);
   });
 
   it("passes empty labels to thumbnail content so TimelineClip owns clip names", () => {

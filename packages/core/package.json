@@ -1,6 +1,6 @@
 {
   "name": "@hyperframes/core",
-  "version": "0.8.111",
+  "version": "0.8.114",
   "description": "",
   "repository": {
     "type": "git",
@@ -292,6 +292,12 @@
       "node": "./dist/runtime/clipTree.js",
       "import": "./src/runtime/clipTree.ts",
       "types": "./src/runtime/clipTree.ts"
+    },
+    "./runtime/dom-realm": {
+      "bun": "./src/runtime/domRealm.ts",
+      "node": "./dist/runtime/domRealm.js",
+      "import": "./src/runtime/domRealm.ts",
+      "types": "./src/runtime/domRealm.ts"
     },
     "./runtime/custom-ease": {
       "bun": "./src/runtime/customEase.ts",
@@ -666,6 +672,10 @@
       "./runtime/clipTree": {
         "import": "./dist/runtime/clipTree.js",
         "types": "./dist/runtime/clipTree.d.ts"
+      },
+      "./runtime/dom-realm": {
+        "import": "./dist/runtime/domRealm.js",
+        "types": "./dist/runtime/domRealm.d.ts"
       },
       "./runtime/custom-ease": {
         "import": "./dist/runtime/customEase.js",
