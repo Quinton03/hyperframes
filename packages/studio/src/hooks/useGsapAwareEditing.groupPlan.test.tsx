@@ -68,6 +68,7 @@ function mountGroup(animations: GsapAnimation[]) {
   const stageElementPositionOffset = vi.fn(() => ({ save: vi.fn(), rollback: vi.fn() }));
   const { editing, root } = mountGsapAwareEditing({
     gsapCommitMutation: commitMutation,
+    activeCompPath: "index.html",
     previewIframeRef: { current: iframe },
     showToast,
     makeFetchFallback: () => async () => animations,
@@ -130,6 +131,19 @@ describe("a group drag plans every member before its first write", () => {
 
     expect(h.written()).toEqual([]);
     expect(trackStudioEditBlocked).toHaveBeenCalledWith(expect.objectContaining({ targetId: "c" }));
+    act(() => h.root.unmount());
+  });
+
+  it("writes a group whose members name the open file or leave it implied", async () => {
+    const h = mountGroup(["a", "b", "c"].map((id) => positionTween(id)));
+    const updates = h.updates.map((u, i) => ({
+      ...u,
+      selection: { ...u.selection, sourceFile: i === 0 ? "" : "index.html" },
+    }));
+
+    await h.groupCommit(updates);
+
+    expect(h.written()).toHaveLength(3);
     act(() => h.root.unmount());
   });
 

@@ -128,6 +128,7 @@ export function useDomGeometryCommit({
     domEditSelection: null,
     selectedGsapAnimations: NO_SELECTED_ANIMATIONS,
     gsapCommitMutation: gsap.commitMutation,
+    activeCompPath,
     previewIframeRef: iframeRef,
     showToast,
     bumpGsapCache,

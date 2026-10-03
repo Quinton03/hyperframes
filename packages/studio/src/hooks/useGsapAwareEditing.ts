@@ -49,6 +49,8 @@ export interface UseGsapAwareEditingParams {
   domEditSelection: DomEditSelection | null;
   selectedGsapAnimations: GsapAnimation[];
   gsapCommitMutation: CommitMutation | null;
+  /** The open composition: where a selection with no source file writes. */
+  activeCompPath?: string | null;
   previewIframeRef: React.RefObject<HTMLIFrameElement | null>;
   showToast: (message: string, tone?: "error" | "info") => void;
   bumpGsapCache: () => void;
@@ -118,6 +120,7 @@ export function useGsapAwareEditing({
   domEditSelection,
   selectedGsapAnimations,
   gsapCommitMutation,
+  activeCompPath,
   previewIframeRef,
   showToast,
   bumpGsapCache,
@@ -191,6 +194,7 @@ export function useGsapAwareEditing({
 
   const handleGsapAwareGroupPathOffsetCommit = useGsapAwareGroupMove({
     gsapCommitMutation,
+    activeCompPath,
     previewIframeRef,
     makeFetchFallback,
     trackGsapInteractionFailure,

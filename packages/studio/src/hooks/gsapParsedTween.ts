@@ -15,11 +15,8 @@ interface ParsedTween {
   _from?: boolean;
   _initted?: boolean;
   vars?: Record<string, unknown>;
-  parent?: {
-    vars?: { defaults?: { ease?: unknown } };
-    time?: () => number;
-    seek?: (time: number, suppressEvents?: boolean) => unknown;
-  };
+  parent?: { vars?: { defaults?: { ease?: unknown } } };
+  render?: (time: number, suppressEvents?: boolean, force?: boolean) => unknown;
   timeline?: { getChildren?: () => ParsedTween[] };
   targets?: () => Element[];
   startTime?: () => number;
@@ -102,20 +99,18 @@ export function withLiveTiming(anim: GsapAnimation, tween: ParsedTween | null): 
 const TRANSFORM = ["x", "y", "rotation", "scaleX", "scaleY"];
 
 /** GSAP parses a to() tween only when the playhead first passes it, and a soft reload resets that.
- *  Play it through and back with its channels cleared, as main's drag did, so a gesture's live
- *  `gsap.set` is not read as the authored start; then put back what the seek did not. */
+ *  Render that tween alone through its end and back with its channels cleared, so a gesture's live
+ *  `gsap.set` is not read as the authored start; its timeline and siblings are never redrawn. */
 function parseUnplayed(win: GsapWindow, element: Element, tween: ParsedTween, props: string[]) {
-  const seek = !isParsed(tween) && seekable(win, tween);
-  if (!seek) return;
-  const { parent, gsap } = seek;
+  const gsap = !isParsed(tween) && tools(win, tween);
+  if (!gsap) return;
   const channels = [...new Set([...props, ...TRANSFORM])];
   const live = channels.map((p) => [p, gsap.getProperty(element, p)] as const);
-  const now = parent.time();
   gsap.set(element, { clearProps: props.join(",") });
   try {
-    parent.seek((tween.startTime?.() ?? 0) + (tween.duration?.() ?? 0), true);
+    gsap.render(tween.duration?.() ?? 0);
   } finally {
-    parent.seek(now, true);
+    gsap.render(0);
     putBack(gsap, element, live);
   }
 }
@@ -125,13 +120,14 @@ function isParsed(tween: ParsedTween): boolean {
   return Boolean(tween._initted) && parts.every((part) => part._initted);
 }
 
-function seekable(win: GsapWindow, tween: ParsedTween) {
-  const { parent } = tween;
+function tools(win: GsapWindow, tween: ParsedTween) {
   const gsap = win.gsap;
-  if (!parent?.seek || !parent.time || !gsap?.getProperty || !gsap.set) return null;
+  if (!tween.render || !gsap?.getProperty || !gsap.set) return null;
+  const render = tween.render.bind(tween);
   return {
-    parent: { seek: parent.seek.bind(parent), time: parent.time.bind(parent) },
-    gsap: { getProperty: gsap.getProperty.bind(gsap), set: gsap.set.bind(gsap) },
+    getProperty: gsap.getProperty.bind(gsap),
+    set: gsap.set.bind(gsap),
+    render: (time: number) => render(time, true, true),
   };
 }
 

@@ -446,6 +446,7 @@ export function useDomEditSession({
     domEditSelection,
     selectedGsapAnimations,
     gsapCommitMutation,
+    activeCompPath,
     previewIframeRef,
     showToast,
     bumpGsapCache,

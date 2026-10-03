@@ -28,12 +28,13 @@ import {
   formatGsapMutationRejectionToast,
   readJsonResponseBody,
 } from "./gsapScriptCommitHelpers";
-import type {
-  CommitMutation,
-  CommitMutationCall,
-  CommitMutationOptions,
-  GsapScriptCommitsParams,
-  MutationResult,
+import {
+  gsapWriteFile,
+  type CommitMutation,
+  type CommitMutationCall,
+  type CommitMutationOptions,
+  type GsapScriptCommitsParams,
+  type MutationResult,
 } from "./gsapScriptCommitTypes";
 import { useGsapAnimationOps } from "./useGsapAnimationOps";
 import { useGsapArcPathOps } from "./useGsapArcPathOps";
@@ -443,14 +444,14 @@ export function useGsapScriptCommits({ projectIdRef, activeCompPath, previewIfra
     };
     const commit: CommitMutation = trackedStudioEdit((selection, mutation, options) => {
       if (!activeProjectId) return Promise.resolve();
-      const file = selection.sourceFile || activeCompPath || "index.html";
+      const file = gsapWriteFile(selection, activeCompPath);
       return serializeCommit(file, options.serializeKey, () =>
         runCommit(activeProjectId, activeCompPath, file, selection, mutation, options),
       );
     }) as CommitMutation;
     commit.batch = trackedStudioEdit((calls: CommitMutationCall[], options: CommitMutationOptions) => {
       if (!activeProjectId) return Promise.resolve();
-      const file = calls[0]?.selection.sourceFile || activeCompPath || "index.html";
+      const file = calls[0] ? gsapWriteFile(calls[0].selection, activeCompPath) : "index.html";
       return serializeCommit(file, options.serializeKey, () =>
         runBatchCommit(activeProjectId, activeCompPath, file, calls, options),
       );

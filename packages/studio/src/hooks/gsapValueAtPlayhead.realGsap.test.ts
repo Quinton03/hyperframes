@@ -5,7 +5,7 @@ import { replaceTweenWithKeyframesInScript } from "@hyperframes/parsers/gsap-wri
 import { afterEach, expect, it } from "vitest";
 import type { DomEditSelection } from "../components/editor/domEditingTypes";
 import { usePlayerStore } from "../player/store/playerStore";
-import { parsedTweenEase } from "./gsapParsedTween";
+import { findParsedTween, parsedImplicitEndValue, parsedTweenEase } from "./gsapParsedTween";
 import { planValueEdit } from "./gsapValueAtPlayhead";
 
 /** Runs a composition script as the preview does: a paused timeline, bound, then seeked to `at`. */
@@ -57,6 +57,25 @@ it("writes a delayed linear tween so GSAP shows the new value at the playhead, n
 it("keeps GSAP's default ease, by name, for a tween that authors none", () => {
   const { plan } = dragAndReplay(script("duration: 1, x: 100"), 60, 0.5);
   expect(plan.ok && plan.mutation.easeEach).toBe("power1.out");
+});
+
+it("reads a tween the playhead has not reached without redrawing a sibling's live value", () => {
+  const [x, y] = ["x", "y"].map((id) =>
+    Object.assign(document.body.appendChild(document.createElement("div")), { id }),
+  );
+  const src = `var tl = gsap.timeline({ paused: true });
+tl.to("#y", { x: 100, duration: 1, ease: "none" }, 0);
+tl.to("#x", { x: 300, duration: 1 }, 2);
+window.__timelines["t"] = tl;`;
+  const { timeline, iframe } = play(src, 0.5);
+  gsap.set(y!, { x: 77 });
+
+  const tween = findParsedTween(iframe, x!, parseGsapScriptAcorn(src).animations[1]!);
+
+  expect(parsedImplicitEndValue(tween)("x", "start")).toBe(0);
+  expect(gsap.getProperty(y!, "x")).toBe(77);
+  expect(timeline.time()).toBe(0.5);
+  timeline.kill();
 });
 
 it("names only an ease GSAP built in, and refuses a custom function rather than guess", () => {

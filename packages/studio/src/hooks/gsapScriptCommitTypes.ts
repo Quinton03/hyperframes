@@ -5,6 +5,14 @@ import type { PublishSdkSession } from "../utils/sdkCutover";
 import type { RuntimeTweenChange } from "./gsapRuntimePatch";
 import type { KeyframeUsageAction } from "../utils/keyframeUsage";
 
+/** The file a selection's GSAP write goes to. */
+export function gsapWriteFile(
+  selection: Pick<DomEditSelection, "sourceFile">,
+  activeCompPath: string | null | undefined,
+): string {
+  return selection.sourceFile || activeCompPath || "index.html";
+}
+
 export interface MutationResult {
   ok: boolean;
   changed?: boolean;
