@@ -354,15 +354,16 @@ describe("renaming a folder over the route", () => {
     mkdirSync(join(project, "compositions", "assets", "logo"));
     writeFileSync(join(project, "compositions", "assets", "logo", "mark.png"), "x");
     writeFileSync(join(project, "assets", "logo final.png"), "x");
+    writeFileSync(join(project, "assets", "bg.png final.png"), "x");
     writeFileSync(join(project, "compositions", "assets", "bg.png"), "x");
     writeFileSync(
       join(project, "compositions", "hero.html"),
-      '<img src="assets/logo.png"><img src="assets/logo final.png"><img src="assets/bg.png">',
+      '<img src="assets/logo.png"><img src="assets/logo final.png"><img src="assets/bg.png final.png"><img srcset="assets/bg.png 2x" src="assets/bg.png">',
     );
 
     expect((await renameIn(project, "compositions/assets", "compositions/media")).status).toBe(200);
     expect(readFileSync(join(project, "compositions", "hero.html"), "utf8")).toBe(
-      '<img src="assets/logo.png"><img src="assets/logo final.png"><img src="media/bg.png">',
+      '<img src="assets/logo.png"><img src="assets/logo final.png"><img src="assets/bg.png final.png"><img srcset="media/bg.png 2x" src="media/bg.png">',
     );
   });
 

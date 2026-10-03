@@ -671,6 +671,8 @@ function readableText(file: string): string | null {
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const MAX_REST = 256;
+// Where a reference ends inside text: its end, `)`, a query or fragment, a srcset comma or width/density.
+const REFERENCE_END = /^(?:$|[)?#]|,\s|\s+\d+(?:\.\d+)?[wx](?![\w.]))/;
 const SEPARATOR = String.raw`\\{0,2}[\\/]`;
 const REFERENCE_START = String.raw`(?<![\w./\\+-])`;
 const FILE_END = String.raw`(?![\w-]|\.\w)`;
@@ -761,8 +763,7 @@ export function referenceRewriter(
 // HTML reads a bare path beside itself only where that file exists, else from the project root (rewriteAssetPath).
 function reaches(targets: ReadonlySet<string>, path: string): boolean {
   for (let i = 0; i <= path.length; i++)
-    if ((i === path.length || /[\s?#),;]/.test(path[i]!)) && targets.has(path.slice(0, i)))
-      return true;
+    if (REFERENCE_END.test(path.slice(i)) && targets.has(path.slice(0, i))) return true;
   return false;
 }
 
