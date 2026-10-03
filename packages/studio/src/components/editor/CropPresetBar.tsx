@@ -5,7 +5,6 @@ import { CROP_ASPECT_PRESETS, centredCropInsets } from "./cropPresets";
 interface CropPresetBarProps {
   left: number;
   top: number;
-  /** The selection rect `left`/`top` were computed from; a drag moves the bar by the chrome variables' change since. */
   drawnFrom: { left: number; top: number };
   elementWidth: number;
   elementHeight: number;

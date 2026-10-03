@@ -1,11 +1,10 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 
-/** Rotate handle below the selection: an attached circular-arrows icon chip
- *  (no connecting stem). Anchors to the crop outline when the element is
- *  cropped so it stays next to what's visible on screen. Presentation only —
- *  the rotation gesture measures pointer angles from the element CENTER
- *  (resolveDomEditRotationGesture), so the handle position doesn't affect the
- *  math. Sits 12px below the bbox, past the bottom crop handle's hit strip. */
+/** Rotate handle below the selection, placed from the chrome's geometry variables: an icon chip
+ *  anchored to the crop outline when cropped, so it stays next to what's visible. Presentation only:
+ *  the rotation gesture measures pointer angles from the element CENTER (resolveDomEditRotationGesture),
+ *  so its position doesn't affect the math. Sits 12px below the bbox, past the bottom crop
+ *  handle's hit strip. */
 export function DomEditRotateHandle({
   cropOutlineInsetPx,
   onStartRotate,
@@ -14,7 +13,6 @@ export function DomEditRotateHandle({
   onStartRotate: (e: ReactPointerEvent<HTMLButtonElement>) => void;
 }) {
   const inset = cropOutlineInsetPx ?? { top: 0, right: 0, bottom: 0, left: 0 };
-  // Placed from the selection chrome's geometry variables (selectionChromeVars).
   const visibleCenterX = `var(--hf-sel-x) + ${inset.left}px + max(0px, var(--hf-sel-w) - ${inset.left + inset.right}px) / 2`;
   const visibleBottom = `var(--hf-sel-y) + var(--hf-sel-h) - ${inset.bottom}px`;
   return (

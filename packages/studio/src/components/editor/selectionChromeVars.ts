@@ -11,7 +11,7 @@ export function selectionChromeVars(rect: OverlayRect): Record<`--${string}`, st
   };
 }
 
-/** A gesture's per-move update: one element's properties, no render of the overlay; a move needs no layout. */
+/** A gesture's per-move update: one element's properties, no render of the overlay. */
 export function writeSelectionChromeVars(chrome: HTMLElement, rect: OverlayRect): void {
   for (const [name, value] of Object.entries(selectionChromeVars(rect))) {
     chrome.style.setProperty(name, value);
@@ -24,7 +24,6 @@ export interface OverlayRectDraft {
   subscribe: (listener: () => void) => () => void;
 }
 
-/** For crop handles drawn with no gesture behind them. */
 export const NO_OVERLAY_RECT_DRAFT: OverlayRectDraft = {
   get: () => null,
   subscribe: () => () => {},
