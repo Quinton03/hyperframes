@@ -298,7 +298,12 @@ describe("host track padding", () => {
 
 describe("resized layers", () => {
   const short = 30;
-  const geometry = createTimelineRowGeometry([0, 1], trackHeights([[], []], undefined, short), {}, short);
+  const geometry = createTimelineRowGeometry(
+    [0, 1],
+    trackHeights([[], []], undefined, short),
+    {},
+    short,
+  );
 
   it("sizes every row, the ghost lane and the rows past the last from one layer height", () => {
     expect(geometry.rowHeights).toEqual([short, short]);

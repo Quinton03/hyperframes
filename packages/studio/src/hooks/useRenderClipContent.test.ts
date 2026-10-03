@@ -267,7 +267,15 @@ describe("useRenderClipContent", () => {
   });
 
   it("drops a video's thumbnails on layers shorter than the threshold", () => {
-    const video = { id: "b", tag: "video", start: 0, duration: 4, track: 0, src: "b.mp4", hasAudio: false };
+    const video = {
+      id: "b",
+      tag: "video",
+      start: 0,
+      duration: 4,
+      track: 0,
+      src: "b.mp4",
+      hasAudio: false,
+    };
     usePlayerStore.setState({ thumbnailMode: "adaptive", trackHeight: TRACK_H_THUMBNAILS_MIN });
     expect(isValidElement(renderClipContent(video, null))).toBe(true);
     usePlayerStore.setState({ trackHeight: TRACK_H_THUMBNAILS_MIN - 1 });
