@@ -258,10 +258,16 @@ function startedServer(
   servers: ActiveServer[],
   projectDir: string,
   preLaunchPorts: Set<number>,
-  browserGpuMode?: BrowserGpuMode,
+  launchedPid: number,
+  dependencies: LifecycleDependencies,
 ): ActiveServer | null {
-  const candidates = servers.filter((server) => !preLaunchPorts.has(server.port));
-  return matchingServer(candidates, projectDir, browserGpuMode);
+  const isDescendant = dependencies.isDescendant ?? isProcessDescendant;
+  const ours = (server: ActiveServer) => {
+    const pid = Number(server.pid);
+    return pid === launchedPid || isDescendant(pid, launchedPid);
+  };
+  const candidates = servers.filter((server) => !preLaunchPorts.has(server.port) && ours(server));
+  return matchingServer(candidates, projectDir, dependencies.browserGpuMode);
 }
 
 export function buildBackgroundPreviewArgs(argv: string[]): string[] {
@@ -273,9 +279,10 @@ export function buildBackgroundPreviewArgs(argv: string[]): string[] {
       !arg.startsWith("--foreground=") &&
       arg !== "--open" &&
       arg !== "--no-open" &&
+      arg !== "--force-new" &&
       arg !== "--json",
   );
-  return [...filtered, "--foreground", "--no-open"];
+  return [...filtered, "--foreground", "--no-open", "--force-new"];
 }
 
 export async function readBackgroundPreviewStatus(
@@ -547,7 +554,7 @@ export async function startBackgroundPreview(
   );
 
   const kill = dependencies.kill ?? stopProcess;
-  const server = await awaitStartedServer(projectDir, startPort, preLaunchPorts, dependencies);
+  const server = await awaitStartedServer(projectDir, startPort, preLaunchPorts, pid, dependencies);
   if (!server) {
     await kill(pid);
     throw new Error(`background preview did not become ready; see ${logPath}`);
@@ -584,6 +591,7 @@ async function awaitStartedServer(
   projectDir: string,
   startPort: number,
   preLaunchPorts: Set<number>,
+  launchedPid: number,
   dependencies: LifecycleDependencies,
 ): Promise<ActiveServer | null> {
   const scan = dependencies.scan ?? scanActiveServers;
@@ -593,7 +601,8 @@ async function awaitStartedServer(
       await scan(startPort),
       projectDir,
       preLaunchPorts,
-      dependencies.browserGpuMode,
+      launchedPid,
+      dependencies,
     );
     if (server) return server;
     await sleep(200);
