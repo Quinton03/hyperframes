@@ -94,6 +94,34 @@ window.__timelines["t"] = tl;`;
   timeline.kill();
 });
 
+it("saves a dragged keyframe tween with its authored start, not the drag's live value", () => {
+  const box = Object.assign(document.body.appendChild(document.createElement("div")), { id: "x" });
+  const src = script(
+    "keyframes: { '0%': { opacity: 0 }, '100%': { opacity: 1, x: 300 } }, duration: 1, ease: 'none'",
+  ).replace("}, 0);", "}, 2);");
+  const { timeline, iframe } = play(src, 0.5);
+  usePlayerStore.setState({ currentTime: 0.5, activeKeyframePct: null });
+  gsap.set(box, { x: 77 });
+  const anim = parseGsapScriptAcorn(src).animations[0]!;
+  const selection = { id: "x", selector: "#x", element: box } as DomEditSelection;
+
+  const plan = planValueEdit(selection, anim, { x: 77 }, iframe);
+  timeline.kill();
+
+  expect(plan.ok).toBe(true);
+  if (!plan.ok) return;
+  const written = replaceTweenWithKeyframesInScript(src, anim.id, plan.mutation)!;
+  const at = (time: number) => {
+    const replay = play(written, time);
+    const x = gsap.getProperty(box, "x");
+    replay.timeline.kill();
+    return x;
+  };
+  expect(at(0.5)).toBe(77);
+  expect(at(2)).toBe(0);
+  expect(at(3)).toBe(300);
+});
+
 it("names only an ease GSAP built in, and refuses a custom function rather than guess", () => {
   const custom = { vars: { ease: (p: number) => p * p } };
   const iframe = { contentWindow: { gsap } } as unknown as HTMLIFrameElement;

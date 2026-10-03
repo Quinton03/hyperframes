@@ -66,7 +66,8 @@ export function findParsedTween(
   const win = iframe?.contentWindow as GsapWindow | null;
   const start = resolveTweenStart(anim);
   if (!win?.__timelines || start == null) return null;
-  const props = Object.keys(anim.keyframes?.keyframes[0]?.properties ?? anim.properties);
+  const steps = anim.keyframes?.keyframes.map((kf) => kf.properties) ?? [anim.properties];
+  const props = [...new Set(steps.flatMap((step) => Object.keys(step)))];
   const keyframed = Boolean(anim.keyframes);
   for (const timeline of Object.values(win.__timelines)) {
     for (const tween of timeline?.getChildren?.(true) ?? []) {
