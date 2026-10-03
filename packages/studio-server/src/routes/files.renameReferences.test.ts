@@ -338,12 +338,61 @@ describe("renaming a folder over the route", () => {
       join(project, "a", "style.css"),
       'url(b/../logo.png) url(b/sub/../../logo.png) url(b\\.\\..\\logo.png) url("b/../in/logo.png") url("b/sub dir/../../logo.png") url("b/s,(;)/../../logo.png") url(b/image.png)',
     );
-    writeFileSync(join(project, "index.html"), '<img src="a/b/../logo.png">');
 
     expect((await renameIn(project, "a/b", "b/c")).status).toBe(200);
     expect(readFileSync(join(project, "a", "style.css"), "utf8")).toBe(
       'url(b/../logo.png) url(b/sub/../../logo.png) url(b\\.\\..\\logo.png) url("b/../in/logo.png") url("b/sub dir/../../logo.png") url("b/s,(;)/../../logo.png") url(../b/c/image.png)',
     );
-    expect(readFileSync(join(project, "index.html"), "utf8")).toBe('<img src="a/b/../logo.png">');
+  });
+
+  it("in HTML takes the folder reading only where its file exists, else leaves the root path to the root pass", async () => {
+    const project = mkdtempSync(join(tmpdir(), "hf-rename-refs-"));
+    dirs.push(project);
+    mkdirSync(join(project, "assets"));
+    mkdirSync(join(project, "compositions", "assets"), { recursive: true });
+    writeFileSync(join(project, "assets", "logo.png"), "x");
+    writeFileSync(join(project, "compositions", "assets", "bg.png"), "x");
+    writeFileSync(
+      join(project, "compositions", "hero.html"),
+      '<img src="assets/logo.png"><img src="assets/bg.png">',
+    );
+
+    expect((await renameIn(project, "compositions/assets", "compositions/media")).status).toBe(200);
+    expect(readFileSync(join(project, "compositions", "hero.html"), "utf8")).toBe(
+      '<img src="assets/logo.png"><img src="media/bg.png">',
+    );
+  });
+
+  it("in HTML gives a path the runtime reads from the root to the root pass, where both readings match", async () => {
+    const project = mkdtempSync(join(tmpdir(), "hf-rename-refs-"));
+    dirs.push(project);
+    mkdirSync(join(project, "scenes", "scenes"), { recursive: true });
+    writeFileSync(join(project, "scenes", "scenes", "clip.mp4"), "x");
+    writeFileSync(join(project, "scenes", "intro.html"), '<video src="scenes/scenes/clip.mp4">');
+
+    expect((await renameIn(project, "scenes/scenes", "scenes/shots")).status).toBe(200);
+    expect(readFileSync(join(project, "scenes", "intro.html"), "utf8")).toBe(
+      '<video src="scenes/shots/clip.mp4">',
+    );
+  });
+
+  it("edits each reference once when the new path ends in the old one, and keeps a longer folder's path", async () => {
+    const project = mkdtempSync(join(tmpdir(), "hf-rename-refs-"));
+    dirs.push(project);
+    mkdirSync(join(project, "a", "b"), { recursive: true });
+    mkdirSync(join(project, "assets", "clips"), { recursive: true });
+    mkdirSync(join(project, "assets", "old clips"), { recursive: true });
+    writeFileSync(join(project, "a", "b", "x.png"), "x");
+    writeFileSync(join(project, "assets", "clips", "a.png"), "x");
+    writeFileSync(join(project, "assets", "old clips", "a.png"), "x");
+    writeFileSync(join(project, "a", "s.css"), "url(b/x.png)");
+    writeFileSync(join(project, "assets", "s.css"), 'url("old clips/a.png") url(clips/a.png)');
+
+    expect((await renameIn(project, "a/b", "a/a/b")).status).toBe(200);
+    expect(readFileSync(join(project, "a", "s.css"), "utf8")).toBe("url(a/b/x.png)");
+    expect((await renameIn(project, "assets/clips", "assets/takes")).status).toBe(200);
+    expect(readFileSync(join(project, "assets", "s.css"), "utf8")).toBe(
+      'url("old clips/a.png") url(takes/a.png)',
+    );
   });
 });

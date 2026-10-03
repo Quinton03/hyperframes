@@ -703,9 +703,9 @@ function referenceEdits(
   newPath: string,
   isDirectory: boolean,
   existing: readonly string[],
-  bareOrDotLead = false,
+  beside: { targets: ReadonlySet<string> | null } | null = null,
 ): (text: string) => Edit[] {
-  const pattern = referencePattern(oldPath, isDirectory, bareOrDotLead);
+  const pattern = referencePattern(oldPath, isDirectory, beside !== null);
   const around = new Map<string, Map<number, Set<string>>>();
   const afterLengths = new Set<number>();
   let window = 0;
@@ -738,9 +738,13 @@ function referenceEdits(
         );
       });
       const end = offset + match.length;
-      const rest = /^[^"'`<>\r\n]*/.exec(text.slice(end, end + MAX_REST))![0];
-      const climbsOut = isDirectory && leavesFolder(normalized(rest));
-      return inLonger || climbsOut ? [] : [{ at, end, text: newPath }];
+      if (inLonger) return [];
+      if (beside) {
+        const rest = normalized(/^[^"'`<>\r\n]*/.exec(text.slice(end, end + MAX_REST))![0]);
+        if (isDirectory && leavesFolder(rest)) return [];
+        if (beside.targets && !reaches(beside.targets, `${newPath}${rest}`)) return [];
+      }
+      return [{ at, end, text: newPath }];
     });
 }
 
@@ -752,6 +756,14 @@ export function referenceRewriter(
 ): (text: string) => string {
   const edits = referenceEdits(oldPath, newPath, isDirectory, existing);
   return (text) => applyEdits(text, edits(text));
+}
+
+// HTML reads a bare path beside itself only where that file exists, else from the project root (rewriteAssetPath).
+function reaches(targets: ReadonlySet<string>, path: string): boolean {
+  for (let i = 0; i <= path.length; i++)
+    if ((i === path.length || /[\s?#),;]/.test(path[i]!)) && targets.has(path.slice(0, i)))
+      return true;
+  return false;
 }
 
 function leavesFolder(rest: string): boolean {
@@ -810,22 +822,17 @@ function updateReferences(
 
   const existing = projectPaths(projectDir);
   const rootEdits = referenceEdits(oldPath, newPath, isDirectory, existing);
-  const parentFolderEdits = new Map<string, (text: string) => Edit[]>();
+  const parentFolderEdits = new Map<string, Record<"css" | "other", (text: string) => Edit[]>>();
   for (let at = oldPath.indexOf("/"); at > 0; at = oldPath.indexOf("/", at + 1)) {
     const dir = oldPath.slice(0, at);
     const inside = existing
       .filter((path) => path.startsWith(`${dir}/`))
       .map((path) => path.slice(at + 1));
-    parentFolderEdits.set(
-      dir,
-      referenceEdits(
-        oldPath.slice(at + 1),
-        posix.relative(dir, newPath),
-        isDirectory,
-        inside,
-        true,
-      ),
-    );
+    const [from, to] = [oldPath.slice(at + 1), posix.relative(dir, newPath)];
+    parentFolderEdits.set(dir, {
+      css: referenceEdits(from, to, isDirectory, inside, { targets: null }),
+      other: referenceEdits(from, to, isDirectory, inside, { targets: new Set(inside) }),
+    });
   }
   let updatedCount = 0;
   for (const file of textFiles) {
@@ -833,7 +840,8 @@ function updateReferences(
     const content = readableText(file);
     if (content === null) continue;
 
-    const beside = parentFolderEdits.get(relative(projectDir, dirname(file)).split(sep).join("/"));
+    const parent = parentFolderEdits.get(relative(projectDir, dirname(file)).split(sep).join("/"));
+    const beside = parent?.[/\.css$/i.test(file) ? "css" : "other"];
     // A bare path in a folder's file is relative to that folder, so its edit wins where both start.
     const updated = applyEdits(content, [...(beside?.(content) ?? []), ...rootEdits(content)]);
     if (updated !== content) {
