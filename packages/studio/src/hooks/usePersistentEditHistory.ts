@@ -79,7 +79,8 @@ function createOwnHistory() {
     changes: () => changes,
     claimCount: () => claimed.count,
     claimedAfter: (count: number) => (claimed.count > count && claimed.id ? claimed.id : null),
-    unlessUndone: (id: string | null) => (id && !undoneIds.has(id) ? id : null),
+    targetFor: (id: string | null, pressedAt: number) =>
+      !id || !undoneIds.has(id) ? id : claimed.count > pressedAt ? false : null,
     noteClaim: (id: string) => {
       claimed = { count: claimed.count + 1, id };
     },
@@ -124,6 +125,10 @@ const DEFAULT_COALESCE_MS = 300;
 
 function historyUrl(projectId: string, path = ""): string {
   return `/api/projects/${encodeURIComponent(projectId)}/history${path}`;
+}
+
+async function cantUndo(paths: string[] | undefined): Promise<ApplyResult> {
+  return { ok: false, reason: "content-mismatch", paths: paths ?? [] };
 }
 
 function unionPaths(...lists: Array<readonly string[] | undefined>): string[] {
@@ -261,9 +266,9 @@ export function usePersistentEditHistory({ projectId }: UsePersistentEditHistory
       const next = direction === "undo" ? view.back : view.forward;
       const stepPaths = candidate ? Object.keys(own.afterOf(candidate)) : next?.paths;
       const paths = unionPaths(stepPaths, heldClaimRef.current?.paths);
+      const pressedAt = own.claimCount();
       own.overtake();
-      const run = async (): Promise<ApplyResult> => {
-        const target = own.unlessUndone(candidate);
+      const attempt = async (target: string | null): Promise<ApplyResult> => {
         const previous = await readAll(paths, callbacks.readFile);
         const posted = await post(
           historyUrl(projectId, target ? "/undo" : "/step"),
@@ -294,6 +299,10 @@ export function usePersistentEditHistory({ projectId }: UsePersistentEditHistory
             callbacks.readFile,
           ),
         };
+      };
+      const run = () => {
+        const target = own.targetFor(candidate, pressedAt);
+        return target === false ? cantUndo(stepPaths) : attempt(target);
       };
       return callbacks.serialize ? callbacks.serialize(paths, run) : run();
     },

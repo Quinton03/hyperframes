@@ -265,6 +265,57 @@ it("does not undo again an edit a later press undid first", async () => {
   expect(file()).toBe("A");
 });
 
+it("refuses a second press whose edit is undone once an edit was made after the press", async () => {
+  const { dir, hook, file, save, readFile } = await studio();
+  save("B");
+  await act(() =>
+    hook().recordEdit({
+      label: "Moved Title",
+      files: { "index.html": { before: "A", after: "B" } },
+    }),
+  );
+  await vi.waitFor(() => expect(hook().undoLabel).toBe("Moved Title"));
+  const atKey = hook().claims();
+  save("C");
+  await act(() =>
+    hook().recordEdit({
+      label: "Moved Card",
+      files: { "index.html": { before: "B", after: "C" } },
+    }),
+  );
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  let queue: Promise<unknown> = Promise.resolve();
+  let queued = 0;
+  const serialize = <T>(_paths: readonly string[], task: () => Promise<T>) => {
+    queued += 1;
+    const wait = queued === 2 ? opened : Promise.resolve();
+    const run = queue.then(() => wait).then(task);
+    queue = run.catch(() => undefined);
+    return run;
+  };
+  const press = () => hook().undo({ readFile, claimedAfter: atKey, serialize });
+  const presses = Promise.all([press(), press()]);
+  await vi.waitFor(() => expect(file()).toBe("B"));
+  writeFileSync(join(dir, "card.html"), "Y");
+  await act(() =>
+    hook().recordEdit({
+      label: "Added Card",
+      files: { "card.html": { before: "", after: "Y" } },
+    }),
+  );
+
+  open();
+  const [first, second] = await act(() => presses);
+
+  expect(first).toMatchObject({ ok: true, label: "Undid: Moved Card" });
+  expect(second).toMatchObject({ ok: false, reason: "content-mismatch" });
+  expect(readFileSync(join(dir, "card.html"), "utf8")).toBe("Y");
+  expect(file()).toBe("B");
+});
+
 it("a drag's edits under one key undo as one step, even before the drag goes idle", async () => {
   const { hook, file, save, readFile } = await studio();
   const writes: Array<[before: string, after: string]> = [
