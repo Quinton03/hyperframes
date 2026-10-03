@@ -672,7 +672,7 @@ const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&
 
 const MAX_REST = 256;
 // Where a reference ends inside text: its end, `)`, a query or fragment, a srcset comma or width/density.
-const REFERENCE_END = /^(?:$|[)?#]|,\s|\s+\d+(?:\.\d+)?[wx](?![\w.]))/;
+const REFERENCE_END = /^(?:$|\)(?=$|[\s;,])|[?#]|,\s|\s+\d+(?:\.\d+)?[wx](?![\w.]))/;
 const SEPARATOR = String.raw`\\{0,2}[\\/]`;
 const REFERENCE_START = String.raw`(?<![\w./\\+-])`;
 const FILE_END = String.raw`(?![\w-]|\.\w)`;
@@ -831,7 +831,7 @@ function updateReferences(
 
   const existing = projectPaths(projectDir);
   const rootEdits = referenceEdits(oldPath, newPath, isDirectory, existing);
-  const parentFolderEdits = new Map<string, Record<"css" | "other", (text: string) => Edit[]>>();
+  const parentFolderEdits = new Map<string, Record<"css" | "html", (text: string) => Edit[]>>();
   for (let at = oldPath.indexOf("/"); at > 0; at = oldPath.indexOf("/", at + 1)) {
     const dir = oldPath.slice(0, at);
     const inside = existing
@@ -840,7 +840,7 @@ function updateReferences(
     const [from, to] = [oldPath.slice(at + 1), posix.relative(dir, newPath)];
     parentFolderEdits.set(dir, {
       css: referenceEdits(from, to, isDirectory, inside, { targets: null }),
-      other: referenceEdits(from, to, isDirectory, inside, { targets: filesOnly(inside) }),
+      html: referenceEdits(from, to, isDirectory, inside, { targets: filesOnly(inside) }),
     });
   }
   let updatedCount = 0;
@@ -850,7 +850,9 @@ function updateReferences(
     if (content === null) continue;
 
     const parent = parentFolderEdits.get(relative(projectDir, dirname(file)).split(sep).join("/"));
-    const beside = parent?.[/\.css$/i.test(file) ? "css" : "other"];
+    // Script and data paths resolve against the page, not their own folder: only the root pass reads them.
+    const kind = /\.css$/i.test(file) ? "css" : /\.html$/i.test(file) ? "html" : null;
+    const beside = kind && parent?.[kind];
     // A bare path in a folder's file is relative to that folder, so its edit wins where both start.
     const updated = applyEdits(content, [...(beside?.(content) ?? []), ...rootEdits(content)]);
     if (updated !== content) {
