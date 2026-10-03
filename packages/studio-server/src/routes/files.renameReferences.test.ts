@@ -267,4 +267,53 @@ describe("renaming a folder over the route", () => {
       '<img src="assets/takes/a.png"><img src="clips/a.png">',
     );
   });
+
+  const renameIn = async (project: string, from: string, to: string) => {
+    const adapter = {
+      resolveProject: async (id: string) => ({ id, dir: project }),
+    } as unknown as StudioApiAdapter;
+    const app = new Hono();
+    registerFileRoutes(app, adapter);
+    return app.request(`/projects/p/files/${from}`, {
+      method: "PATCH",
+      body: JSON.stringify({ newPath: to }),
+    });
+  };
+
+  it("leaves a root path, a path through another folder, and a sibling's relative path alone", async () => {
+    const project = mkdtempSync(join(tmpdir(), "hf-rename-refs-"));
+    dirs.push(project);
+    mkdirSync(join(project, "assets", "clips"), { recursive: true });
+    mkdirSync(join(project, "assets", "other"));
+    mkdirSync(join(project, "clips"));
+    writeFileSync(join(project, "assets", "clips", "a.png"), "x");
+    writeFileSync(join(project, "clips", "a.png"), "x");
+    writeFileSync(join(project, "assets", "style.css"), "url(/clips/a.png) url(other/clips/a.png)");
+    writeFileSync(
+      join(project, "assets", "other", "x.css"),
+      "url(../clips/a.png) url(../../clips/a.png)",
+    );
+
+    expect((await renameIn(project, "assets/clips", "assets/takes")).status).toBe(200);
+    expect(readFileSync(join(project, "assets", "style.css"), "utf8")).toBe(
+      "url(/clips/a.png) url(other/clips/a.png)",
+    );
+    expect(readFileSync(join(project, "assets", "other", "x.css"), "utf8")).toBe(
+      "url(../takes/a.png) url(../../clips/a.png)",
+    );
+  });
+
+  it("rewrites each reference once when the new path holds the old folder's name", async () => {
+    const project = mkdtempSync(join(tmpdir(), "hf-rename-refs-"));
+    dirs.push(project);
+    mkdirSync(join(project, "a", "b"), { recursive: true });
+    mkdirSync(join(project, "b"));
+    writeFileSync(join(project, "a", "b", "image.png"), "x");
+    writeFileSync(join(project, "a", "style.css"), "url(/a/b/image.png) url(b/image.png)");
+
+    expect((await renameIn(project, "a/b", "b/c")).status).toBe(200);
+    expect(readFileSync(join(project, "a", "style.css"), "utf8")).toBe(
+      "url(/b/c/image.png) url(../b/c/image.png)",
+    );
+  });
 });
