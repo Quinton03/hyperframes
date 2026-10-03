@@ -740,7 +740,7 @@ function referenceEdits(
       const end = offset + match.length;
       const rest = /^[^"'`<>\r\n]*/.exec(text.slice(end, end + MAX_REST))![0];
       const climbsOut = isDirectory && leavesFolder(normalized(rest));
-      return inLonger || climbsOut ? [] : [{ at, end: offset + match.length, text: newPath }];
+      return inLonger || climbsOut ? [] : [{ at, end, text: newPath }];
     });
 }
 
