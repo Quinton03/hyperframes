@@ -152,7 +152,7 @@ it("a second undo pressed while the same edit saves undoes the edit before it", 
   expect(file()).toBe("A");
 });
 
-it("gives a claim back when its undo fails, so the next press targets that edit again", async () => {
+it("keeps the claim when its undo fails, so the next press targets that edit again", async () => {
   const { hook, save, readFile } = await studio();
   save("B");
   await act(() =>
@@ -187,7 +187,7 @@ it("gives a claim back when its undo fails, so the next press targets that edit 
   expect(posted.filter((p) => p === "undo" || p === "step")).toEqual(["undo", "undo"]);
 });
 
-it("does not give back a claim on an edit another press has already undone", async () => {
+it("does not undo again an edit another press already undid", async () => {
   const { hook, file, save, readFile } = await studio();
   save("B");
   await act(() =>
@@ -228,7 +228,7 @@ it("does not give back a claim on an edit another press has already undone", asy
   expect(file()).toBe("A");
 });
 
-it("does not give back a claim on an edit a later press undid first", async () => {
+it("does not undo again an edit a later press undid first", async () => {
   const { hook, file, save, readFile } = await studio();
   save("B");
   await act(() =>

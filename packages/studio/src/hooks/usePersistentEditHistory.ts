@@ -79,20 +79,13 @@ function createOwnHistory() {
     changes: () => changes,
     claimCount: () => claimed.count,
     claimedAfter: (count: number) => (claimed.count > count && claimed.id ? claimed.id : null),
+    unlessUndone: (id: string | null) => (id && !undoneIds.has(id) ? id : null),
     noteClaim: (id: string) => {
       claimed = { count: claimed.count + 1, id };
     },
-    takeClaim: (id: string | null) => {
-      if (!id || claimed.id !== id) return () => {};
-      const taken = claimed;
-      claimed = { ...claimed, id: "" };
-      return () => {
-        if (claimed.count === taken.count && !undoneIds.has(taken.id)) claimed = taken;
-      };
-    },
     stepped: (entry: { id: string; undoes?: string }) => {
       if (entry.undoes) undoneIds.add(entry.undoes);
-      if (entry.undoes && claimed.id === entry.undoes) claimed = { ...claimed, id: "" };
+      if (undoneIds.size > OWN_ENTRIES_KEPT) undoneIds.delete(undoneIds.values().next().value!);
       const undone = entry.undoes ? own.get(entry.undoes) : undefined;
       if (!undone) return;
       const swapped = Object.entries(undone).map(([path, f]) => [
@@ -121,6 +114,7 @@ function createOwnHistory() {
     },
     clear: () => {
       own.clear();
+      undoneIds.clear();
       next = null;
       changes += 1;
     },
@@ -205,20 +199,6 @@ function redoneAt(view: HistoryView): number | null {
 }
 
 /** Studio's undo over the server's project history: an edit claims what it wrote; Cmd+Z steps the person's. */
-async function givingClaimBackOnFailure(
-  attempt: () => Promise<ApplyResult>,
-  giveBack: () => void,
-): Promise<ApplyResult> {
-  try {
-    const result = await attempt();
-    if (!result.ok) giveBack();
-    return result;
-  } catch (error) {
-    giveBack();
-    throw error;
-  }
-}
-
 export function usePersistentEditHistory({ projectId }: UsePersistentEditHistoryOptions) {
   const [view, setView] = useState<HistoryView>(EMPTY);
   const [loaded, setLoaded] = useState(false);
@@ -274,16 +254,16 @@ export function usePersistentEditHistory({ projectId }: UsePersistentEditHistory
   const step = useCallback(
     async (direction: "undo" | "redo", callbacks: ApplyCallbacks): Promise<ApplyResult> => {
       if (!projectId) return { ok: false, reason: "empty" };
-      const target =
+      const candidate =
         direction === "undo" && callbacks.claimedAfter !== undefined
           ? own.claimedAfter(callbacks.claimedAfter)
           : null;
-      const giveBack = own.takeClaim(target);
       const next = direction === "undo" ? view.back : view.forward;
-      const stepPaths = target ? Object.keys(own.afterOf(target)) : next?.paths;
+      const stepPaths = candidate ? Object.keys(own.afterOf(candidate)) : next?.paths;
       const paths = unionPaths(stepPaths, heldClaimRef.current?.paths);
       own.overtake();
       const run = async (): Promise<ApplyResult> => {
+        const target = own.unlessUndone(candidate);
         const previous = await readAll(paths, callbacks.readFile);
         const posted = await post(
           historyUrl(projectId, target ? "/undo" : "/step"),
@@ -315,10 +295,7 @@ export function usePersistentEditHistory({ projectId }: UsePersistentEditHistory
           ),
         };
       };
-      return givingClaimBackOnFailure(
-        () => (callbacks.serialize ? callbacks.serialize(paths, run) : run()),
-        giveBack,
-      );
+      return callbacks.serialize ? callbacks.serialize(paths, run) : run();
     },
     [projectId, view, refresh, own],
   );
