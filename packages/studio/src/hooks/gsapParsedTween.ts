@@ -1,4 +1,5 @@
 import type { GsapAnimation } from "@hyperframes/core/gsap-parser";
+import { elementTargets } from "../utils/elementGsap";
 import { resolveTweenStart } from "../utils/globalTimeCompiler";
 import type { ImplicitEndValue } from "./gsapValueAtPlayhead";
 
@@ -22,7 +23,7 @@ interface ParsedTween {
     getChildren?: (nested?: boolean, tweens?: boolean, timelines?: boolean) => ParsedTween[];
   };
   timeline?: { getChildren?: () => ParsedTween[] };
-  targets?: () => Element[];
+  targets?: () => unknown[];
   startTime?: () => number;
   duration?: () => number;
 }
@@ -71,7 +72,7 @@ export function findParsedTween(
   const keyframed = Boolean(anim.keyframes);
   for (const timeline of Object.values(win.__timelines)) {
     for (const tween of timeline?.getChildren?.(true) ?? []) {
-      const targets = tween.targets?.() ?? [];
+      const targets = elementTargets(tween);
       if (!targets.includes(element) && !targets.some((t) => element.id && t.id === element.id))
         continue;
       if (!startsAt(tween, start)) continue;
@@ -103,7 +104,7 @@ export function withLiveTiming(anim: GsapAnimation, tween: ParsedTween | null): 
 
 /** GSAP parses a to() tween only when the playhead first passes it, and a soft reload resets that.
  *  Play its timeline from the tween's start (so earlier tweens set its start value) to its end and
- *  back, its channels cleared first; then restore every layer's inline style and GSAP cache. */
+ *  back, its channels cleared first; then restore every element's attributes and GSAP cache. */
 function parseUnplayed(win: GsapWindow, element: Element, tween: ParsedTween, props: string[]) {
   const seek = !isParsed(tween) && seekable(win, tween);
   if (!seek) return;
@@ -148,22 +149,31 @@ type Layer = Element & { _gsap?: Record<string, unknown> };
 function layerStates(tween: ParsedTween, element: Element) {
   const layers = new Set<Layer>([element]);
   for (const child of tween.parent?.getChildren?.(true, true, false) ?? [])
-    for (const target of child.targets?.() ?? []) layers.add(target);
+    for (const target of elementTargets(child)) layers.add(target);
   return [...layers].map((layer) => ({
     layer,
-    style: layer.getAttribute("style"),
+    attributes: new Map([...layer.attributes].map((a) => [a.name, a.value])),
     cache: layer._gsap && { ...layer._gsap },
   }));
 }
 
 function restore(states: ReturnType<typeof layerStates>) {
-  for (const { layer, style, cache } of states) {
-    if (style === null) layer.removeAttribute("style");
-    else layer.setAttribute("style", style);
-    if (!cache || !layer._gsap) continue;
-    for (const key of Object.keys(layer._gsap)) if (!(key in cache)) delete layer._gsap[key];
-    Object.assign(layer._gsap, cache);
+  for (const { layer, attributes, cache } of states) {
+    restoreAttributes(layer, attributes);
+    if (cache && layer._gsap) restoreCache(layer._gsap, cache);
   }
+}
+
+function restoreAttributes(layer: Element, attributes: Map<string, string>) {
+  for (const { name } of [...layer.attributes])
+    if (!attributes.has(name)) layer.removeAttribute(name);
+  for (const [name, value] of attributes)
+    if (layer.getAttribute(name) !== value) layer.setAttribute(name, value);
+}
+
+function restoreCache(live: Record<string, unknown>, cache: Record<string, unknown>) {
+  for (const key of Object.keys(live)) if (!(key in cache)) delete live[key];
+  Object.assign(live, cache);
 }
 
 /** Start and end values from GSAP's own parse of the tween, as loaded from the file. Null when

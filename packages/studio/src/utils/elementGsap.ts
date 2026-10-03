@@ -43,3 +43,8 @@ export function readElementGsapNumber(element: HTMLElement, prop: string): numbe
   const value = Number(gsapOf(element)?.getProperty?.(element, prop));
   return Number.isFinite(value) ? value : null;
 }
+
+/** A tween's DOM targets; GSAP also tweens plain objects, such as the runtime's duration filler. */
+export function elementTargets(tween: { targets?: () => unknown[] }): Element[] {
+  return (tween.targets?.() ?? []).filter((t): t is Element => (t as Node | null)?.nodeType === 1);
+}

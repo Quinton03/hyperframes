@@ -78,6 +78,26 @@ window.__timelines["t"] = tl;`;
   timeline.kill();
 });
 
+it("keeps a sibling's live attribute while reading an unplayed tween beside the runtime's filler", () => {
+  const [x, y] = ["x", "y"].map((id) =>
+    Object.assign(document.body.appendChild(document.createElement("div")), { id }),
+  );
+  y!.setAttribute("data-value", "0");
+  const src = `var tl = gsap.timeline({ paused: true });
+tl.to({}, { duration: 4, data: "hf-runtime-filler" }, 0);
+tl.to("#y", { attr: { "data-value": 100 }, duration: 1, ease: "none" }, 0);
+tl.to("#x", { x: 300, duration: 1 }, 2);
+window.__timelines["t"] = tl;`;
+  const { timeline, iframe } = play(src, 0.5);
+  y!.setAttribute("data-value", "77");
+
+  const tween = findParsedTween(iframe, x!, parseGsapScriptAcorn(src).animations.at(-1)!);
+
+  expect(parsedImplicitEndValue(tween)("x", "start")).toBe(0);
+  expect(y!.getAttribute("data-value")).toBe("77");
+  timeline.kill();
+});
+
 it("reads a later tween's start from the earlier tween on the same layer, as playback does", () => {
   const x = Object.assign(document.body.appendChild(document.createElement("div")), { id: "x" });
   const src = `var tl = gsap.timeline({ paused: true });
