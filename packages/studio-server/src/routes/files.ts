@@ -824,7 +824,8 @@ function updateReferences(
     if (content === null) continue;
 
     const beside = parents.get(relative(projectDir, dirname(file)).split(sep).join("/"));
-    const updated = applyEdits(content, [...rootEdits(content), ...(beside?.(content) ?? [])]);
+    // A bare path in a folder's file is relative to that folder, so its edit wins where both start.
+    const updated = applyEdits(content, [...(beside?.(content) ?? []), ...rootEdits(content)]);
     if (updated !== content) {
       replaceFileAtomically(file, updated, statSync(file).mode);
       updatedCount++;

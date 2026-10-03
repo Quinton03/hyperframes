@@ -316,4 +316,15 @@ describe("renaming a folder over the route", () => {
       "url(/b/c/image.png) url(../b/c/image.png)",
     );
   });
+
+  it("reads a path in a folder's file as relative to that folder where both readings match", async () => {
+    const project = mkdtempSync(join(tmpdir(), "hf-rename-refs-"));
+    dirs.push(project);
+    mkdirSync(join(project, "a", "a", "a"), { recursive: true });
+    writeFileSync(join(project, "a", "a", "a", "image.png"), "x");
+    writeFileSync(join(project, "a", "style.css"), "url(a/a/image.png)");
+
+    expect((await renameIn(project, "a/a", "a/b")).status).toBe(200);
+    expect(readFileSync(join(project, "a", "style.css"), "utf8")).toBe("url(b/a/image.png)");
+  });
 });
