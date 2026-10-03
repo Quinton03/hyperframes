@@ -49,7 +49,6 @@ export interface UseGsapAwareEditingParams {
   domEditSelection: DomEditSelection | null;
   selectedGsapAnimations: GsapAnimation[];
   gsapCommitMutation: CommitMutation | null;
-  /** The open composition: where a selection with no source file writes. */
   activeCompPath?: string | null;
   previewIframeRef: React.RefObject<HTMLIFrameElement | null>;
   showToast: (message: string, tone?: "error" | "info") => void;

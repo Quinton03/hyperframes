@@ -260,7 +260,7 @@ export function usePreviewPersistence({
 
   // ── Migrate legacy studio-motion.json ──
   // Projects that used the old JSON-file approach may still have a populated
-  // `.hyperframes/studio-motion.json`. The studio no longer reads from it, but
+  // studio-motion.json in the project's .hyperframes folder. The studio no longer reads it, but
   // the legacy render-script injection in `preview.ts` / `vite.studioMotion.ts`
   // could still fire alongside the new seek-reapply runtime. Empty the file so
   // the legacy codepath no-ops.
