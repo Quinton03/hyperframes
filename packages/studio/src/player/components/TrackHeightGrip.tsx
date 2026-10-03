@@ -2,6 +2,8 @@ import { useRef, type PointerEvent } from "react";
 import { usePlayerStore } from "../store/playerStore";
 import { TRACK_H } from "./timelineLayout";
 
+const GRIP_H = 6;
+
 /**
  * A layer's bottom edge. Dragging it resizes every layer at once, so the `row + 1` layers down to this edge
  * each take a share of the pointer's travel and the edge stays under the pointer. Double click: the default.
@@ -28,8 +30,9 @@ export function TrackHeightGrip({ row }: { row: number }) {
     <div
       aria-hidden="true"
       data-timeline-track-height-grip
-      className="absolute inset-x-0 z-20 h-1.5 cursor-row-resize"
-      style={{ top: trackHeight - 3 }}
+      className="absolute inset-x-0 z-20 cursor-row-resize"
+      // Inside its own layer: the next layer's sticky header paints over anything below the line.
+      style={{ top: trackHeight - GRIP_H, height: GRIP_H }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={end}
