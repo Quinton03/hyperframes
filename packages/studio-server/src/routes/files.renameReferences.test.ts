@@ -299,7 +299,7 @@ describe("renaming a folder over the route", () => {
       "url(/clips/a.png) url(other/clips/a.png)",
     );
     expect(readFileSync(join(project, "assets", "other", "x.css"), "utf8")).toBe(
-      "url(../takes/a.png) url(../../clips/a.png)",
+      "url(../clips/a.png) url(../../clips/a.png)",
     );
   });
 

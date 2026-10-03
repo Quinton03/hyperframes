@@ -798,31 +798,32 @@ function updateReferences(
 
   const existing = projectPaths(projectDir);
   const rootEdits = referenceEdits(oldPath, newPath, isDirectory, existing);
-  const base = oldPath.slice(oldPath.lastIndexOf("/") + 1);
-  const named = existing.filter((path) => path.includes(base));
-  const besides = new Map<string, ((text: string) => Edit[]) | null>();
-  // A file beside the old path may name it relative to its own folder (`clips/a.png` in `assets/`).
-  const besideEdits = (dir: string) => {
-    if (!besides.has(dir)) {
-      const [from, to] = [posix.relative(dir, oldPath), posix.relative(dir, newPath)];
-      const moved = dir === newPath || dir.startsWith(`${newPath}/`);
-      const sameAsRoot = from.replace(/^(\.\.\/)+/, "") === oldPath;
-      const rel = named.map((path) => posix.relative(dir, path));
-      besides.set(
-        dir,
-        dir === "" || moved || sameAsRoot ? null : referenceEdits(from, to, isDirectory, rel, true),
-      );
-    }
-    return besides.get(dir);
-  };
+  // A folder holding the old path may name it relative to itself (`clips/a.png` in `assets/`). Only those
+  // folders, at most the path's depth, get a second rewriter, so the cost stays one pass per file.
+  const parents = new Map<string, (text: string) => Edit[]>();
+  for (let at = oldPath.indexOf("/"); at > 0; at = oldPath.indexOf("/", at + 1)) {
+    const dir = oldPath.slice(0, at);
+    const inside = existing
+      .filter((path) => path.startsWith(`${dir}/`))
+      .map((path) => path.slice(at + 1));
+    parents.set(
+      dir,
+      referenceEdits(
+        oldPath.slice(at + 1),
+        posix.relative(dir, newPath),
+        isDirectory,
+        inside,
+        true,
+      ),
+    );
+  }
   let updatedCount = 0;
   for (const file of textFiles) {
     if (!isSafePath(projectDir, file)) continue;
     const content = readableText(file);
     if (content === null) continue;
 
-    const dir = relative(projectDir, dirname(file)).split(sep).join("/");
-    const beside = content.includes(base) ? besideEdits(dir) : null;
+    const beside = parents.get(relative(projectDir, dirname(file)).split(sep).join("/"));
     const updated = applyEdits(content, [...rootEdits(content), ...(beside?.(content) ?? [])]);
     if (updated !== content) {
       replaceFileAtomically(file, updated, statSync(file).mode);
