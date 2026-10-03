@@ -101,7 +101,10 @@ export function withLiveTiming(anim: GsapAnimation, tween: ParsedTween | null): 
   };
 }
 
-const TRANSFORM = ["x", "y", "rotation", "scaleX", "scaleY"];
+const TRANSFORM = [
+  ...["x", "y", "z", "xPercent", "yPercent", "rotation", "rotationX", "rotationY"],
+  ...["skewX", "skewY", "scaleX", "scaleY", "transformPerspective"],
+];
 
 /** GSAP parses a to() tween only when the playhead first passes it, and a soft reload resets that.
  *  Play its timeline from the tween's start (so earlier tweens set its start value) to its end and
