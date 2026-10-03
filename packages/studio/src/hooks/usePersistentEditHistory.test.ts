@@ -135,14 +135,56 @@ it("a second undo pressed while the same edit saves undoes the edit before it", 
     }),
   );
 
-  const first = await act(() => hook().undo({ readFile, claimedAfter: atKey }));
-  const second = await act(() => hook().undo({ readFile, claimedAfter: atKey }));
+  let queue: Promise<unknown> = Promise.resolve();
+  const serialize = <T>(_paths: readonly string[], task: () => Promise<T>) => {
+    const run = queue.then(task);
+    queue = run.catch(() => undefined);
+    return run;
+  };
+  const press = () => hook().undo({ readFile, claimedAfter: atKey, serialize });
+
+  const [first, second] = await act(() => Promise.all([press(), press()]));
 
   expect([first, second]).toMatchObject([
     { ok: true, label: "Undid: Moved Card" },
     { ok: true, label: "Undid: Moved Title" },
   ]);
   expect(file()).toBe("A");
+});
+
+it("gives a claim back when its undo fails, so the next press targets that edit again", async () => {
+  const { hook, save, readFile } = await studio();
+  save("B");
+  await act(() =>
+    hook().recordEdit({
+      label: "Moved Title",
+      files: { "index.html": { before: "A", after: "B" } },
+    }),
+  );
+  await vi.waitFor(() => expect(hook().undoLabel).toBe("Moved Title"));
+  const atKey = hook().claims();
+  save("C");
+  await act(() =>
+    hook().recordEdit({
+      label: "Moved Card",
+      files: { "index.html": { before: "B", after: "C" } },
+    }),
+  );
+  const posted: string[] = [];
+  const fetch = globalThis.fetch;
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    if (init?.method === "POST") posted.push(url.slice(url.lastIndexOf("/") + 1));
+    return fetch(url, init);
+  });
+
+  save("edited elsewhere");
+  const failed = await act(() => hook().undo({ readFile, claimedAfter: atKey }));
+  save("C");
+  const retried = await act(() => hook().undo({ readFile, claimedAfter: atKey }));
+
+  expect(failed.ok).toBe(false);
+  expect(retried).toMatchObject({ ok: true, label: "Undid: Moved Card" });
+  expect(posted.filter((p) => p === "undo" || p === "step")).toEqual(["undo", "undo"]);
 });
 
 it("a drag's edits under one key undo as one step, even before the drag goes idle", async () => {
