@@ -8,6 +8,7 @@ import type { TimelineClipMenuItem } from "./TimelineTypes";
 import { ClipMenuToolItems } from "./clipMenuToolItems";
 import { ClipMenuAudioItems } from "./clipMenuAudioItems";
 import { ClipMenuLinkItems } from "./clipMenuLinkItems";
+import { useTimelineEditContextOptional } from "../../contexts/TimelineEditContext";
 
 const MENU_MARGIN = 8;
 // Empty groups collapse; every non-empty group before the always-present Delete group ends in a divider.
@@ -103,6 +104,7 @@ export const ClipContextMenu = memo(function ClipContextMenu({
 }: ClipContextMenuProps) {
   const menuRef = useContextMenuDismiss(onClose);
   useMenuKeyboardNav(menuRef);
+  const tools = useTimelineEditContextOptional().clipMenuTools !== false;
   // The right-clicked clip's own id: a member of the live multi-selection
   // means Copy/Duplicate act on the whole group, matching onContextMenuClip's
   // selection-preserving behaviour for a right-click inside it.
@@ -164,7 +166,7 @@ export const ClipContextMenu = memo(function ClipContextMenu({
             <span className="text-neutral-500 text-[10px] ml-3">S</span>
           </button>
         )}
-        {splitLabel && (
+        {tools && splitLabel && (
           <ClipMenuToolItems
             group="time"
             element={element}
@@ -175,24 +177,30 @@ export const ClipContextMenu = memo(function ClipContextMenu({
       </div>
 
       <div role="group" aria-label="Sound" className={GROUP_CLASS}>
-        <ClipMenuAudioItems part="gain" element={element} onClose={onClose} />
-        <ClipMenuToolItems
-          group="sound"
-          element={element}
-          currentTime={currentTime}
-          onClose={onClose}
-        />
-        <ClipMenuLinkItems part="link" element={element} onClose={onClose} />
-        <ClipMenuAudioItems part="duck" element={element} onClose={onClose} />
+        {tools && (
+          <>
+            <ClipMenuAudioItems part="gain" element={element} onClose={onClose} />
+            <ClipMenuToolItems
+              group="sound"
+              element={element}
+              currentTime={currentTime}
+              onClose={onClose}
+            />
+            <ClipMenuLinkItems part="link" element={element} onClose={onClose} />
+            <ClipMenuAudioItems part="duck" element={element} onClose={onClose} />
+          </>
+        )}
       </div>
 
       <div role="group" aria-label="Picture" className={GROUP_CLASS}>
-        <ClipMenuToolItems
-          group="picture"
-          element={element}
-          currentTime={currentTime}
-          onClose={onClose}
-        />
+        {tools && (
+          <ClipMenuToolItems
+            group="picture"
+            element={element}
+            currentTime={currentTime}
+            onClose={onClose}
+          />
+        )}
       </div>
 
       <div role="group" aria-label="Clipboard" className={GROUP_CLASS}>
@@ -255,7 +263,7 @@ export const ClipContextMenu = memo(function ClipContextMenu({
           <span>Delete</span>
           <span className="text-neutral-500 text-[10px] ml-3">⌫</span>
         </button>
-        <ClipMenuLinkItems part="delete" element={element} onClose={onClose} />
+        {tools && <ClipMenuLinkItems part="delete" element={element} onClose={onClose} />}
       </div>
     </div>,
     document.body,
