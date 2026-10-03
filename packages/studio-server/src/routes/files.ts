@@ -670,6 +670,7 @@ function readableText(file: string): string | null {
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const MAX_REST = 256;
 const SEPARATOR = String.raw`\\{0,2}[\\/]`;
 const REFERENCE_START = String.raw`(?<![\w./\\+-])`;
 const FILE_END = String.raw`(?![\w-]|\.\w)`;
@@ -736,7 +737,8 @@ function referenceEdits(
           )
         );
       });
-      const rest = /^[^"'`()<>,;?#\r\n]*/.exec(text.slice(offset + match.length))![0];
+      const end = offset + match.length;
+      const rest = /^[^"'`()<>,;?#\r\n]*/.exec(text.slice(end, end + MAX_REST))![0];
       const climbsOut = isDirectory && leavesFolder(normalized(rest));
       return inLonger || climbsOut ? [] : [{ at, end: offset + match.length, text: newPath }];
     });
