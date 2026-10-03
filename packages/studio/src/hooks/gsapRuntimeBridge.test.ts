@@ -571,7 +571,11 @@ describe("tryGsapDragIntercept — motion paths", () => {
         ],
         ease: "none",
       },
-      expect.objectContaining({ label: "Move layer (new keyframe)", softReload: true }),
+      expect.objectContaining({
+        label: "Move layer (new keyframe)",
+        keyframeAction: "add",
+        softReload: true,
+      }),
     );
     expect(commitMutation.mock.calls.map(([, mutation]) => mutation.type)).not.toContain(
       "add-motion-path-point",

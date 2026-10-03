@@ -15,8 +15,12 @@ interface ParsedTween {
   _from?: boolean;
   _initted?: boolean;
   vars?: Record<string, unknown>;
-  parent?: { vars?: { defaults?: { ease?: unknown } } };
-  render?: (time: number, suppressEvents?: boolean, force?: boolean) => unknown;
+  parent?: {
+    vars?: { defaults?: { ease?: unknown } };
+    time?: () => number;
+    seek?: (time: number, suppressEvents?: boolean) => unknown;
+    getChildren?: (nested?: boolean, tweens?: boolean, timelines?: boolean) => ParsedTween[];
+  };
   timeline?: { getChildren?: () => ParsedTween[] };
   targets?: () => Element[];
   startTime?: () => number;
@@ -99,19 +103,24 @@ export function withLiveTiming(anim: GsapAnimation, tween: ParsedTween | null): 
 const TRANSFORM = ["x", "y", "rotation", "scaleX", "scaleY"];
 
 /** GSAP parses a to() tween only when the playhead first passes it, and a soft reload resets that.
- *  Render that tween alone through its end and back with its channels cleared, so a gesture's live
- *  `gsap.set` is not read as the authored start; its timeline and siblings are never redrawn. */
+ *  Play its timeline from the tween's start (so earlier tweens set its start value) to its end and
+ *  back, its channels cleared first; then put back every layer's live value the seek redrew. */
 function parseUnplayed(win: GsapWindow, element: Element, tween: ParsedTween, props: string[]) {
-  const gsap = !isParsed(tween) && tools(win, tween);
-  if (!gsap) return;
-  const channels = [...new Set([...props, ...TRANSFORM])];
-  const live = channels.map((p) => [p, gsap.getProperty(element, p)] as const);
+  const seek = !isParsed(tween) && seekable(win, tween);
+  if (!seek) return;
+  const { parent, gsap } = seek;
+  const live = liveValues(gsap, tween, element, props);
+  const now = parent.time();
+  const start = tween.startTime?.() ?? 0;
   gsap.set(element, { clearProps: props.join(",") });
+  // Re-read now, so GSAP rebuilds its transform cache from the cleared element before the seek.
+  for (const p of props) gsap.getProperty(element, p);
   try {
-    gsap.render(tween.duration?.() ?? 0);
+    parent.seek(start, true);
+    parent.seek(start + (tween.duration?.() ?? 0), true);
   } finally {
-    gsap.render(0);
-    putBack(gsap, element, live);
+    parent.seek(now, true);
+    putBack(gsap, live);
   }
 }
 
@@ -120,27 +129,39 @@ function isParsed(tween: ParsedTween): boolean {
   return Boolean(tween._initted) && parts.every((part) => part._initted);
 }
 
-function tools(win: GsapWindow, tween: ParsedTween) {
+type GsapTools = {
+  getProperty: (el: Element, p: string) => unknown;
+  set: (el: Element, v: Record<string, unknown>) => void;
+};
+
+function seekable(win: GsapWindow, tween: ParsedTween) {
+  const { parent } = tween;
   const gsap = win.gsap;
-  if (!tween.render || !gsap?.getProperty || !gsap.set) return null;
-  const render = tween.render.bind(tween);
+  if (!parent?.seek || !parent.time || !gsap?.getProperty || !gsap.set) return null;
   return {
-    getProperty: gsap.getProperty.bind(gsap),
-    set: gsap.set.bind(gsap),
-    render: (time: number) => render(time, true, true),
+    parent: { seek: parent.seek.bind(parent), time: parent.time.bind(parent) },
+    gsap: { getProperty: gsap.getProperty.bind(gsap), set: gsap.set.bind(gsap) } as GsapTools,
   };
 }
 
-function putBack(
-  gsap: {
-    getProperty: (el: Element, p: string) => unknown;
-    set: (el: Element, v: Record<string, unknown>) => void;
-  },
-  element: Element,
-  live: ReadonlyArray<readonly [string, unknown]>,
-) {
-  const moved = live.filter(([p, v]) => v != null && gsap.getProperty(element, p) !== v);
-  if (moved.length > 0) gsap.set(element, Object.fromEntries(moved));
+// The channels a gesture draws live with gsap.set, on any layer the seek may redraw.
+const DRAFT_CHANNELS = [...TRANSFORM, "width", "height"];
+
+function liveValues(gsap: GsapTools, tween: ParsedTween, element: Element, props: string[]) {
+  const layers = new Set<Element>([element]);
+  for (const child of tween.parent?.getChildren?.(true, true, false) ?? [])
+    for (const target of child.targets?.() ?? []) layers.add(target);
+  return [...layers].map((layer) => {
+    const channels = new Set([...DRAFT_CHANNELS, ...(layer === element ? props : [])]);
+    return [layer, [...channels].map((p) => [p, gsap.getProperty(layer, p)] as const)] as const;
+  });
+}
+
+function putBack(gsap: GsapTools, live: ReturnType<typeof liveValues>) {
+  for (const [layer, values] of live) {
+    const moved = values.filter(([p, v]) => v != null && gsap.getProperty(layer, p) !== v);
+    if (moved.length > 0) gsap.set(layer, Object.fromEntries(moved));
+  }
 }
 
 /** Start and end values from GSAP's own parse of the tween, as loaded from the file. Null when

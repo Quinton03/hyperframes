@@ -170,6 +170,7 @@ export function planValueAtPlayhead(edit: PlayheadEdit): PlayheadEditPlan {
   const norm = normalize(edit);
   if ("reason" in norm) return refuse(norm.reason);
   const keyframes = norm.keyframes;
+  const authored = keyframes.length;
   // GSAP runs `scale` beside scaleX/scaleY and the longhands win, so a per-axis edit splits it.
   if ("scaleX" in values || "scaleY" in values) {
     for (const kf of keyframes) {
@@ -187,7 +188,6 @@ export function planValueAtPlayhead(edit: PlayheadEdit): PlayheadEditPlan {
   }
   if (Object.keys(values).some((prop) => !keyframes.some((kf) => kf.properties[prop] != null)))
     return refuse("implicit-end-unknown");
-  const authored = keyframes.length;
   let position = start;
   let span = duration;
 

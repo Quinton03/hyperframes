@@ -78,6 +78,22 @@ window.__timelines["t"] = tl;`;
   timeline.kill();
 });
 
+it("reads a later tween's start from the earlier tween on the same layer, as playback does", () => {
+  const x = Object.assign(document.body.appendChild(document.createElement("div")), { id: "x" });
+  const src = `var tl = gsap.timeline({ paused: true });
+tl.to("#x", { x: 50, duration: 4, ease: "none" }, 0);
+tl.to("#x", { x: 100, duration: 1, ease: "none", overwrite: "auto" }, 2);
+window.__timelines["t"] = tl;`;
+  const { timeline, iframe } = play(src, 0.5);
+
+  const tween = findParsedTween(iframe, x, parseGsapScriptAcorn(src).animations[1]!);
+
+  expect(parsedImplicitEndValue(tween)("x", "start")).toBe(25);
+  timeline.seek(2.5);
+  expect(gsap.getProperty(x, "x")).toBe(62.5);
+  timeline.kill();
+});
+
 it("names only an ease GSAP built in, and refuses a custom function rather than guess", () => {
   const custom = { vars: { ease: (p: number) => p * p } };
   const iframe = { contentWindow: { gsap } } as unknown as HTMLIFrameElement;

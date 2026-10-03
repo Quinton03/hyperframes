@@ -131,7 +131,12 @@ export async function commitGsapPositionFromDrag(
         keyframes: temporalKeyframes,
         ease: "none",
       },
-      { label: "Move layer (new keyframe)", softReload: true, beforeReload: restoreOffset },
+      {
+        label: "Move layer (new keyframe)",
+        keyframeAction: "add",
+        softReload: true,
+        beforeReload: restoreOffset,
+      },
     );
     return { status: "persisted" };
   }

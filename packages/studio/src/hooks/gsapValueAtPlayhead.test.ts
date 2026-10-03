@@ -451,6 +451,27 @@ describe("planValueAtPlayhead", () => {
     expect(result.ok && result.mutation.keyframes.map((k) => k.properties.x)).toEqual([0, 15, 20]);
   });
 
+  it("reports an add only when it writes a keyframe the tween did not have", () => {
+    const changed = plan({
+      anim: kf([
+        { percentage: 0, properties: { x: 0 } },
+        { percentage: 100, properties: { x: 20 } },
+      ]),
+      at: { time: 4 },
+      values: { x: 15 },
+    });
+    const held = plan({
+      anim: kf([{ percentage: 100, properties: { x: 20 } }]),
+      at: { time: 4 },
+      values: { y: 5 },
+      backfill: { y: 0 },
+      holdFromStart: true,
+    });
+    expect(changed.ok && changed.added).toBe(false);
+    expect(held.ok && held.mutation.keyframes.length).toBe(2);
+    expect(held.ok && held.added).toBe(true);
+  });
+
   it("eases the new segment like the one it splits", () => {
     const result = plan({
       anim: kf([{ percentage: 100, properties: { x: 20 } }], "power2.in"),
