@@ -795,11 +795,17 @@ export async function injectVideoFramesBatch(
         img.decoding = "sync";
         if (img.getAttribute("src") !== item.dataUri) {
           img.src = item.dataUri;
+          // A frame that fails to load must fail the capture: the native video is hidden below, so a
+          // swallowed error would paint a blank or stale frame into the render.
+          const source = item.dataUri.startsWith("data:") ? "inline frame" : item.dataUri;
           pendingDecodes.push(
-            img
-              .decode()
-              .catch(() => undefined)
-              .then(() => undefined),
+            img.decode().catch((error: unknown) => {
+              throw new Error(
+                `Video frame for "${item.videoId}" failed to load (${source}): ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            }),
           );
         }
         img.style.opacity = String(computedOpacity);
