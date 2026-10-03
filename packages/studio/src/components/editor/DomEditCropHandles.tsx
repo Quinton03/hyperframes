@@ -281,6 +281,7 @@ export function DomEditCropHandles({
         <CropPresetBar
           left={frame.left + frame.width / 2}
           top={frame.top}
+          drawnFrom={rect}
           elementWidth={width}
           elementHeight={height}
           onApply={applyPresetInsets}
