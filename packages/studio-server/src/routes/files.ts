@@ -674,10 +674,10 @@ const SEPARATOR = String.raw`\\{0,2}[\\/]`;
 const REFERENCE_START = String.raw`(?<![\w./\\+-])`;
 const FILE_END = String.raw`(?![\w-]|\.\w)`;
 
-function referencePattern(oldPath: string, isDirectory: boolean, relative: boolean): RegExp {
+function referencePattern(oldPath: string, isDirectory: boolean, bareOrDotLead: boolean): RegExp {
   const name = oldPath.split("/").map(escapeRegExp).join(SEPARATOR);
   const end = isDirectory ? `(?=${SEPARATOR})` : FILE_END;
-  const lead = relative
+  const lead = bareOrDotLead
     ? String.raw`(?:\.${SEPARATOR})?`
     : String.raw`(?:\.{1,2}${SEPARATOR}|${SEPARATOR}){0,4}`;
   return new RegExp(String.raw`${REFERENCE_START}(?<lead>${lead})${name}${end}`, "g");
@@ -697,15 +697,14 @@ function applyEdits(text: string, edits: Edit[]): string {
 
 // A match inside the longer path of a file or folder that exists (`a.png&b.png`, `other assets/`) is that path's.
 // Existing paths are indexed by the text after the old path, then the text before it, so a match costs a few lookups.
-// `relative` takes only a bare or `./` lead: the spelling a file uses for a path beside it.
 function referenceEdits(
   oldPath: string,
   newPath: string,
   isDirectory: boolean,
   existing: readonly string[],
-  relative = false,
+  bareOrDotLead = false,
 ): (text: string) => Edit[] {
-  const pattern = referencePattern(oldPath, isDirectory, relative);
+  const pattern = referencePattern(oldPath, isDirectory, bareOrDotLead);
   const around = new Map<string, Map<number, Set<string>>>();
   const afterLengths = new Set<number>();
   let window = 0;
@@ -737,7 +736,10 @@ function referenceEdits(
           )
         );
       });
-      return inLonger ? [] : [{ at, end: offset + match.length, text: newPath }];
+      const climbsOut = /^\/\.\.(\/|$)/.test(
+        normalized(text.slice(offset + match.length, offset + match.length + 6)),
+      );
+      return inLonger || climbsOut ? [] : [{ at, end: offset + match.length, text: newPath }];
     });
 }
 
@@ -798,15 +800,13 @@ function updateReferences(
 
   const existing = projectPaths(projectDir);
   const rootEdits = referenceEdits(oldPath, newPath, isDirectory, existing);
-  // A folder holding the old path may name it relative to itself (`clips/a.png` in `assets/`). Only those
-  // folders, at most the path's depth, get a second rewriter, so the cost stays one pass per file.
-  const parents = new Map<string, (text: string) => Edit[]>();
+  const parentFolderEdits = new Map<string, (text: string) => Edit[]>();
   for (let at = oldPath.indexOf("/"); at > 0; at = oldPath.indexOf("/", at + 1)) {
     const dir = oldPath.slice(0, at);
     const inside = existing
       .filter((path) => path.startsWith(`${dir}/`))
       .map((path) => path.slice(at + 1));
-    parents.set(
+    parentFolderEdits.set(
       dir,
       referenceEdits(
         oldPath.slice(at + 1),
@@ -823,7 +823,7 @@ function updateReferences(
     const content = readableText(file);
     if (content === null) continue;
 
-    const beside = parents.get(relative(projectDir, dirname(file)).split(sep).join("/"));
+    const beside = parentFolderEdits.get(relative(projectDir, dirname(file)).split(sep).join("/"));
     // A bare path in a folder's file is relative to that folder, so its edit wins where both start.
     const updated = applyEdits(content, [...(beside?.(content) ?? []), ...rootEdits(content)]);
     if (updated !== content) {
