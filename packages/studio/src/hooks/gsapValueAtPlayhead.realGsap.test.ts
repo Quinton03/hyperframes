@@ -156,9 +156,10 @@ it("keeps a layer's other transform values while reading an unplayed tween", () 
     transformOrigin: "20px 30px 40px",
   });
 
-  findParsedTween(iframe, box, parseGsapScriptAcorn(src).animations[0]!);
+  const tween = findParsedTween(iframe, box, parseGsapScriptAcorn(src).animations[0]!);
   timeline.kill();
 
+  expect(parsedImplicitEndValue(tween)("x", "start")).toBe(0);
   const values = ["x", "skewX", "rotationX", "xPercent", "transformOrigin"];
   expect(values.map((p) => gsap.getProperty(box, p))).toEqual([77, 23, 19, 12, "20px 30px 40px"]);
 });

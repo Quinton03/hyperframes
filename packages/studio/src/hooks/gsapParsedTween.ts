@@ -72,7 +72,7 @@ export function findParsedTween(
   const keyframed = Boolean(anim.keyframes);
   for (const timeline of Object.values(win.__timelines)) {
     for (const tween of timeline?.getChildren?.(true) ?? []) {
-      const targets = elementTargets(tween);
+      const targets = (tween.targets?.() ?? []) as Array<{ id?: unknown }>;
       if (!targets.includes(element) && !targets.some((t) => element.id && t.id === element.id))
         continue;
       if (!startsAt(tween, start)) continue;
