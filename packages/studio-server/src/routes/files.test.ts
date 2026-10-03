@@ -1358,6 +1358,30 @@ describe("registerFileRoutes", () => {
     expect(payload.animations[0].targetSelector).toBe(".kicker");
   });
 
+  it("answers a revalidating read of an unchanged composition with a 304, and a changed one in full", async () => {
+    const projectDir = createProjectDir();
+    writeComp(projectDir, "scene.html", TEMPLATE_COMP);
+    const app = new Hono();
+    registerFileRoutes(app, createAdapter(projectDir));
+    const url = "http://localhost/projects/demo/gsap-animations/compositions/scene.html";
+
+    const first = await app.request(url);
+    const etag = first.headers.get("ETag");
+    expect(etag).toBeTruthy();
+
+    const unchanged = await app.request(url, { headers: { "If-None-Match": etag ?? "" } });
+    expect(unchanged.status).toBe(304);
+
+    writeComp(
+      projectDir,
+      "scene.html",
+      TEMPLATE_COMP.replace("</template>", "<!-- edited --></template>"),
+    );
+    const changed = await app.request(url, { headers: { "If-None-Match": etag ?? "" } });
+    expect(changed.status).toBe(200);
+    expect(changed.headers.get("ETag")).not.toBe(etag);
+  });
+
   // A composition with a fromTo tween — used by the fromProperties mutation tests.
   const FROMTO_COMP = `<!DOCTYPE html><html><body data-duration="3">
 <div id="box" data-start="0" data-duration="3" style="opacity:0"></div>

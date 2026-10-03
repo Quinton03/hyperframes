@@ -1,5 +1,13 @@
 import { usePlayerStore, type TimelineElement } from "../store/playerStore";
-import { expandToLinkedMembers, linkedMembersOf } from "./audioClipLink";
+import {
+  dropMisalignedTrimPartners,
+  expandToLinkedMembers,
+  linkedGestureKeys,
+  linkedMembersOf,
+} from "./audioClipLink";
+import { buildTimelineGroupResizeMembers } from "./timelineGroupEditing";
+import { resolveGroupMovers } from "./timelineMultiDragPreview";
+import { MAX_HAND_EDIT_CLIPS } from "./timelineEditing";
 import { isLinkedSelectionOn } from "../../utils/linkedClipPreferences";
 
 /**
@@ -38,4 +46,30 @@ export function toggleClipWithLinks(key: string, altKey: boolean): TimelineEleme
   state.setSelection(next, removing ? state.selectedElementId : key);
   const primary = usePlayerStore.getState().selectedElementId;
   return state.elements.find((el) => (el.key ?? el.id) === primary) ?? null;
+}
+
+/** Whether a hand drag on `grabbed` (trimming `edge`, or null to move) would change more clips than allowed. */
+export function exceedsHandEditLimit(
+  grabbed: TimelineElement,
+  altKey: boolean,
+  edge: "start" | "end" | null,
+): boolean {
+  const { selectedElementIds, elements } = usePlayerStore.getState();
+  const grabbedKey = grabbed.key ?? grabbed.id;
+  const keys = linkedGestureKeys(
+    selectedElementIds,
+    grabbed,
+    elements,
+    altKey,
+    isLinkedSelectionOn(),
+  );
+  const changed = edge
+    ? buildTimelineGroupResizeMembers(
+        elements,
+        dropMisalignedTrimPartners(keys, grabbed, elements, edge),
+        grabbedKey,
+        edge,
+      )
+    : resolveGroupMovers(elements, keys, grabbedKey);
+  return (changed?.length ?? 1) > MAX_HAND_EDIT_CLIPS;
 }

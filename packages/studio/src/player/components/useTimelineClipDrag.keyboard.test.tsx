@@ -49,6 +49,7 @@ function mount(order = [0, 1, 2]) {
   const host = document.createElement("div");
   const root = createRoot(host);
   const onMoveElements = vi.fn();
+  const onBlockedEditAttempt = vi.fn();
   const trackOrderRef = { current: order };
   const trackInsertLayoutRef = { current: buildTimelineTrackInsertLayout(order, groups) };
   let state: ReturnType<typeof useTimelineClipDrag>;
@@ -68,6 +69,7 @@ function mount(order = [0, 1, 2]) {
       },
       onMoveElement: vi.fn(),
       onMoveElements,
+      onBlockedEditAttempt,
       setShowPopover: () => {},
       setRangeSelectionRef: { current: null },
     });
@@ -83,6 +85,7 @@ function mount(order = [0, 1, 2]) {
     key,
     clip,
     onMoveElements,
+    onBlockedEditAttempt,
     root,
     elements,
     changeOrder(next: number[]) {
@@ -160,4 +163,15 @@ it("leaves Space on a nested fade slider to the slider", () => {
   expect(view.drag).toBeNull();
   expect(event.defaultPrevented).toBe(false);
   act(() => view.root.unmount());
+});
+
+it("does not pick up a clip held in a selection above the hand-move limit", () => {
+  const view = mount();
+  usePlayerStore.getState().setSelection(["top", "hero", "tail", "bottom"], "hero");
+  view.key(" ");
+  expect(view.drag).toBeNull();
+  expect(view.onBlockedEditAttempt).toHaveBeenCalledWith(
+    expect.objectContaining({ id: "hero" }),
+    "edit-many",
+  );
 });

@@ -248,7 +248,9 @@ export interface TimelinePromptElement {
   track: number;
 }
 
-export type BlockedTimelineEditIntent = "move" | "resize-start" | "resize-end";
+export type BlockedTimelineEditIntent = "move" | "edit-many" | "resize-start" | "resize-end";
+
+export const MAX_HAND_EDIT_CLIPS = 3;
 
 export interface TimelineRangeSelection {
   start: number;

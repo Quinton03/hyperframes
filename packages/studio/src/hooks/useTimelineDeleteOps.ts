@@ -122,38 +122,32 @@ export function useTimelineDeleteOps({
             writeFile: writeProjectFile,
             recordEdit,
             rewrite: async (originalContent) => {
-              // Remove every selected element before saving once. The server rewrites
-              // the file per call, so `removedContent` after the last one holds them
-              // all — which is what makes this a single history entry, and a single
-              // undo, rather than one per clip.
-              let removedContent = originalContent;
-              for (const target of sameFile) {
+              // One request removes every selected element and rewrites the file once, so a
+              // large selection is a single round trip and a single history entry.
+              const patchTargets = sameFile.map((target) => {
                 const patchTarget = buildPatchTarget(target);
                 if (!patchTarget) {
                   throw new Error(`Timeline element ${target.id} is missing a patchable target`);
                 }
-
-                const removeResponse = await studioApiFetch(
-                  buildProjectApiPath(
-                    pid,
-                    `/file-mutations/remove-element/${encodeURIComponent(targetPath)}`,
-                  ),
-                  {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", ...studioWriteHeaders() },
-                    body: JSON.stringify({ target: patchTarget }),
-                  },
-                );
-                if (!removeResponse.ok) {
-                  throw new Error(`Failed to delete ${target.id} from ${targetPath}`);
-                }
-
-                const removeData = (await removeResponse.json()) as {
-                  changed?: boolean;
-                  content?: string;
-                };
-                if (typeof removeData.content === "string") removedContent = removeData.content;
+                return patchTarget;
+              });
+              const removeResponse = await studioApiFetch(
+                buildProjectApiPath(
+                  pid,
+                  `/file-mutations/remove-elements/${encodeURIComponent(targetPath)}`,
+                ),
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", ...studioWriteHeaders() },
+                  body: JSON.stringify({ targets: patchTargets }),
+                },
+              );
+              if (!removeResponse.ok) {
+                throw new Error(`Failed to delete ${sameFile.length} clips from ${targetPath}`);
               }
+              const removeData = (await removeResponse.json()) as { content?: string };
+              const removedContent =
+                typeof removeData.content === "string" ? removeData.content : originalContent;
               // Shrink to the furthest remaining clip end, read from the post-removal source:
               // store durations are runtime-truncated.
               const deleteContentEnd = furthestClipEndFromSource(removedContent);

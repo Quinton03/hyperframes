@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import {
+  mergeFileChangeAffectedCompositions,
   readFileChangeAffectedCompositions,
   readFileChangeAffectsPreview,
   readFileChangeField,
@@ -163,7 +164,7 @@ export function useExternalFileChangeCoordinator({
   onAcceptedPersistedFileChange,
   refreshFileTree,
 }: ExternalFileChangeCoordinatorOptions): ExternalFileChangeCoordinatorHandle {
-  const [blocked, setBlocked] = useState<ExternalFileChangeBlockedState | null>(null);
+  const [blocked, setBlockedState] = useState<ExternalFileChangeBlockedState | null>(null);
   const generationRef = useRef(0);
   const mountedRef = useRef(true);
   const lastEventIdentityRef = useRef<string | null>(null);
@@ -172,6 +173,14 @@ export function useExternalFileChangeCoordinator({
   const drainingRef = useRef(false);
   const pendingPayloadRef = useRef<{ payload: unknown } | null>(null);
   blockedRef.current = blocked;
+  // A newer blocked change replaces the held one, so it inherits the thumbnails the held one owed.
+  const setBlocked = useCallback((next: ExternalFileChangeBlockedState | null) => {
+    setBlockedState((held) =>
+      next && held
+        ? { ...next, payload: mergeFileChangeAffectedCompositions(held.payload, next.payload) }
+        : next,
+    );
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -185,7 +194,7 @@ export function useExternalFileChangeCoordinator({
     generationRef.current += 1;
     setBlocked(null);
     lastEventIdentityRef.current = null;
-  }, [projectId, activeCompPath]);
+  }, [projectId, activeCompPath, setBlocked]);
 
   useEffect(() => {
     if (!projectId || !recoveryFilePath || !loadConflictSnapshot) return;
@@ -229,7 +238,7 @@ export function useExternalFileChangeCoordinator({
     return () => {
       cancelled = true;
     };
-  }, [loadConflictSnapshot, projectId, recoveryFilePath]);
+  }, [loadConflictSnapshot, projectId, recoveryFilePath, setBlocked]);
 
   const reloadAcceptedGeneration = useCallback(
     (path: string, affectsPreview = true) => {
@@ -275,14 +284,22 @@ export function useExternalFileChangeCoordinator({
             await deleteConflictSnapshot(projectId!, path);
           } catch (error) {
             if (mountedRef.current && generation === generationRef.current) {
-              setBlocked({ ...previousBlocked, generation, error });
+              setBlocked({
+                ...previousBlocked,
+                generation,
+                error,
+                payload: mergeFileChangeAffectedCompositions(payload, previousBlocked.payload),
+              });
             }
             return;
           }
         }
         if (!mountedRef.current || generation !== generationRef.current) return;
         setBlocked(null);
-        onAcceptedPersistedFileChange(path, readFileChangeAffectedCompositions(payload));
+        const owed = previousBlocked
+          ? mergeFileChangeAffectedCompositions(previousBlocked.payload, payload)
+          : payload;
+        onAcceptedPersistedFileChange(path, readFileChangeAffectedCompositions(owed));
         reloadAcceptedGeneration(path, readFileChangeAffectsPreview(payload));
         return;
       }
@@ -344,6 +361,7 @@ export function useExternalFileChangeCoordinator({
     },
     [
       drainPendingChanges,
+      setBlocked,
       projectId,
       deleteConflictSnapshot,
       getPendingCandidate,
@@ -419,7 +437,12 @@ export function useExternalFileChangeCoordinator({
         waiting != null &&
         readFileChangeAffectsPreview(waiting) &&
         !readFileChangeAffectsPreview(payload);
-      if (!waitingChangeOutranksThis) pendingPayloadRef.current = { payload };
+      if (!waitingChangeOutranksThis) {
+        pendingPayloadRef.current = {
+          payload:
+            waiting == null ? payload : mergeFileChangeAffectedCompositions(waiting, payload),
+        };
+      }
       void startDrainLoop();
     },
     [projectId, pendingTimelineEditPathRef, startDrainLoop, onAcceptedPersistedFileChange],
@@ -471,6 +494,7 @@ export function useExternalFileChangeCoordinator({
     },
     [
       deleteConflictSnapshot,
+      setBlocked,
       discardPendingChanges,
       onUseExternalFile,
       onAcceptedPersistedFileChange,
@@ -529,6 +553,7 @@ export function useExternalFileChangeCoordinator({
     reloadAcceptedGeneration(conflict.filePath);
   }, [
     deleteConflictSnapshot,
+    setBlocked,
     discardPendingChanges,
     overwriteConflict,
     projectId,

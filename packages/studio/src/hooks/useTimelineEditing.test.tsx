@@ -1296,7 +1296,7 @@ describe("useTimelineEditing duration rollback on failed persist", () => {
       if (url.includes("/api/projects/p1/files/")) {
         return jsonResponse({ content: DELETE_SOURCE });
       }
-      if (url.includes("/api/projects/p1/file-mutations/remove-element/")) {
+      if (url.includes("/api/projects/p1/file-mutations/remove-elements/")) {
         return jsonResponse({ changed: true, content: DELETE_REMOVED_SOURCE });
       }
       throw new Error(`Unexpected fetch: ${url}`);

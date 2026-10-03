@@ -236,6 +236,10 @@ function tagRootCompositionFile(bodyHtml: string, compPath: string): string {
   );
 }
 
+export function rootHeadContent(rootHtml: string): string {
+  return rootHtml.match(/<head[^>]*>([\s\S]*?)<\/head>/i)?.[1] ?? "";
+}
+
 /**
  * Build a standalone HTML page for a sub-composition.
  *
@@ -318,11 +322,7 @@ export function buildSubCompositionHtml(
   const indexPath = join(projectDir, "index.html");
   let headContent = "";
 
-  if (existsSync(indexPath)) {
-    const indexHtml = readFileSync(indexPath, "utf-8");
-    const headMatch = indexHtml.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
-    headContent = headMatch?.[1] ?? "";
-  }
+  if (existsSync(indexPath)) headContent = rootHeadContent(readFileSync(indexPath, "utf-8"));
 
   // Inject <base> for relative asset resolution (before other tags)
   if (baseHref && !hasBaseElement(headContent)) {

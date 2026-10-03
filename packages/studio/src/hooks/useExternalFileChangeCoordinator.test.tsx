@@ -162,6 +162,85 @@ describe("external file change coordinator", () => {
     expect(onAcceptedPersistedFileChange).toHaveBeenLastCalledWith("scene.html", ["scene.html"]);
   });
 
+  it("keeps a waiting head edit's thumbnail refresh when a later write replaces it", async () => {
+    let release = () => {};
+    const inFlight = new Promise<void>((resolve) => (release = resolve));
+    const onAcceptedPersistedFileChange = vi.fn();
+    let drains = 0;
+    await mountCoordinator({
+      onAcceptedPersistedFileChange,
+      drainPendingChanges: async () => {
+        if (drains++ === 0) await inFlight;
+        return { status: "clean" as const };
+      },
+    });
+    await act(async () => handler?.({ path: "other.html", content: "a", version: "v1" }));
+    await act(async () => handler?.({ path: "index.html", content: "b", version: "v2" }));
+    await act(async () =>
+      handler?.({
+        path: "index.html",
+        content: "c",
+        version: "v3",
+        affectedCompositions: ["index.html"],
+      }),
+    );
+    await act(async () => release());
+    expect(onAcceptedPersistedFileChange).toHaveBeenLastCalledWith("index.html", null);
+  });
+
+  it("keeps a head edit's thumbnail refresh through a conflict that a later write replaces", async () => {
+    const onAcceptedPersistedFileChange = vi.fn();
+    const conflict = new StudioFileConflictError({
+      filePath: "index.html",
+      currentVersion: "v1",
+      currentContent: "theirs",
+      attemptedContent: "mine",
+    });
+    const { captured } = await mountCoordinator({
+      onAcceptedPersistedFileChange,
+      drainPendingChanges: async () => ({ status: "conflict" as const, error: conflict }),
+    });
+    await act(async () => handler?.({ path: "index.html", content: "head", version: "v1" }));
+    await act(async () =>
+      handler?.({
+        path: "index.html",
+        content: "body",
+        version: "v2",
+        affectedCompositions: ["index.html"],
+      }),
+    );
+    await act(async () => captured.handle?.useExternalFile());
+    expect(onAcceptedPersistedFileChange).toHaveBeenLastCalledWith("index.html", null);
+  });
+
+  it("keeps a held head edit's thumbnail refresh when a later write saves cleanly", async () => {
+    const onAcceptedPersistedFileChange = vi.fn();
+    const conflict = new StudioFileConflictError({
+      filePath: "index.html",
+      currentVersion: "v1",
+      currentContent: "theirs",
+      attemptedContent: "mine",
+    });
+    let drains = 0;
+    await mountCoordinator({
+      onAcceptedPersistedFileChange,
+      drainPendingChanges: async () =>
+        drains++ === 0
+          ? { status: "conflict" as const, error: conflict }
+          : { status: "clean" as const },
+    });
+    await act(async () => handler?.({ path: "index.html", content: "head", version: "v1" }));
+    await act(async () =>
+      handler?.({
+        path: "index.html",
+        content: "body",
+        version: "v2",
+        affectedCompositions: ["index.html"],
+      }),
+    );
+    expect(onAcceptedPersistedFileChange).toHaveBeenLastCalledWith("index.html", null);
+  });
+
   it("does not refresh the tree for a suppressed self-write echo", async () => {
     const refreshFileTree = vi.fn();
     await mountCoordinator({ refreshFileTree });
@@ -350,6 +429,29 @@ describe("external file change coordinator", () => {
     await act(async () => captured.handle?.retry());
     expect(deleteConflictSnapshot).toHaveBeenCalledWith("project-a", "index.html");
     expect(onAcceptedPersistedFileChange).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the failed file's payload when a snapshot delete fails for another file", async () => {
+    const { captured } = await mountCoordinator({
+      drainPendingChanges: vi
+        .fn()
+        .mockResolvedValueOnce({ status: "failed" as const, error: new Error("offline") })
+        .mockResolvedValueOnce({ status: "clean" as const }),
+      getPendingCandidate: () => ({ path: "scene.html", content: "studio" }),
+      deleteConflictSnapshot: vi.fn(async () => {
+        throw new Error("delete failed");
+      }),
+    });
+    await act(async () =>
+      handler?.({ path: "scene.html", content: "scene-external", version: "s1" }),
+    );
+    await act(async () =>
+      handler?.({ path: "index.html", content: "index-external", version: "i1" }),
+    );
+    expect(captured.handle?.blocked).toMatchObject({
+      status: "failed",
+      payload: { path: "scene.html", content: "scene-external", version: "s1" },
+    });
   });
 
   it("restores and overwrites from a durable failed draft", async () => {

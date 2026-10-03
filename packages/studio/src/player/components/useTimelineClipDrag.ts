@@ -29,6 +29,7 @@ import type {
 } from "./timelineClipDragTypes";
 import { getTimelineElementIndexes } from "../lib/timelineElementIndexes";
 import { dropMisalignedTrimPartners, linkedGestureKeys } from "./audioClipLink";
+import { exceedsHandEditLimit } from "./timelineLinkSelection";
 import { isLinkedSelectionOn } from "../../utils/linkedClipPreferences";
 import { useTimelineClipCapabilities } from "./timelineReadOnly";
 import { timelineClipFocusId } from "./timelineNavigationIdentity";
@@ -158,11 +159,8 @@ export function useTimelineClipDrag({
   const elementsRef = useRef(elements);
   elementsRef.current = elements;
 
-  // Perf (frozen-per-gesture): the snap-target set and the audio-track set are
-  // fixed for the duration of one drag/resize (the store is not re-authored mid
-  // gesture), so build each ONCE and reuse it across every pointermove and every
-  // auto-scroll frame. Both caches are cleared at gesture teardown
-  // (stopClipDragAutoScroll), so the next gesture rebuilds against fresh state.
+  // The snap-target and audio-track sets are fixed for one drag/resize (the store is not
+  // re-authored mid gesture): built once, reused per pointermove, cleared at teardown.
   const snapTargetsCacheRef = useRef<Map<string, TimelineSnapTarget[]>>(new Map());
   const dragAudioTracksRef = useRef<ReadonlySet<number> | null>(null);
 
@@ -272,8 +270,7 @@ export function useTimelineClipDrag({
   const blockedClipRef = useRef<BlockedClipState | null>(null);
   const suppressClickRef = useRef(false);
 
-  // Active multi-select group-resize session, created lazily on first movement.
-  // It owns a projection only; canonical store timing changes at commit.
+  // Group-resize session, created on first movement; a projection only, committed at the end.
   const groupResizeRef = useRef<TimelineGroupResizeSession | null>(null);
 
   const onMoveElementRef = useRef(onMoveElement);
@@ -541,6 +538,8 @@ export function useTimelineClipDrag({
       if (!element || !getClipCapabilities(element).canMove) return;
       event.preventDefault();
       event.stopImmediatePropagation();
+      if (exceedsHandEditLimit(element, false, null))
+        return void onBlockedEditAttemptRef.current?.(element, "edit-many");
       setShowPopover(false);
       setRangeSelectionRef.current?.(null);
       const row = keyboardPickupInsertRow(

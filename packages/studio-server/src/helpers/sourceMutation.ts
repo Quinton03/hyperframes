@@ -137,13 +137,28 @@ export function findTargetElement(
   }
 }
 
-export function removeElementFromHtml(source: string, target: SourceMutationTarget): string {
+/**
+ * Removes every target in one parse and one serialization. A target nested inside one already
+ * removed no longer matches, which is a normal outcome rather than a failure.
+ */
+export function removeElementsFromHtml(
+  source: string,
+  targets: readonly SourceMutationTarget[],
+): string {
   const { document, wrappedFragment } = parseSourceDocument(source);
-  const element = findTargetElement(document, target);
-  if (!element) return source;
-
-  removeElementWithGsapCascade(document, element);
+  let removed = false;
+  for (const target of targets) {
+    const element = findTargetElement(document, target);
+    if (!element) continue;
+    removeElementWithGsapCascade(document, element);
+    removed = true;
+  }
+  if (!removed) return source;
   return wrappedFragment ? document.body.innerHTML || "" : document.toString();
+}
+
+export function removeElementFromHtml(source: string, target: SourceMutationTarget): string {
+  return removeElementsFromHtml(source, [target]);
 }
 
 export function isHTMLElement(el: Node): el is HTMLElement {
@@ -296,11 +311,21 @@ export function patchElementInHtml(
   return { html: ensureHfIds(html), matched: true };
 }
 
-export function probeElementInSource(source: string, target: SourceMutationTarget): boolean {
-  if (!target.id && !target.hfId && !target.selector) return false;
+/** Whether each target exists in `source`; the document is parsed once however many targets ask. */
+export function probeElementsInSource(
+  source: string,
+  targets: readonly SourceMutationTarget[],
+): boolean[] {
   const { document } = parseSourceDocument(source);
-  const el = findTargetElement(document, target);
-  return el != null && isHTMLElement(el);
+  return targets.map((target) => {
+    if (!target.id && !target.hfId && !target.selector) return false;
+    const el = findTargetElement(document, target);
+    return el != null && isHTMLElement(el);
+  });
+}
+
+export function probeElementInSource(source: string, target: SourceMutationTarget): boolean {
+  return probeElementsInSource(source, [target])[0] ?? false;
 }
 
 export interface SplitElementResult {
