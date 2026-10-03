@@ -228,6 +228,43 @@ it("does not give back a claim on an edit another press has already undone", asy
   expect(file()).toBe("A");
 });
 
+it("does not give back a claim on an edit a later press undid first", async () => {
+  const { hook, file, save, readFile } = await studio();
+  save("B");
+  await act(() =>
+    hook().recordEdit({
+      label: "Moved Title",
+      files: { "index.html": { before: "A", after: "B" } },
+    }),
+  );
+  await vi.waitFor(() => expect(hook().undoLabel).toBe("Moved Title"));
+  const atKey = hook().claims();
+  save("C");
+  await act(() =>
+    hook().recordEdit({
+      label: "Moved Card",
+      files: { "index.html": { before: "B", after: "C" } },
+    }),
+  );
+  let fail!: (error: Error) => void;
+  const held = <T>(_paths: readonly string[], _task: () => Promise<T>) =>
+    new Promise<T>((_resolve, reject) => {
+      fail = reject;
+    });
+  const failed = hook()
+    .undo({ readFile, claimedAfter: atKey, serialize: held })
+    .catch(() => undefined);
+
+  const second = await act(() => hook().undo({ readFile, claimedAfter: atKey }));
+  fail(new Error("save failed"));
+  await failed;
+  const third = await act(() => hook().undo({ readFile, claimedAfter: atKey }));
+
+  expect(second).toMatchObject({ ok: true, label: "Undid: Moved Card" });
+  expect(third).toMatchObject({ ok: true, label: "Undid: Moved Title" });
+  expect(file()).toBe("A");
+});
+
 it("a drag's edits under one key undo as one step, even before the drag goes idle", async () => {
   const { hook, file, save, readFile } = await studio();
   const writes: Array<[before: string, after: string]> = [

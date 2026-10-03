@@ -56,6 +56,7 @@ function createOwnHistory() {
   let next: Record<"undo" | "redo", NextStep | null> | null = null;
   let changes = 0;
   let claimed = { count: 0, id: "" };
+  const undoneIds = new Set<string>();
   const remember = (id: string, files: OwnFiles) => {
     const known = own.get(id) ?? {};
     for (const [path, { before, after }] of Object.entries(files)) {
@@ -86,10 +87,11 @@ function createOwnHistory() {
       const taken = claimed;
       claimed = { ...claimed, id: "" };
       return () => {
-        if (claimed.count === taken.count) claimed = taken;
+        if (claimed.count === taken.count && !undoneIds.has(taken.id)) claimed = taken;
       };
     },
     stepped: (entry: { id: string; undoes?: string }) => {
+      if (entry.undoes) undoneIds.add(entry.undoes);
       if (entry.undoes && claimed.id === entry.undoes) claimed = { ...claimed, id: "" };
       const undone = entry.undoes ? own.get(entry.undoes) : undefined;
       if (!undone) return;
