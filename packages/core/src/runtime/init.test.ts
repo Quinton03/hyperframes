@@ -2939,6 +2939,31 @@ describe("initSandboxRuntimeModular", () => {
     vi.useRealTimers();
   });
 
+  it("fires a call on the playhead once when a readiness pass runs between seeks", () => {
+    vi.useFakeTimers();
+    const root = document.createElement("div");
+    root.setAttribute("data-composition-id", "main");
+    root.setAttribute("data-root", "true");
+    root.setAttribute("data-start", "0");
+    root.setAttribute("data-duration", "10");
+    root.setAttribute("data-width", "1920");
+    root.setAttribute("data-height", "1080");
+    document.body.appendChild(root);
+
+    const fired = vi.fn();
+    const main = gsap.timeline({ paused: true }).to({ x: 0 }, { x: 1, duration: 10 });
+    main.call(fired, [], 2);
+    window.__timelines = { main };
+    initSandboxRuntimeModular();
+
+    window.__player?.renderSeek(2);
+    vi.runOnlyPendingTimers();
+    window.__player?.renderSeek(3);
+
+    expect(fired).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
   it("shows pip video at global start time even when host composition starts late", () => {
     // Regression: resolveStartForElement used to add the host composition's start on top of
     // the video's own data-start, causing double-offset. A pip video with data-start="45.40"

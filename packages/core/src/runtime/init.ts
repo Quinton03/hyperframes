@@ -3297,6 +3297,9 @@ export function initSandboxRuntimeModular(): void {
     postState(true);
   };
 
+  const isSeekedByRoot = (adapter: RuntimeDeterministicAdapter): boolean =>
+    adapter.name === "gsap" && Boolean(state.capturedTimeline);
+
   const runAdapters = (
     method: "discover" | "pause" | "play",
     timeSeconds = 0,
@@ -3311,7 +3314,7 @@ export function initSandboxRuntimeModular(): void {
         // keep runtime resilient against adapter-specific failures
         swallow("runtime.init.site8", err);
       }
-      if (method === "discover") {
+      if (method === "discover" && !isSeekedByRoot(adapter)) {
         try {
           adapter.seek({ time: timeSeconds, suppressEvents: true });
         } catch (err) {
@@ -3968,7 +3971,7 @@ export function initSandboxRuntimeModular(): void {
     onStatePost: postState,
     onDeterministicSeek: (timeSeconds, options) => {
       for (const adapter of state.deterministicAdapters) {
-        if (adapter.name === "gsap" && state.capturedTimeline) continue;
+        if (isSeekedByRoot(adapter)) continue;
         try {
           adapter.seek({
             time: Number(timeSeconds) || 0,
@@ -4371,7 +4374,7 @@ export function initSandboxRuntimeModular(): void {
     seekStandaloneRegisteredTimelines(t, opts);
     const pageAnimations = pageAnimationsForOnePass();
     for (const adapter of state.deterministicAdapters) {
-      if (adapter.name === "gsap" && tl) continue;
+      if (isSeekedByRoot(adapter)) continue;
       try {
         adapter.seek({ time: t, suppressEvents, pageAnimations });
       } catch (err) {
