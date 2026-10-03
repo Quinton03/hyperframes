@@ -38,7 +38,8 @@ import {
   hasNonHoldTweenForElement,
   POSITION_CHANNELS,
 } from "./gsapRuntimeKeyframes";
-import { assertGsapEditPersisted, GsapEditBlockedError, saveMove } from "./gsapEditOutcome";
+import { assertGsapEditPersisted, saveMove } from "./gsapEditOutcome";
+import { firstPreflightFailure } from "./gsapGroupPreflight";
 import type { GsapAnimationFetchOptions } from "./useGsapAnimationFetchFallback";
 import { refuseGsapTakeover, type ElementOffsetStagerDeps } from "./elementOffsetStager";
 import {
@@ -50,32 +51,6 @@ import {
 // Distinct coalesceKey per group drag so consecutive group drags don't fold
 // into one another's undo entry (module-local counter, not Date.now()).
 let groupDragCommitCounter = 0;
-
-function firstPreflightFailure(
-  results: PromiseSettledResult<void>[],
-  updates: DomEditGroupPathOffsetCommit[],
-  savedOnElement: Map<DomEditSelection, boolean>,
-): { error: unknown; selection: DomEditSelection } | null {
-  for (const [index, result] of results.entries()) {
-    if (result.status !== "rejected") continue;
-    const selection = updates[index]?.selection;
-    if (selection) return { error: result.reason, selection };
-  }
-  return secondFile(updates, savedOnElement);
-}
-
-/** The group's script writes go out as one batch to one file, so members from two files refuse. */
-function secondFile(
-  updates: DomEditGroupPathOffsetCommit[],
-  savedOnElement: Map<DomEditSelection, boolean>,
-): { error: unknown; selection: DomEditSelection } | null {
-  const scripted = updates.filter(({ selection }) => !savedOnElement.has(selection));
-  const file = scripted[0]?.selection.sourceFile;
-  const other = scripted.find(({ selection }) => selection.sourceFile !== file);
-  return other
-    ? { error: new GsapEditBlockedError("mixed-files"), selection: other.selection }
-    : null;
-}
 
 export interface UseGsapAwareEditingParams {
   domEditSelection: DomEditSelection | null;
