@@ -101,19 +101,14 @@ export function withLiveTiming(anim: GsapAnimation, tween: ParsedTween | null): 
   };
 }
 
-const TRANSFORM = [
-  ...["x", "y", "z", "xPercent", "yPercent", "rotation", "rotationX", "rotationY"],
-  ...["skewX", "skewY", "scaleX", "scaleY", "transformPerspective"],
-];
-
 /** GSAP parses a to() tween only when the playhead first passes it, and a soft reload resets that.
  *  Play its timeline from the tween's start (so earlier tweens set its start value) to its end and
- *  back, its channels cleared first; then put back every layer's live value the seek redrew. */
+ *  back, its channels cleared first; then restore every layer's inline style and GSAP cache. */
 function parseUnplayed(win: GsapWindow, element: Element, tween: ParsedTween, props: string[]) {
   const seek = !isParsed(tween) && seekable(win, tween);
   if (!seek) return;
   const { parent, gsap } = seek;
-  const live = liveValues(gsap, tween, element, props);
+  const before = layerStates(tween, element);
   const now = parent.time();
   const start = tween.startTime?.() ?? 0;
   gsap.set(element, { clearProps: props.join(",") });
@@ -124,7 +119,7 @@ function parseUnplayed(win: GsapWindow, element: Element, tween: ParsedTween, pr
     parent.seek(start + (tween.duration?.() ?? 0), true);
   } finally {
     parent.seek(now, true);
-    putBack(gsap, live);
+    restore(before);
   }
 }
 
@@ -148,23 +143,26 @@ function seekable(win: GsapWindow, tween: ParsedTween) {
   };
 }
 
-// The channels a gesture draws live with gsap.set, on any layer the seek may redraw.
-const DRAFT_CHANNELS = [...TRANSFORM, "width", "height"];
+type Layer = Element & { _gsap?: Record<string, unknown> };
 
-function liveValues(gsap: GsapTools, tween: ParsedTween, element: Element, props: string[]) {
-  const layers = new Set<Element>([element]);
+function layerStates(tween: ParsedTween, element: Element) {
+  const layers = new Set<Layer>([element]);
   for (const child of tween.parent?.getChildren?.(true, true, false) ?? [])
     for (const target of child.targets?.() ?? []) layers.add(target);
-  return [...layers].map((layer) => {
-    const channels = new Set([...DRAFT_CHANNELS, ...(layer === element ? props : [])]);
-    return [layer, [...channels].map((p) => [p, gsap.getProperty(layer, p)] as const)] as const;
-  });
+  return [...layers].map((layer) => ({
+    layer,
+    style: layer.getAttribute("style"),
+    cache: layer._gsap && { ...layer._gsap },
+  }));
 }
 
-function putBack(gsap: GsapTools, live: ReturnType<typeof liveValues>) {
-  for (const [layer, values] of live) {
-    const moved = values.filter(([p, v]) => v != null && gsap.getProperty(layer, p) !== v);
-    if (moved.length > 0) gsap.set(layer, Object.fromEntries(moved));
+function restore(states: ReturnType<typeof layerStates>) {
+  for (const { layer, style, cache } of states) {
+    if (style === null) layer.removeAttribute("style");
+    else layer.setAttribute("style", style);
+    if (!cache || !layer._gsap) continue;
+    for (const key of Object.keys(layer._gsap)) if (!(key in cache)) delete layer._gsap[key];
+    Object.assign(layer._gsap, cache);
   }
 }
 

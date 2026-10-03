@@ -128,13 +128,19 @@ it("keeps a layer's other transform values while reading an unplayed tween", () 
     "keyframes: { '0%': { opacity: 0 }, '100%': { opacity: 1, x: 300 } }, duration: 1",
   ).replace("}, 0);", "}, 2);");
   const { timeline, iframe } = play(src, 0.5);
-  gsap.set(box, { x: 77, skewX: 23, rotationX: 19, xPercent: 12 });
+  gsap.set(box, {
+    x: 77,
+    skewX: 23,
+    rotationX: 19,
+    xPercent: 12,
+    transformOrigin: "20px 30px 40px",
+  });
 
   findParsedTween(iframe, box, parseGsapScriptAcorn(src).animations[0]!);
   timeline.kill();
 
-  const values = ["x", "skewX", "rotationX", "xPercent"].map((p) => gsap.getProperty(box, p));
-  expect(values).toEqual([77, 23, 19, 12]);
+  const values = ["x", "skewX", "rotationX", "xPercent", "transformOrigin"];
+  expect(values.map((p) => gsap.getProperty(box, p))).toEqual([77, 23, 19, 12, "20px 30px 40px"]);
 });
 
 it("names only an ease GSAP built in, and refuses a custom function rather than guess", () => {
