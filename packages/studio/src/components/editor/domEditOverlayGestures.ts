@@ -256,6 +256,8 @@ export type UseDomEditOverlayGesturesOptions = {
   rafPausedRef: RefObject<boolean>;
   suppressNextBoxClickRef: RefObject<boolean>;
   setOverlayRect: (next: OverlayRect | null) => void;
+  /** A gesture's per-move rect: written to the chrome directly, committed when the gesture ends. */
+  previewOverlayRect: (next: OverlayRect) => void;
   setGroupOverlayItems: (next: GroupOverlayItem[]) => void;
   onBlockedMoveRef: RefObject<(selection: DomEditSelection, reason?: string) => void>;
   onManualDragStartRef: RefObject<(() => void) | undefined>;

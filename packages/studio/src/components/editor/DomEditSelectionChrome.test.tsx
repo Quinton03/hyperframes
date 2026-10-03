@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import type { DomEditSelection } from "./domEditing";
 import { DomEditGroupChrome, DomEditSelectionChrome } from "./DomEditSelectionChrome";
+import { NO_OVERLAY_RECT_DRAFT } from "./selectionChromeVars";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -50,6 +51,8 @@ describe("DomEditSelectionChrome crop composition", () => {
           allowCanvasMovement={false}
           allowBodyDrag
           boxRef={createRef()}
+          chromeRef={createRef()}
+          overlayRectDraft={NO_OVERLAY_RECT_DRAFT}
           boxChromeClass="border border-studio-accent/80"
           boxClipPath={undefined}
           selectionKey="headline"
@@ -61,8 +64,9 @@ describe("DomEditSelectionChrome crop composition", () => {
       );
     });
     const chrome = host.querySelector<HTMLElement>('[data-dom-edit-selection-box="true"]')!;
-    expect(chrome.style.cssText).toContain("left: 44px");
-    expect(chrome.style.cssText).toContain("width: 220px");
+    expect(chrome.parentElement!.style.getPropertyValue("--hf-sel-x")).toBe("44px");
+    expect(chrome.parentElement!.style.getPropertyValue("--hf-sel-w")).toBe("220px");
+    expect(chrome.style.width).toBe("var(--hf-sel-w)");
     expect(chrome.style.background).toBe("");
     expect(chrome.className).not.toMatch(/bg-/);
     expect(composition.documentElement.outerHTML).toBe(before);
@@ -105,6 +109,8 @@ describe("DomEditSelectionChrome crop composition", () => {
           allowCanvasMovement={true}
           allowBodyDrag
           boxRef={createRef()}
+          chromeRef={createRef()}
+          overlayRectDraft={NO_OVERLAY_RECT_DRAFT}
           boxChromeClass=""
           boxClipPath={undefined}
           selectionKey="clip"
@@ -165,6 +171,8 @@ describe("DomEditSelectionChrome while editing text", () => {
           allowCanvasMovement={true}
           allowBodyDrag
           boxRef={createRef()}
+          chromeRef={createRef()}
+          overlayRectDraft={NO_OVERLAY_RECT_DRAFT}
           boxChromeClass="border border-studio-accent/80"
           boxClipPath={undefined}
           selectionKey="copy"
@@ -250,6 +258,8 @@ describe("DomEditSelectionChrome with body drag off", () => {
           allowCanvasMovement
           allowBodyDrag={allowBodyDrag}
           boxRef={createRef()}
+          chromeRef={createRef()}
+          overlayRectDraft={NO_OVERLAY_RECT_DRAFT}
           boxChromeClass=""
           boxClipPath={undefined}
           selectionKey="box"
