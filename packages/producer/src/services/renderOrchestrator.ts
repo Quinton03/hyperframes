@@ -71,6 +71,8 @@ import {
   type CaptureVideoMetadataHint,
   type CaptureSession,
   type BeforeCaptureHook,
+  createVideoFrameInjector,
+  type FrameLookupTable,
   getEncoderPreset,
   distributeFrames,
   executeParallelCapture,
@@ -128,8 +130,8 @@ import {
   validateHlsRenderConfig,
 } from "./render/hlsConfig.js";
 import {
+  createCompiledFrameSrcResolver,
   createMemorySampler,
-  createRenderVideoFrameInjector as createVideoFrameInjectorForRender,
   type MemorySampler,
   updateJobStatus,
 } from "./render/shared.js";
@@ -1043,6 +1045,22 @@ export function createCaptureObservabilityUpdater(
 
 export function getNextRetryWorkerCount(currentWorkers: number): number {
   return Math.max(1, Math.floor(currentWorkers / 2));
+}
+
+/**
+ * The render's video frame injector. Frames load by URL from the file server; a base64 data URI per
+ * frame made the page parse, fetch and garbage-collect megabytes on every captured frame.
+ */
+export function buildRenderVideoFrameInjector(
+  frameLookup: FrameLookupTable | null,
+  cfg: Pick<EngineConfig, "frameDataUriCacheLimit" | "frameDataUriCacheBytesLimitMb">,
+  compiledDir: string,
+): BeforeCaptureHook | null {
+  return createVideoFrameInjector(frameLookup, {
+    frameDataUriCacheLimit: cfg.frameDataUriCacheLimit,
+    frameDataUriCacheBytesLimitMb: cfg.frameDataUriCacheBytesLimitMb,
+    frameSrcResolver: createCompiledFrameSrcResolver(compiledDir),
+  });
 }
 
 export function resolveRenderWorkDirPrefix(
@@ -3587,7 +3605,7 @@ async function executeRenderPipeline(input: {
       },
     });
     const createRenderVideoFrameInjector = (): BeforeCaptureHook | null =>
-      createVideoFrameInjectorForRender(frameLookup, cfg, compiledDir);
+      buildRenderVideoFrameInjector(frameLookup, cfg, compiledDir);
 
     let captureCalibration:
       | {

@@ -25,16 +25,12 @@ import {
   checkOutputResolutionCompatibility,
   type CanvasResolution,
 } from "@hyperframes/core";
-import {
-  createVideoFrameInjector,
-  type AudioElement,
-  type BeforeCaptureHook,
-  type EngineConfig,
-  type ExtractedFrames,
-  type FrameLookupTable,
-  type ImageElement,
-  type ParallelProgress,
-  type VideoElement,
+import type {
+  AudioElement,
+  ExtractedFrames,
+  ImageElement,
+  ParallelProgress,
+  VideoElement,
 } from "@hyperframes/engine";
 import type { CompiledComposition } from "../htmlCompiler.js";
 import { defaultLogger, type ProducerLogger } from "../../logger.js";
@@ -354,22 +350,6 @@ export function createCompiledFrameSrcResolver(
       .map((segment) => encodeURIComponent(segment))
       .join("/")}`;
   };
-}
-
-/**
- * The render's video frame injector. Frames load by URL from the file server; a base64 data URI per
- * frame made the page parse, fetch and garbage-collect megabytes on every captured frame.
- */
-export function createRenderVideoFrameInjector(
-  frameLookup: FrameLookupTable | null,
-  cfg: Pick<EngineConfig, "frameDataUriCacheLimit" | "frameDataUriCacheBytesLimitMb">,
-  compiledDir: string,
-): BeforeCaptureHook | null {
-  return createVideoFrameInjector(frameLookup, {
-    frameDataUriCacheLimit: cfg.frameDataUriCacheLimit,
-    frameDataUriCacheBytesLimitMb: cfg.frameDataUriCacheBytesLimitMb,
-    frameSrcResolver: createCompiledFrameSrcResolver(compiledDir),
-  });
 }
 
 type MaterializedExtractedFrames = Pick<ExtractedFrames, "videoId" | "outputDir" | "framePaths">;

@@ -34,6 +34,7 @@ import {
   collectVideoMetadataHints,
   collectVideoReadinessSkipIds,
   extractStandaloneEntryFromIndex,
+  buildRenderVideoFrameInjector,
   findMissingFrameRanges,
   getNextRetryWorkerCount,
   isRecoverableParallelCaptureError,
@@ -86,7 +87,6 @@ import {
 import {
   applyRenderModeHints,
   createCompiledFrameSrcResolver,
-  createRenderVideoFrameInjector,
   materializeExtractedFramesForCompiledDir,
   projectBrowserEndToCompositionTimeline,
   resolveDeviceScaleFactor,
@@ -767,7 +767,7 @@ describe("createCompiledFrameSrcResolver", () => {
   });
 });
 
-describe("createRenderVideoFrameInjector", () => {
+describe("buildRenderVideoFrameInjector", () => {
   it("hands the page a served frame URL, never an inline base64 frame", async () => {
     const compiledDir = mkdtempSync(join(tmpdir(), "hf-render-inject-"));
     try {
@@ -794,7 +794,7 @@ describe("createRenderVideoFrameInjector", () => {
         }),
       };
 
-      const hook = createRenderVideoFrameInjector(frameLookup, DEFAULT_CONFIG, compiledDir);
+      const hook = buildRenderVideoFrameInjector(frameLookup, DEFAULT_CONFIG, compiledDir);
       await hook!(page as never, 0);
 
       expect(sent).toEqual(["/__hyperframes_video_frames/clip/frame_00001.jpg"]);
