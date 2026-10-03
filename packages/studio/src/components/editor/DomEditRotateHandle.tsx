@@ -1,10 +1,9 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 
-/** Rotate handle below the selection, placed from the chrome's geometry variables: an icon chip
- *  anchored to the crop outline when cropped, so it stays next to what's visible. Presentation only:
- *  the rotation gesture measures pointer angles from the element CENTER (resolveDomEditRotationGesture),
- *  so its position doesn't affect the math. Sits 12px below the bbox, past the bottom crop
- *  handle's hit strip. */
+/** Rotate handle 12px below the selection, past the bottom crop handle's hit strip, placed from the chrome's
+ *  geometry variables and anchored to the crop outline when cropped. Presentation only: the rotation gesture
+ *  measures pointer angles from the element CENTER (resolveDomEditRotationGesture), so its position doesn't
+ *  affect the math. */
 export function DomEditRotateHandle({
   cropOutlineInsetPx,
   onStartRotate,
