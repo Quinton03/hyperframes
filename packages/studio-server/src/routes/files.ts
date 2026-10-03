@@ -736,9 +736,8 @@ function referenceEdits(
           )
         );
       });
-      const rest = /^[^\s"'`()<>,;?#]*/.exec(text.slice(offset + match.length))![0];
-      const resolved = posix.normalize(`in${normalized(rest)}`);
-      const climbsOut = isDirectory && resolved !== "in" && !resolved.startsWith("in/");
+      const rest = /^[^"'`()<>,;?#\r\n]*/.exec(text.slice(offset + match.length))![0];
+      const climbsOut = isDirectory && leavesFolder(normalized(rest));
       return inLonger || climbsOut ? [] : [{ at, end: offset + match.length, text: newPath }];
     });
 }
@@ -751,6 +750,15 @@ export function referenceRewriter(
 ): (text: string) => string {
   const edits = referenceEdits(oldPath, newPath, isDirectory, existing);
   return (text) => applyEdits(text, edits(text));
+}
+
+function leavesFolder(rest: string): boolean {
+  let depth = 0;
+  for (const segment of rest.split("/")) {
+    if (segment === ".." && --depth < 0) return true;
+    if (segment !== ".." && segment !== "." && segment !== "") depth++;
+  }
+  return false;
 }
 
 function occurrences(text: string, part: string): number[] {

@@ -336,13 +336,13 @@ describe("renaming a folder over the route", () => {
     writeFileSync(join(project, "a", "logo.png"), "x");
     writeFileSync(
       join(project, "a", "style.css"),
-      "url(b/../logo.png) url(b/sub/../../logo.png) url(b\\.\\..\\logo.png) url(b/image.png)",
+      'url(b/../logo.png) url(b/sub/../../logo.png) url(b\\.\\..\\logo.png) url("b/../in/logo.png") url("b/sub dir/../../logo.png") url(b/image.png)',
     );
     writeFileSync(join(project, "index.html"), '<img src="a/b/../logo.png">');
 
     expect((await renameIn(project, "a/b", "b/c")).status).toBe(200);
     expect(readFileSync(join(project, "a", "style.css"), "utf8")).toBe(
-      "url(b/../logo.png) url(b/sub/../../logo.png) url(b\\.\\..\\logo.png) url(../b/c/image.png)",
+      'url(b/../logo.png) url(b/sub/../../logo.png) url(b\\.\\..\\logo.png) url("b/../in/logo.png") url("b/sub dir/../../logo.png") url(../b/c/image.png)',
     );
     expect(readFileSync(join(project, "index.html"), "utf8")).toBe('<img src="a/b/../logo.png">');
   });
