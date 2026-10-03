@@ -736,9 +736,9 @@ function referenceEdits(
           )
         );
       });
-      const climbsOut = /^\/\.\.(\/|$)/.test(
-        normalized(text.slice(offset + match.length, offset + match.length + 6)),
-      );
+      const rest = /^[^\s"'`()<>,;?#]*/.exec(text.slice(offset + match.length))![0];
+      const resolved = posix.normalize(`in${normalized(rest)}`);
+      const climbsOut = isDirectory && resolved !== "in" && !resolved.startsWith("in/");
       return inLonger || climbsOut ? [] : [{ at, end: offset + match.length, text: newPath }];
     });
 }
