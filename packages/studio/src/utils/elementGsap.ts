@@ -44,7 +44,9 @@ export function readElementGsapNumber(element: HTMLElement, prop: string): numbe
   return Number.isFinite(value) ? value : null;
 }
 
-/** A tween's DOM targets; GSAP also tweens plain objects, such as the runtime's duration filler. */
+/** The targets CSSPlugin styles: not plain objects (the runtime's filler) or XML-namespace elements. */
 export function elementTargets(tween: { targets?: () => unknown[] }): Element[] {
-  return (tween.targets?.() ?? []).filter((t): t is Element => (t as Node | null)?.nodeType === 1);
+  return (tween.targets?.() ?? []).filter((t): t is Element =>
+    Boolean((t as HTMLElement | null)?.style && (t as Node).nodeType),
+  );
 }
