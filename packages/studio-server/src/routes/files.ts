@@ -20,7 +20,7 @@ import {
   realpathSync,
   type Dirent,
 } from "node:fs";
-import { resolve, dirname, join } from "node:path";
+import { resolve, dirname, join, relative, posix, sep } from "node:path";
 import type { StudioApiAdapter } from "../types.js";
 import { isAudioFile } from "../helpers/mime.js";
 import { createFileAtomically, replaceFileAtomically } from "@hyperframes/core/atomic-file";
@@ -773,14 +773,35 @@ function updateReferences(
     /\.(html|css|js|jsx|ts|tsx|json|mjs|cjs|md|mdx)$/i.test(name),
   );
 
-  const rewrite = referenceRewriter(oldPath, newPath, isDirectory, projectPaths(projectDir));
+  const existing = projectPaths(projectDir);
+  const rewrite = referenceRewriter(oldPath, newPath, isDirectory, existing);
+  const nearby = new Map<string, (text: string) => string>();
+  const rewriteFor = (dir: string) => {
+    const [from, to] = [posix.relative(dir, oldPath), posix.relative(dir, newPath)];
+    const moved = dir === newPath || dir.startsWith(`${newPath}/`);
+    if (dir === "" || moved || from.replace(/^(\.\.\/)+/, "") === oldPath) return rewrite;
+    const cached =
+      nearby.get(dir) ??
+      nearby
+        .set(
+          dir,
+          referenceRewriter(
+            from,
+            to,
+            isDirectory,
+            existing.map((path) => posix.relative(dir, path)),
+          ),
+        )
+        .get(dir)!;
+    return (text: string) => cached(rewrite(text));
+  };
   let updatedCount = 0;
   for (const file of textFiles) {
     if (!isSafePath(projectDir, file)) continue;
     const content = readableText(file);
     if (content === null) continue;
 
-    const updated = rewrite(content);
+    const updated = rewriteFor(relative(projectDir, dirname(file)).split(sep).join("/"))(content);
     if (updated !== content) {
       replaceFileAtomically(file, updated, statSync(file).mode);
       updatedCount++;

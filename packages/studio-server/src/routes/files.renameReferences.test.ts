@@ -234,4 +234,37 @@ describe("renaming a folder over the route", () => {
     expect(response.status).toBe(200);
     expect(readFileSync(join(project, "index.html"), "utf8")).toBe('<img src="logo.png">');
   });
+
+  it("rewrites a path a file in the renamed folder's parent names relative to itself", async () => {
+    const project = mkdtempSync(join(tmpdir(), "hf-rename-refs-"));
+    dirs.push(project);
+    mkdirSync(join(project, "assets", "clips"), { recursive: true });
+    writeFileSync(join(project, "assets", "clips", "a.png"), "x");
+    writeFileSync(
+      join(project, "assets", "style.css"),
+      "a{background:url(clips/a.png)} b{x:url(./clips/a.png)}",
+    );
+    writeFileSync(
+      join(project, "index.html"),
+      '<img src="assets/clips/a.png"><img src="clips/a.png">',
+    );
+    const adapter = {
+      resolveProject: async (id: string) => ({ id, dir: project }),
+    } as unknown as StudioApiAdapter;
+    const app = new Hono();
+    registerFileRoutes(app, adapter);
+
+    const response = await app.request("/projects/p/files/assets/clips", {
+      method: "PATCH",
+      body: JSON.stringify({ newPath: "assets/takes" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(readFileSync(join(project, "assets", "style.css"), "utf8")).toBe(
+      "a{background:url(takes/a.png)} b{x:url(./takes/a.png)}",
+    );
+    expect(readFileSync(join(project, "index.html"), "utf8")).toBe(
+      '<img src="assets/takes/a.png"><img src="clips/a.png">',
+    );
+  });
 });
