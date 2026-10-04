@@ -1930,20 +1930,22 @@ export function initSandboxRuntimeModular(): void {
         // clock not yet initialized — duration will be set during TransportClock setup
       }
 
+      // Seek to the prior playhead (state.currentTime) so a rebind after a user
+      // scrub or soft-reload restore doesn't snap back to 0.
+      const seekTime = Math.max(0, state.currentTime || 0);
       if (typeof state.capturedTimeline.totalTime === "function") {
         // GSAP won't render tl.set() at position 0 when the paused timeline
         // starts there — play/pause/seek/totalTime are all no-ops at the
         // creation position. Force the set to render by cycling progress past
-        // 0 (when the timeline implements it), then seek to the prior playhead
-        // (state.currentTime) so a rebind after a user scrub or soft-reload
-        // restore doesn't snap back to 0.
+        // 0 (when the timeline implements it).
         if (typeof state.capturedTimeline.progress === "function") {
           state.capturedTimeline.progress(0.0001, true);
         }
-        const seekTime = Math.max(0, state.currentTime || 0);
         state.capturedTimeline.totalTime(seekTime, false);
-        pauseTimelineIfPossible(state.capturedTimeline);
+      } else {
+        state.capturedTimeline.seek(seekTime, false);
       }
+      pauseTimelineIfPossible(state.capturedTimeline);
 
       // GSAP bakes the CSS `translate` into style.transform on seek.
       // The Studio seek wrapper (installStudioManualEditSeekReapply) calls
