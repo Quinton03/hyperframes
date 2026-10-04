@@ -671,7 +671,7 @@ function readableText(file: string): string | null {
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const MAX_REST = 256;
-const INLINE_SCRIPT = /<script\b[^>]*>[\s\S]*?<\/script>/gi;
+const INLINE_SCRIPT = /<script\b[^>]*>[\s\S]*?<\/script\s*>/gi;
 // Where a reference ends inside text: its end, `)`, a query or fragment, a srcset comma or width/density.
 const REFERENCE_END = /^(?:$|\)(?=$|[\s;,])|[?#]|,\s|\s+\d+(?:\.\d+)?[wx](?![\w.]))/;
 const SEPARATOR = String.raw`\\{0,2}[\\/]`;
