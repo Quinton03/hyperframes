@@ -141,11 +141,14 @@ export function beginStudioPendingEdit(revert: StudioEditRevert | null) {
     },
     drawKeepingUndone(draw) {
       if (!inFlight.reverted()) return draw();
+      // Ends on what the element showed before the draw, which a newer gesture may have drawn.
+      const backToNow = revert!();
       entry.showAgain?.();
       try {
         return draw();
       } finally {
         entry.showAgain = revert!();
+        backToNow();
       }
     },
     markSaved: () => void (saved = true),

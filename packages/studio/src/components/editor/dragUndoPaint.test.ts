@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 import { savePlainRotation } from "../../hooks/plainRotation";
-import { beginStudioManualEditGesture } from "./manualEdits";
+import { beginStudioManualEditGesture, endStudioManualEditGesture } from "./manualEdits";
 import type { DomEditSelection } from "./domEditing";
 import type { GestureState } from "./domEditOverlayGestures";
 import { createDomEditOverlayGestureHandlers } from "./useDomEditOverlayGestures";
@@ -247,7 +247,7 @@ it("keeps a GSAP drag's base through every repaint of its undo, so its save adds
   await vi.waitFor(() => expect(hasStudioPendingEdits()).toBe(false));
 });
 
-it("leaves an element alone once a newer gesture took it, though its painted-back resize still saves", async () => {
+it("a late write of a painted-back resize leaves what a newer gesture drew", async () => {
   let edit!: StudioEditInFlight;
   let release!: () => void;
   const element = gestureWithSaveRunning("resize", () => {
@@ -255,30 +255,44 @@ it("leaves an element alone once a newer gesture took it, though its painted-bac
     return new Promise<void>((resolve) => (release = resolve));
   });
   const shown = paintBackNewestStudioPendingEdit();
-  beginStudioManualEditGesture(element, "resize");
   element.style.setProperty("width", "300px");
   const newer = element.getAttribute("style");
 
-  edit.drawKeepingUndone(() => undefined);
+  edit.drawKeepingUndone(() => element.style.setProperty("width", "999px"));
   expect(element.getAttribute("style")).toBe(newer);
   shown!.showAgain();
-  expect(element.getAttribute("style")).toBe(newer);
+  expect(element.style.getPropertyValue("width")).toBe("999px");
 
   release();
   await vi.waitFor(() => expect(hasStudioPendingEdits()).toBe(false));
 });
 
-it("leaves an element alone once a newer gesture took it, though its painted-back drag still saves", async () => {
+it("a late write of a painted-back GSAP drag leaves where a newer drag holds the box", async () => {
+  const gsapOf = fakeGsap({ x: 5, y: 7 });
+  let edit!: StudioEditInFlight;
+  let release!: () => void;
+  const element = dragWithSaveRunning(() => {
+    edit = adoptingStudioPendingEdit()!;
+    return new Promise<void>((resolve) => (release = resolve));
+  });
+  paintBackNewestStudioPendingEdit();
+  gsapOf(element).x = 40;
+
+  edit.drawKeepingUndone(() => void (gsapOf(element).x = 300));
+  expect(gsapOf(element).x).toBe(40);
+
+  release();
+  await vi.waitFor(() => expect(hasStudioPendingEdits()).toBe(false));
+});
+
+it("shows a refused undo's drag again though the box was tapped meanwhile", async () => {
   let saved!: () => void;
   const element = dragWithSaveRunning(new Promise<void>((resolve) => (saved = resolve)));
+  const moved = element.style.getPropertyValue("translate");
   const shown = paintBackNewestStudioPendingEdit();
-  beginStudioManualEditGesture(element, "move");
-  element.style.setProperty("translate", "5px 5px");
-
+  endStudioManualEditGesture(element, beginStudioManualEditGesture(element, "move"));
   shown!.showAgain();
-  expect(element.style.getPropertyValue("translate")).toBe("5px 5px");
-  expect(paintBackNewestStudioPendingEdit()).not.toBeNull();
-  expect(element.style.getPropertyValue("translate")).toBe("5px 5px");
+  expect(element.style.getPropertyValue("translate")).toBe(moved);
 
   saved();
   await vi.waitFor(() => expect(hasStudioPendingEdits()).toBe(false));

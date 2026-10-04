@@ -396,3 +396,22 @@ it("is no longer painted back once shown again, so a later draw shows at once", 
   expect(draw).toHaveBeenCalledTimes(1);
   landSave();
 });
+
+it("undoes an edit's drawn reloads newest first", () => {
+  const edit = beginStudioPendingEdit(() => () => undefined);
+  const inFlight = edit.adopt(() => adoptingStudioPendingEdit())!;
+  let landSave!: () => void;
+  edit.settle(new Promise<void>((resolve) => (landSave = resolve)));
+  const undone: string[] = [];
+  inFlight.drawUnlessUndone(
+    () => undefined,
+    () => undone.push("first"),
+  );
+  inFlight.drawUnlessUndone(
+    () => undefined,
+    () => undone.push("second"),
+  );
+  paintBackNewestStudioPendingEdit();
+  expect(undone).toEqual(["second", "first"]);
+  landSave();
+});

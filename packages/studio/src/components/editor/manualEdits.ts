@@ -21,7 +21,6 @@ export {
   beginStudioManualEditGesture,
   endStudioManualEditGesture,
   isStudioManualEditGestureCurrent,
-  latestStudioGestureOn,
   readStudioPathOffset,
   readAppliedStudioPathOffset,
   readStudioBoxSize,

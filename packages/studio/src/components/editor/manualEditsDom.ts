@@ -39,7 +39,6 @@ import { BOX_SIZE_STYLE_PROPS } from "./manualEditsDomPatches";
 
 /* ── Gesture tracking ─────────────────────────────────────────────── */
 let studioManualEditGestureId = 0;
-const latestGestureOn = new WeakMap<HTMLElement, number>();
 
 export type StudioGestureDraws = "move" | "resize" | "rotate" | "edit";
 const MOVE_DRAWS = ["translate", STUDIO_OFFSET_X_PROP, STUDIO_OFFSET_Y_PROP];
@@ -54,13 +53,11 @@ export function beginStudioManualEditGesture(
   element: HTMLElement,
   draws: StudioGestureDraws,
 ): string {
-  latestGestureOn.set(element, ++studioManualEditGestureId);
+  studioManualEditGestureId += 1;
   const token = `gesture-${studioManualEditGestureId}:${draws}`;
   element.setAttribute(STUDIO_MANUAL_EDIT_GESTURE_ATTR, token);
   return token;
 }
-
-export const latestStudioGestureOn = (element: HTMLElement) => latestGestureOn.get(element);
 
 const GESTURE_ENDED = "hf-manual-edit-gesture-ended";
 
