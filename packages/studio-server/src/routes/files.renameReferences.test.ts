@@ -360,12 +360,12 @@ describe("renaming a folder over the route", () => {
     writeFileSync(join(project, "compositions", "assets", "bg.png"), "x");
     writeFileSync(
       join(project, "compositions", "hero.html"),
-      '<img src="assets/logo.png"><img src="assets/logo final.png"><img src="assets/bg.png final.png"><img src="assets/bg.png)final.png"><img srcset="assets/bg.png 2x" src="assets/bg.png">',
+      '<img src="assets/logo.png"><img src="assets/logo final.png"><img src="assets/bg.png final.png"><img src="assets/bg.png)final.png"><img srcset="assets/bg.png 2x" src="assets/bg.png"><script>fetch("assets/bg.png")</script>',
     );
 
     expect((await renameIn(project, "compositions/assets", "compositions/media")).status).toBe(200);
     expect(readFileSync(join(project, "compositions", "hero.html"), "utf8")).toBe(
-      '<img src="assets/logo.png"><img src="assets/logo final.png"><img src="assets/bg.png final.png"><img src="assets/bg.png)final.png"><img srcset="media/bg.png 2x" src="media/bg.png">',
+      '<img src="assets/logo.png"><img src="assets/logo final.png"><img src="assets/bg.png final.png"><img src="assets/bg.png)final.png"><img srcset="media/bg.png 2x" src="media/bg.png"><script>fetch("assets/bg.png")</script>',
     );
     expect(readFileSync(join(project, "compositions", "app.js"), "utf8")).toBe(
       'fetch("assets/bg.png")',

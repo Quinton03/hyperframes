@@ -671,6 +671,7 @@ function readableText(file: string): string | null {
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const MAX_REST = 256;
+const INLINE_SCRIPT = /<script\b[^>]*>[\s\S]*?<\/script>/gi;
 // Where a reference ends inside text: its end, `)`, a query or fragment, a srcset comma or width/density.
 const REFERENCE_END = /^(?:$|\)(?=$|[\s;,])|[?#]|,\s|\s+\d+(?:\.\d+)?[wx](?![\w.]))/;
 const SEPARATOR = String.raw`\\{0,2}[\\/]`;
@@ -852,9 +853,15 @@ function updateReferences(
     const parent = parentFolderEdits.get(relative(projectDir, dirname(file)).split(sep).join("/"));
     // Script and data paths resolve against the page, not their own folder: only the root pass reads them.
     const kind = /\.css$/i.test(file) ? "css" : /\.html$/i.test(file) ? "html" : null;
-    const beside = kind && parent?.[kind];
+    const beside = (kind && parent?.[kind]?.(content)) || [];
+    const scripts = kind === "html" ? [...content.matchAll(INLINE_SCRIPT)] : [];
+    const outside = beside.filter((edit) =>
+      scripts.every(
+        (script) => edit.at < script.index || edit.at >= script.index + script[0].length,
+      ),
+    );
     // A bare path in a folder's file is relative to that folder, so its edit wins where both start.
-    const updated = applyEdits(content, [...(beside?.(content) ?? []), ...rootEdits(content)]);
+    const updated = applyEdits(content, [...outside, ...rootEdits(content)]);
     if (updated !== content) {
       replaceFileAtomically(file, updated, statSync(file).mode);
       updatedCount++;
