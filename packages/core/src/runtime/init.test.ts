@@ -2964,43 +2964,58 @@ describe("initSandboxRuntimeModular", () => {
     vi.useRealTimers();
   });
 
-  it("shows the playhead's frame when a seek-only root binds late during a paused drag", () => {
-    const raf = createManualRaf();
-    vi.spyOn(performance, "now").mockImplementation(() => raf.now());
-    window.requestAnimationFrame = raf.requestAnimationFrame as typeof window.requestAnimationFrame;
-    window.cancelAnimationFrame = raf.cancelAnimationFrame as typeof window.cancelAnimationFrame;
-    document.body.innerHTML = `
-      <div data-composition-id="main" data-root="true" data-duration="10" data-width="1920" data-height="1080">
-        <div id="sibling"></div>
-        <div id="dragged" data-hf-studio-manual-edit-gesture="tok-1"></div>
-      </div>
-    `;
-    window.__hfTimelinesBuilding = true;
-    initSandboxRuntimeModular();
-    window.__player?.seek(5);
+  // Discovery no longer re-seeks a bound GSAP root, so binding alone must land it on the playhead.
+  it.each([
+    { root: "seek-only", declared: ' data-duration="10"', reported: 10 },
+    { root: "seek-only", declared: "", reported: 0 },
+    { root: "totalTime", declared: "", reported: 0 },
+  ])(
+    "shows the playhead's frame when a $root root (duration $reported) binds late during a paused drag",
+    ({ root, declared, reported }) => {
+      const raf = createManualRaf();
+      vi.spyOn(performance, "now").mockImplementation(() => raf.now());
+      window.requestAnimationFrame =
+        raf.requestAnimationFrame as typeof window.requestAnimationFrame;
+      window.cancelAnimationFrame = raf.cancelAnimationFrame as typeof window.cancelAnimationFrame;
+      document.body.innerHTML = `
+        <div data-composition-id="main" data-root="true"${declared} data-width="1920" data-height="1080">
+          <div id="sibling"></div>
+          <div id="dragged" data-hf-studio-manual-edit-gesture="tok-1"></div>
+        </div>
+      `;
+      window.__hfTimelinesBuilding = true;
+      initSandboxRuntimeModular();
+      window.__player?.seek(5);
 
-    const tl = gsap
-      .timeline({ paused: true })
-      .to("#sibling", { x: 100, duration: 10, ease: "none" });
-    const seekOnly: RuntimeTimelineLike = {
-      play: () => tl.play(),
-      pause: () => tl.pause(),
-      seek: (time, suppressEvents) => tl.seek(time ?? 0, suppressEvents),
-      time: () => tl.time(),
-      duration: () => tl.duration(),
-      add: (child, at) => tl.add(child as unknown as gsap.core.Timeline, at),
-      paused: (paused) => tl.paused(paused),
-      set: (target, vars, at) => tl.set(target, vars, at),
-    };
-    window.__timelines = { main: seekOnly };
-    window.__hfTimelinesBuilding = false;
-    window.dispatchEvent(new CustomEvent("hf-timelines-built"));
-    raf.step(16);
-    raf.step(16);
+      const fired = vi.fn();
+      const tl = gsap
+        .timeline({ paused: true })
+        .to("#sibling", { x: 100, duration: 10, ease: "none" })
+        .call(fired, [], 2);
+      const facade: RuntimeTimelineLike = {
+        play: () => tl.play(),
+        pause: () => tl.pause(),
+        seek: (time, suppressEvents) => tl.seek(time ?? 0, suppressEvents),
+        time: () => tl.time(),
+        duration: () => reported,
+        add: (child, at) => tl.add(child as unknown as gsap.core.Timeline, at),
+        paused: (paused) => tl.paused(paused),
+        set: (target, vars, at) => tl.set(target, vars, at),
+        ...(root === "totalTime" && {
+          totalTime: (time, suppressEvents) => tl.totalTime(time ?? 0, suppressEvents),
+        }),
+      };
+      window.__timelines = { main: facade };
+      window.__hfTimelinesBuilding = false;
+      window.dispatchEvent(new CustomEvent("hf-timelines-built"));
+      raf.step(16);
+      raf.step(16);
 
-    expect(tl.time()).toBeCloseTo(5);
-    expect(gsap.getProperty("#sibling", "x")).toBeCloseTo(50);
-  });
+      expect(tl.time()).toBeCloseTo(5);
+      expect(gsap.getProperty("#sibling", "x")).toBeCloseTo(50);
+      expect(fired).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("shows pip video at global start time even when host composition starts late", () => {
     // Regression: resolveStartForElement used to add the host composition's start on top of
