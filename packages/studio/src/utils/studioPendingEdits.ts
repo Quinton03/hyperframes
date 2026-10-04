@@ -15,13 +15,14 @@ interface PendingEdit {
   revert: StudioEditRevert | null;
   landed: () => Promise<boolean>;
   redraws: Array<() => void>;
+  drawn: Array<{ draw: () => void; undraw: () => void }>;
   showAgain: (() => void) | null;
 }
 
 export interface StudioEditInFlight {
   reverted: () => boolean;
   within: <T>(run: () => T) => T;
-  drawUnlessUndone: (draw: () => void) => void;
+  drawUnlessUndone: (draw: () => void, undraw?: () => void) => void;
   drawKeepingUndone: <T>(draw: () => T) => T;
   markSaved: () => void;
 }
@@ -87,7 +88,13 @@ export function trackStudioPendingEdit(
   if (!result) return undefined;
   const promise = Promise.resolve(result);
   if (adopting) return promise;
-  pendingEdits.set(promise, { revert: null, landed: NOT_SAVED, redraws: [], showAgain: null });
+  pendingEdits.set(promise, {
+    revert: null,
+    landed: NOT_SAVED,
+    redraws: [],
+    drawn: [],
+    showAgain: null,
+  });
   promise.then(
     () => pendingEdits.delete(promise),
     () => pendingEdits.delete(promise),
@@ -124,9 +131,13 @@ export function beginStudioPendingEdit(revert: StudioEditRevert | null) {
         adopting = outer;
       }
     },
-    drawUnlessUndone(draw) {
-      if (inFlight.reverted()) entry.redraws.push(draw);
-      else draw();
+    drawUnlessUndone(draw, undraw) {
+      const drawNow = () => {
+        draw();
+        if (undraw) entry.drawn.push({ draw, undraw });
+      };
+      if (inFlight.reverted()) entry.redraws.push(drawNow);
+      else drawNow();
     },
     drawKeepingUndone(draw) {
       if (!inFlight.reverted()) return draw();
@@ -168,9 +179,13 @@ export function paintBackNewestStudioPendingEdit(): {
   if (!newest || !revert) return null;
   newest.revert = null;
   newest.showAgain = revert();
+  for (const { undraw } of [...newest.drawn].reverse()) undraw();
   return {
     showAgain: () => {
+      newest.revert = revert;
       newest.showAgain?.();
+      newest.showAgain = null;
+      for (const { draw } of newest.drawn) draw();
       for (const redraw of newest.redraws.splice(0)) redraw();
     },
     landed: newest.landed,

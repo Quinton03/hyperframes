@@ -18,7 +18,7 @@ vi.mock("./gsapRuntimePatch", () => ({
 vi.mock("../utils/gsapSoftReload", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../utils/gsapSoftReload")>()),
   applySoftReload: (...args: unknown[]) => applySoftReload(...args),
-  extractGsapScriptText: () => "",
+  extractGsapScriptText: (html: string) => (html === "BEFORE" ? "OLD SCRIPT" : ""),
   readNestedFiles: (...args: unknown[]) => readNestedFiles(...args),
 }));
 vi.mock("../utils/studioTelemetry", () => ({
@@ -530,6 +530,33 @@ describe("a GSAP script commit", () => {
 
     shown!.showAgain();
     expect(applySoftReload).toHaveBeenCalledTimes(1);
+  });
+
+  it("reloads a GSAP edit whose preview already reloaded back to its old file when undo paints it back", async () => {
+    applySoftReload.mockReset();
+    applySoftReload.mockReturnValue("applied");
+    mockFetchResult();
+    const deps = renderCommitHook();
+    const edit = beginStudioPendingEdit(() => () => undefined);
+    const committed = edit.adopt(() =>
+      observeGsapGesture(deps.api.commitMutation).commit!(
+        selection,
+        { x: 10 },
+        { label: "Move layer", softReload: true },
+      ),
+    );
+    let release!: () => void;
+    edit.settle(Promise.all([committed, new Promise<void>((resolve) => (release = resolve))]));
+    await act(async () => void (await committed));
+    expect(applySoftReload).toHaveBeenCalledTimes(1);
+
+    const shown = paintBackNewestStudioPendingEdit()!;
+    expect(applySoftReload).toHaveBeenCalledTimes(2);
+    expect(applySoftReload.mock.calls[1]![2]).toMatchObject({ authoredHtml: "BEFORE" });
+    shown.showAgain();
+    expect(applySoftReload).toHaveBeenCalledTimes(3);
+    expect(applySoftReload.mock.calls[2]![2]).toMatchObject({ authoredHtml: "AFTER" });
+    release();
   });
 });
 

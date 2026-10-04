@@ -120,8 +120,12 @@ function finishUnchangedMutation(
   return true;
 }
 
-function redrawUnlessPaintedBack(options: CommitMutationOptions, redraw: () => void): void {
-  if (options.pendingEdit) options.pendingEdit.drawUnlessUndone(redraw);
+function redrawUnlessPaintedBack(
+  options: CommitMutationOptions,
+  redraw: () => void,
+  undraw?: () => void,
+): void {
+  if (options.pendingEdit) options.pendingEdit.drawUnlessUndone(redraw, undraw);
   else redraw();
 }
 
@@ -133,10 +137,20 @@ function refreshMutationPreview(
   onCacheInvalidate: () => void,
   nestedFiles?: Map<string, string> | null,
 ): void {
-  redrawUnlessPaintedBack(options, () => {
-    options.beforeReload?.();
-    applyPreviewSync(iframe, result, options, reloadPreview, nestedFiles);
-  });
+  const before = result.before;
+  const oldScript = before ? extractGsapScriptText(before) : null;
+  // ponytail: no escalation; a full reload would load the edited file back from disk.
+  const undraw = oldScript
+    ? () => softReloadOrEscalate(iframe, oldScript, () => {}, "preview_sync", before!, nestedFiles)
+    : undefined;
+  redrawUnlessPaintedBack(
+    options,
+    () => {
+      options.beforeReload?.();
+      applyPreviewSync(iframe, result, options, reloadPreview, nestedFiles);
+    },
+    undraw,
+  );
   onCacheInvalidate();
 }
 

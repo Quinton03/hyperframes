@@ -1,5 +1,6 @@
 import {
   captureStudioPathOffset,
+  latestStudioGestureOn,
   restoreStudioPathOffset,
   type StudioPathOffsetSnapshot,
 } from "./manualEdits";
@@ -14,6 +15,12 @@ interface MemberPosition {
   offset: StudioPathOffsetSnapshot;
   gsap: { x: number; y: number } | null;
   placement: string[];
+}
+
+/** True until a newer gesture begins on the element. */
+function noGestureSince(element: HTMLElement): () => boolean {
+  const latest = latestStudioGestureOn(element);
+  return () => latestStudioGestureOn(element) === latest;
 }
 
 // Where an element-offset move draws the element when no transform channel can take it.
@@ -51,17 +58,26 @@ function showMemberPosition(member: ManualOffsetDragMember, position: MemberPosi
 
 /** Undo's live revert of a move: its members at gesture start. */
 export function manualOffsetMoveRevert(members: ManualOffsetDragMember[]): StudioEditRevert {
-  const startPlacement = members.map((member) => placementOf(member.element));
+  const start = new Map(
+    members.map((member) => [
+      member,
+      { placement: placementOf(member.element), untouched: noGestureSince(member.element) },
+    ]),
+  );
   return () => {
-    const shown = members.map(readMemberPosition);
-    members.forEach((member, i) =>
+    const reverted = members.filter((member) => start.get(member)!.untouched());
+    const shown = reverted.map(readMemberPosition);
+    reverted.forEach((member) =>
       showMemberPosition(member, {
         offset: member.initialPathOffset,
         gsap: member.plainTranslate ? null : member.baseGsap,
-        placement: startPlacement[i]!,
+        placement: start.get(member)!.placement,
       }),
     );
-    return () => members.forEach((member, i) => showMemberPosition(member, shown[i]!));
+    return () =>
+      reverted.forEach((member, i) => {
+        if (start.get(member)!.untouched()) showMemberPosition(member, shown[i]!);
+      });
   };
 }
 
@@ -96,9 +112,13 @@ export function elementLookRevert(
   element: HTMLElement,
   start: StudioElementLook,
 ): StudioEditRevert {
+  const untouched = noGestureSince(element);
   return () => {
+    if (!untouched()) return () => {};
     const shown = readElementLook(element, start.gsap !== null);
     showElementLook(element, start);
-    return () => showElementLook(element, shown);
+    return () => {
+      if (untouched()) showElementLook(element, shown);
+    };
   };
 }

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 import { savePlainRotation } from "../../hooks/plainRotation";
+import { beginStudioManualEditGesture } from "./manualEdits";
 import type { DomEditSelection } from "./domEditing";
 import type { GestureState } from "./domEditOverlayGestures";
 import { createDomEditOverlayGestureHandlers } from "./useDomEditOverlayGestures";
@@ -96,7 +97,11 @@ it("a drag whose save is still running can be painted back at once, and shown ag
 });
 
 /** Resizes or rotates a plain 240x160 box; the commit draws what it saves at once and its save waits for `save`. */
-function gestureWithSaveRunning(kind: "resize" | "rotate", save: Promise<void>) {
+function gestureWithSaveRunning(
+  kind: "resize" | "rotate",
+  save: Promise<void> | (() => Promise<void>),
+) {
+  const saving = typeof save === "function" ? save : () => save;
   const element = document.createElement("div");
   element.setAttribute(
     "style",
@@ -118,11 +123,15 @@ function gestureWithSaveRunning(kind: "resize" | "rotate", save: Promise<void>) 
     onBoxSizeCommitRef: ref(
       vi.fn(() => {
         element.style.setProperty("clip-path", "inset(15px)");
-        return save;
+        return saving();
       }),
     ),
     onRotationCommitRef: ref((sel: DomEditSelection, next: never) =>
-      savePlainRotation({ commitPositionPatchToHtml: () => save.then(() => undefined) }, sel, next),
+      savePlainRotation(
+        { commitPositionPatchToHtml: () => saving().then(() => undefined) },
+        sel,
+        next,
+      ),
     ),
     snapGuidesRef: ref(null),
     groupGestureRef: ref(null),
@@ -235,5 +244,42 @@ it("keeps a GSAP drag's base through every repaint of its undo, so its save adds
   expect(element.getAttribute("data-hf-drag-gsap-base-x")).toBe("5");
 
   release();
+  await vi.waitFor(() => expect(hasStudioPendingEdits()).toBe(false));
+});
+
+it("leaves an element alone once a newer gesture took it, though its painted-back resize still saves", async () => {
+  let edit!: StudioEditInFlight;
+  let release!: () => void;
+  const element = gestureWithSaveRunning("resize", () => {
+    edit = adoptingStudioPendingEdit()!;
+    return new Promise<void>((resolve) => (release = resolve));
+  });
+  const shown = paintBackNewestStudioPendingEdit();
+  beginStudioManualEditGesture(element, "resize");
+  element.style.setProperty("width", "300px");
+  const newer = element.getAttribute("style");
+
+  edit.drawKeepingUndone(() => undefined);
+  expect(element.getAttribute("style")).toBe(newer);
+  shown!.showAgain();
+  expect(element.getAttribute("style")).toBe(newer);
+
+  release();
+  await vi.waitFor(() => expect(hasStudioPendingEdits()).toBe(false));
+});
+
+it("leaves an element alone once a newer gesture took it, though its painted-back drag still saves", async () => {
+  let saved!: () => void;
+  const element = dragWithSaveRunning(new Promise<void>((resolve) => (saved = resolve)));
+  const shown = paintBackNewestStudioPendingEdit();
+  beginStudioManualEditGesture(element, "move");
+  element.style.setProperty("translate", "5px 5px");
+
+  shown!.showAgain();
+  expect(element.style.getPropertyValue("translate")).toBe("5px 5px");
+  expect(paintBackNewestStudioPendingEdit()).not.toBeNull();
+  expect(element.style.getPropertyValue("translate")).toBe("5px 5px");
+
+  saved();
   await vi.waitFor(() => expect(hasStudioPendingEdits()).toBe(false));
 });

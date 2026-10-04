@@ -364,3 +364,35 @@ it("counts an edit whose later write failed as saved once an earlier write lande
   const shown = paintBackNewestStudioPendingEdit()!;
   await expect(shown.landed()).resolves.toBe(true);
 });
+
+it("undoes a redraw that already ran when the edit is painted back, and redoes it on show again", () => {
+  const edit = beginStudioPendingEdit(() => () => undefined);
+  const inFlight = edit.adopt(() => adoptingStudioPendingEdit())!;
+  let landSave!: () => void;
+  edit.settle(new Promise<void>((resolve) => (landSave = resolve)));
+  const drawn: string[] = [];
+  inFlight.drawUnlessUndone(
+    () => drawn.push("edit"),
+    () => drawn.push("undo edit"),
+  );
+  expect(drawn).toEqual(["edit"]);
+
+  const shown = paintBackNewestStudioPendingEdit()!;
+  expect(drawn).toEqual(["edit", "undo edit"]);
+  shown.showAgain();
+  expect(drawn).toEqual(["edit", "undo edit", "edit"]);
+  landSave();
+});
+
+it("is no longer painted back once shown again, so a later draw shows at once", () => {
+  const edit = beginStudioPendingEdit(() => () => undefined);
+  const inFlight = edit.adopt(() => adoptingStudioPendingEdit())!;
+  let landSave!: () => void;
+  edit.settle(new Promise<void>((resolve) => (landSave = resolve)));
+  paintBackNewestStudioPendingEdit()!.showAgain();
+  expect(inFlight.reverted()).toBe(false);
+  const draw = vi.fn();
+  inFlight.drawUnlessUndone(draw);
+  expect(draw).toHaveBeenCalledTimes(1);
+  landSave();
+});
