@@ -16,6 +16,7 @@ import {
   applyClipStartTrimDelta,
   clipStartTrimDeltaBounds,
   resolveTimelineMinDuration,
+  roundTimelineTime,
 } from "./timelineGroupEditing";
 
 export {
@@ -53,6 +54,7 @@ export interface TimelineMoveInput {
   pixelsPerSecond: number;
   minStart?: number;
   maxStart: number;
+  authoredOffset?: number;
   trackOrder: number[];
   layerOrder?: TimelineLayerId[];
   timelineLayers?: StackingTimelineLayer[];
@@ -72,6 +74,7 @@ export interface TimelineResizeInput {
   minDuration?: number;
   playbackStart?: number;
   playbackRate?: number;
+  authoredOffset?: number;
 }
 
 export interface TimelineAutoScrollBounds {
@@ -127,7 +130,7 @@ export function resolveTimelineMove(
   const trackDeltaRaw = currentRow - input.originRow;
   const deltaTrack = Math.round(trackDeltaRaw);
   const nextStart = clamp(
-    roundToCentiseconds(input.start + deltaTime),
+    roundTimelineTime(input.start + deltaTime, input.authoredOffset),
     input.minStart ?? 0,
     Math.max(0, input.maxStart),
   );

@@ -1,7 +1,7 @@
 import { clampPlaybackRate } from "@hyperframes/parsers/media-duration";
 import { roundToCenti } from "../../utils/rounding";
 import type { TimelineElement } from "../store/playerStore";
-import { clampToHostStart } from "../store/timelineElement";
+import { authoredOffset, clampToHostStart } from "../store/timelineElement";
 import { getTimelineEditCapabilities } from "./timelineEditCapabilities";
 
 const DEFAULT_TIMELINE_MIN_DURATION = 0.1;
@@ -11,14 +11,15 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function roundTimelineTime(value: number): number {
-  return roundToCenti(value);
+export function roundTimelineTime(value: number, authoredOffset = 0): number {
+  return authoredOffset + roundToCenti(value - authoredOffset);
 }
 
 const SAVED_MEDIA_OFFSET_TOLERANCE = 1e-5;
 
-function ceilTimelineTime(value: number): number {
-  return Math.ceil((value - SAVED_MEDIA_OFFSET_TOLERANCE) * 100) / 100;
+function ceilTimelineTime(value: number, authoredOffset = 0): number {
+  const local = value - authoredOffset - SAVED_MEDIA_OFFSET_TOLERANCE;
+  return authoredOffset + Math.ceil(local * 100) / 100;
 }
 
 function floorTimelineTime(value: number): number {
@@ -39,6 +40,7 @@ interface TimelineStartTrimClip {
   duration: number;
   playbackStart?: number;
   playbackRate?: number;
+  authoredOffset?: number;
 }
 
 /**
@@ -73,7 +75,10 @@ export function applyClipStartTrimDelta(
   const playbackRate = resolveTimelinePlaybackRate(clip.playbackRate);
   const mediaZero =
     clip.playbackStart != null ? clip.start - clip.playbackStart / playbackRate : -Infinity;
-  const start = Math.max(roundTimelineTime(clip.start + delta), ceilTimelineTime(mediaZero));
+  const start = Math.max(
+    roundTimelineTime(clip.start + delta, clip.authoredOffset),
+    ceilTimelineTime(mediaZero, clip.authoredOffset),
+  );
   return {
     start,
     duration: roundTimelineTime(clip.start + clip.duration - start),
@@ -90,6 +95,7 @@ export interface TimelineGroupTimingMember {
   playbackStart?: number;
   playbackRate?: number;
   minStart?: number;
+  authoredOffset?: number;
 }
 
 export type TimelineGroupResizeEdge = "start" | "end";
@@ -248,6 +254,7 @@ export function buildTimelineGroupResizeMembers(
         : element.playbackStart,
     playbackRate: element.playbackRate,
     minStart: clampToHostStart(element, 0),
+    authoredOffset: authoredOffset(element),
   }));
 }
 

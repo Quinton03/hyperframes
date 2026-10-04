@@ -5,7 +5,7 @@ import {
   resolveTimelineMinDuration,
 } from "./timelineGroupEditing";
 import type { TimelineElement } from "../store/playerStore";
-import { clampToHostStart, savedClipEdges } from "../store/timelineElement";
+import { authoredOffset, clampToHostStart, savedClipEdges } from "../store/timelineElement";
 import {
   CLIP_Y,
   TRACK_H,
@@ -230,6 +230,7 @@ export function computeDragPreview(
       pixelsPerSecond: pps,
       minStart: clampToHostStart(drag.element, 0),
       maxStart: dragMaxStart,
+      authoredOffset: authoredOffset(drag.element),
       trackOrder,
     },
     clientX,
@@ -383,6 +384,7 @@ export function computeResizePreview(
           ? (resize.element.playbackStart ?? 0)
           : resize.element.playbackStart,
       playbackRate: resize.element.playbackRate,
+      authoredOffset: authoredOffset(resize.element),
     },
     resize.edge,
     effectiveClientX,
@@ -420,7 +422,11 @@ export function computeResizePreview(
       snapSecs,
       gridStep,
     );
-    const clip = { ...nextResize, playbackRate: resize.element.playbackRate };
+    const clip = {
+      ...nextResize,
+      playbackRate: resize.element.playbackRate,
+      authoredOffset: authoredOffset(resize.element),
+    };
     const delta = snapped - nextResize.start;
     const bounds = clipStartTrimDeltaBounds(clip, minStart, resolveTimelineMinDuration());
     if (target && delta >= bounds.minDelta - 1e-6 && delta <= bounds.maxDelta + 1e-6) {

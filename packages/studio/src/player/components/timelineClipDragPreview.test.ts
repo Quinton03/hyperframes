@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TimelineElement } from "../store/playerStore";
+import { toAuthoredStart } from "../store/timelineElement";
 import {
   computeDragPreview,
   computeResizePreview,
@@ -20,6 +21,7 @@ import {
   TRACK_H,
   createTimelineRowGeometry,
 } from "./timelineLayout";
+import { formatTimelineAttributeNumber } from "./timelineEditing";
 import { isMultiDragPassenger } from "./timelineMultiDragPreview";
 import { resolveMultiDragPreview } from "./timelineProviderStateBuilders";
 
@@ -349,7 +351,8 @@ describe("guideIfSaved — a guide only where the clip saves", () => {
       drag.originClientY,
       context,
     );
-    expect(next.previewStart).toBe(21);
+    // Its file stores 20.97 s from the host's 1/30 s, 4.8px past the playhead.
+    expect(next.previewStart).toBeCloseTo(1 / 30 + 20.97, 9);
     expect(next.snapTime).toBeNull();
   });
 });
@@ -839,6 +842,85 @@ describe("a nested clip's drop stops at its host's start in the preview", () => 
     );
     expect(trim).toMatchObject({ previewStart: 1, previewDuration: 5 });
     expect(await saved(early, 1)).toBe(1);
+  });
+});
+
+describe("a nested clip under a host off the centisecond grid saves where it is drawn", () => {
+  // Host at 1/30 s, clip at local 0.5 s; the file stores the local start to the centisecond.
+  const host = 1 / 30;
+  const card: TimelineElement = {
+    ...clip("card", 0, host + 0.5, 1, 0, "div"),
+    parentCompositionStart: host,
+  };
+  const pps = 1440;
+  const savedOffPx = (start: number) =>
+    (start - host - Number(formatTimelineAttributeNumber(toAuthoredStart(card, start)))) * pps;
+
+  it("moves the clip onto its own centisecond grid", () => {
+    const { drag } = horizontalDrag(card, 0.5, 0);
+    const next = computeDragPreview(drag, drag.originClientX + 0.3 * pps, drag.originClientY, {
+      ...ctx(undefined, [card]),
+      pps,
+    });
+    expect(next.previewStart).toBeCloseTo(host + 0.8, 9);
+    expect(savedOffPx(next.previewStart)).toBeCloseTo(0, 6);
+  });
+
+  it("trims the clip's start onto its own centisecond grid", () => {
+    const trim = computeResizePreview(
+      {
+        element: card,
+        edge: "start",
+        originClientX: 0,
+        previewStart: card.start,
+        previewDuration: 1,
+        started: true,
+      },
+      0.3 * pps,
+      { scroll: fakeScroll(), pps, buildSnapTargets: () => [] },
+    );
+    expect(trim.previewStart).toBeCloseTo(host + 0.8, 9);
+    expect(trim.previewDuration).toBeCloseTo(0.7, 9);
+    expect(savedOffPx(trim.previewStart)).toBeCloseTo(0, 6);
+  });
+
+  it("stops a start trim at a nested video's first frame, where it saves", () => {
+    // 0.123 s into its media, the first frame sits at local 0.377 s; the trim stops at 0.38 s.
+    const video = { ...card, tag: "video", playbackStart: 0.123 };
+    const trim = computeResizePreview(
+      {
+        element: video,
+        edge: "start",
+        originClientX: 0,
+        previewStart: video.start,
+        previewDuration: 1,
+        started: true,
+      },
+      -pps,
+      { scroll: fakeScroll(), pps, buildSnapTargets: () => [] },
+    );
+    expect(trim.previewStart).toBeCloseTo(host + 0.38, 9);
+    expect(savedOffPx(trim.previewStart)).toBeCloseTo(0, 6);
+  });
+
+  it("snaps a start trim onto a sibling's edge in the same host, where it saves", () => {
+    // At 1440 px/s a snap never moves a start already on the grid, so trim at 100 px/s.
+    const edge = { time: host + 0.82, type: "clip-edge" as const };
+    const trim = computeResizePreview(
+      {
+        element: card,
+        edge: "start",
+        originClientX: 0,
+        previewStart: card.start,
+        previewDuration: 1,
+        started: true,
+      },
+      30,
+      { scroll: fakeScroll(), pps: 100, buildSnapTargets: () => [edge] },
+    );
+    expect(trim).toMatchObject({ snapTime: edge.time, snapType: "clip-edge" });
+    expect(trim.previewStart).toBeCloseTo(edge.time, 9);
+    expect(savedOffPx(trim.previewStart)).toBeCloseTo(0, 6);
   });
 });
 

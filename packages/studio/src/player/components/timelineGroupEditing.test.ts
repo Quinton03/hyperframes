@@ -71,6 +71,20 @@ describe("buildTimelineGroupResizeMembers (legacy 36413da7f semantics)", () => {
 });
 
 describe("resolveTimelineGroupResizeChanges (rigid group patch set)", () => {
+  it("START edge: a nested member under a host at 1/30 s lands on its own centisecond grid", () => {
+    const host = 1 / 30;
+    const members = buildTimelineGroupResizeMembers(
+      [el("a", { start: 1 }), el("b", { start: host + 0.5, parentCompositionStart: host })],
+      keys("a", "b"),
+      "a",
+      "start",
+    )!;
+    const [a, b] = resolveTimelineGroupResizeChanges(members, "start", 0.3);
+    expect(a!.start).toBe(1.3);
+    expect(b!.start).toBeCloseTo(host + 0.8, 9);
+    expect(b!.duration).toBeCloseTo(1.7, 9);
+  });
+
   it("END edge: extends every member's duration by the shared delta", () => {
     const members = buildTimelineGroupResizeMembers(
       [el("a", { duration: 2 }), el("b", { duration: 3 })],

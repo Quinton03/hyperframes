@@ -114,7 +114,7 @@ type RowClock = Pick<
   "start" | "parentCompositionStart" | "authoredStartIsMasterTime"
 >;
 type SavedClip = RowClock & Pick<TimelineElement, "duration">;
-const authoredOffset = (element: RowClock) =>
+export const authoredOffset = (element: RowClock) =>
   element.authoredStartIsMasterTime ? 0 : (element.parentCompositionStart ?? 0);
 
 /**
