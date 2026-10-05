@@ -25,11 +25,11 @@ Object.assign(
   (
     window as unknown as {
       happyDOM: {
-        settings: { disableCSSFileLoading: boolean; disableJavaScriptFileLoading: boolean };
+        settings: { disableCSSFileLoading: boolean; handleDisabledFileLoadingAsSuccess: boolean };
       };
     }
   ).happyDOM.settings,
-  { disableCSSFileLoading: true, disableJavaScriptFileLoading: true },
+  { disableCSSFileLoading: true, handleDisabledFileLoadingAsSuccess: true },
 );
 
 const tempDirs: string[] = [];
