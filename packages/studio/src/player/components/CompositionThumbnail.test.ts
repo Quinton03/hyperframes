@@ -361,6 +361,33 @@ describe("CompositionThumbnail", () => {
     expect(fetchedUrls()).toHaveLength(3);
   });
 
+  it("shows the poster in a tile whose strip fails", async () => {
+    globalThis.fetch = vi.fn(async (url) =>
+      String(url).includes("times=")
+        ? new Response("", { status: 500 })
+        : new Response(new Blob(["poster"]), { status: 200 }),
+    );
+    sizeHost(500, 40);
+    await renderThumbnail(eightSeconds);
+    await loadImage(0, 1920, 1080);
+
+    expect(fetchedUrls().some((url) => new URL(url).searchParams.has("t"))).toBe(true);
+    expect(slices().length).toBeGreaterThan(0);
+    expect(slices().every((slice) => slice.style.backgroundSize === "100% 100%")).toBe(true);
+  });
+
+  it("learns the frame's shape again after an edit changes it", async () => {
+    sizeHost(500, 40);
+    await renderThumbnail({ ...eightSeconds, contentRevision: 0 });
+    await loadImage(0, 8 * 240, 135);
+    expect(slices()[0]?.parentElement?.style.width).toBe("71px");
+
+    await renderThumbnail({ ...eightSeconds, contentRevision: 1 });
+    await loadImage(1, 8 * 76, 135);
+
+    expect(slices()[0]?.parentElement?.parentElement?.style.width).toBe("48px");
+  });
+
   it("letterboxes a portrait frame at its own aspect in a tile held at the minimum width", async () => {
     sizeHost(384, 40);
     await renderThumbnail(eightSeconds);

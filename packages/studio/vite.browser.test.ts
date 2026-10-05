@@ -101,6 +101,10 @@ describe("generateThumbnail", () => {
     );
     expect(browserMocks.newPage).toHaveBeenCalledTimes(1);
     expect(browserMocks.page.goto).toHaveBeenCalledTimes(1);
+    const seeks = browserMocks.page.evaluate.mock.calls
+      .map((call: unknown[]) => call[1])
+      .filter((time) => typeof time === "number");
+    expect(seeks).toEqual([1, 2, 3]);
   });
 
   it("contains a canceled screenshot without crashing the dev server", async () => {

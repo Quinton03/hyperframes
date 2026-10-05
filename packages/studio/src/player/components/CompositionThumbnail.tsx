@@ -5,6 +5,7 @@ import {
   createThumbnailKey,
   type ThumbnailPriority,
   type ThumbnailRequest,
+  type ThumbnailSnapshot,
 } from "../lib/thumbnailScheduler";
 import { TIMELINE_VIEWPORT_BUDGETS } from "../lib/timelineViewportBudgets";
 import { ThumbnailTiles } from "./ThumbnailTiles";
@@ -91,7 +92,7 @@ const STRIP_CHUNK_FRAMES = 8;
 const MIN_FRAME_STEP_SECONDS = 1 / 32;
 const LAST_FRAME_INSET_SECONDS = 0.001;
 
-// Tiles map onto a power-of-two grid from 0, no finer than a tile; chunks follow the grid, so zooms reuse frames.
+// Tiles map onto a power-of-two grid from 0, at least one cell per tile; chunks follow the grid, so zooms reuse frames.
 export function planCompositionStrip(
   sourceStart: number,
   sourceRangeDuration: number,
@@ -184,6 +185,7 @@ interface TileImage {
 }
 
 interface CompositionTileProps extends TileImage {
+  posterUrl: string;
   letterbox: boolean;
   projectId: string;
   sessionEpoch: number;
@@ -191,22 +193,29 @@ interface CompositionTileProps extends TileImage {
   onAspect: (frameAspect: number) => void;
 }
 
+const readyImage = (snapshot: ThumbnailSnapshot) =>
+  snapshot.status === "ready" && snapshot.value.kind === "image" ? snapshot.value : null;
+
 function useReadyImage(request: ThumbnailRequest | null) {
-  const snapshot = useThumbnailLease(request);
-  return snapshot.status === "ready" && snapshot.value.kind === "image" ? snapshot.value : null;
+  return readyImage(useThumbnailLease(request));
 }
 
-type StripImage = NonNullable<ReturnType<typeof useReadyImage>>;
+type StripImage = NonNullable<ReturnType<typeof readyImage>>;
 
 /** The tile's strip once ready; until then the one it showed last, kept leased so it stays decoded. */
 function useShownStrip(cell: { request: ThumbnailRequest; frame: number; frames: number }) {
-  const next = useReadyImage(cell.request);
+  const snapshot = useThumbnailLease(cell.request);
+  const next = readyImage(snapshot);
   const [last, setLast] = useState<typeof cell | null>(null);
   if (next && last !== cell) setLast(cell);
   const held = useReadyImage(last && last.request);
   const source = next ? cell : last;
   const strip = next ?? held;
-  return strip && source && { ...source, strip };
+  return {
+    shown: strip && source && { ...source, strip },
+    freshAspect: next && next.aspect / cell.frames,
+    failed: snapshot.status === "error",
+  };
 }
 
 function StripSlice({
@@ -239,6 +248,7 @@ function StripSlice({
 
 const CompositionTile = memo(function CompositionTile({
   url,
+  posterUrl,
   frame,
   frames,
   letterbox,
@@ -253,12 +263,20 @@ const CompositionTile = memo(function CompositionTile({
     [frames, priority, projectId, sessionEpoch, url],
   );
   const cell = useMemo(() => ({ request, frame, frames }), [frame, frames, request]);
-  const shown = useShownStrip(cell);
-  const strip = shown?.strip;
-  const shownFrames = shown?.frames;
+  const { shown, freshAspect, failed } = useShownStrip(cell);
+  const posterWhenStripFails = useMemo(
+    () =>
+      failed
+        ? compositionThumbnailRequest(posterUrl, projectId, { sessionEpoch, priority, rich: true })
+        : null,
+    [failed, posterUrl, priority, projectId, sessionEpoch],
+  );
+  const poster = useReadyImage(posterWhenStripFails);
+  const learned = poster ? poster.aspect : freshAspect;
   useLayoutEffect(() => {
-    if (strip && shownFrames) onAspect(strip.aspect / shownFrames);
-  }, [onAspect, shownFrames, strip]);
+    if (learned) onAspect(learned);
+  }, [learned, onAspect]);
+  if (poster) return <StripSlice strip={poster} frame={0} frames={1} letterbox={letterbox} />;
   return shown ? <StripSlice {...shown} letterbox={letterbox} /> : null;
 });
 
@@ -288,8 +306,12 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
     origin: window.location.origin,
     contentRevision,
   });
-  const [aspect, setAspect] = useState<number | null>(null);
-  const learnAspectOnce = useCallback((next: number) => setAspect((known) => known ?? next), []);
+  const [learned, setLearned] = useState<{ url: string; aspect: number } | null>(null);
+  const aspect = learned?.url === url ? learned.aspect : null;
+  const learnAspectOncePerRevision = useCallback(
+    (next: number) => setLearned((known) => (known?.url === url ? known : { url, aspect: next })),
+    [url],
+  );
   const frameAspect = aspect ?? 16 / 9;
   const { frameW, frameCount } = computeThumbnailStrip(
     container.width,
@@ -337,11 +359,12 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
               {image && (
                 <CompositionTile
                   {...image}
+                  posterUrl={url}
                   letterbox={frameW > Math.round(container.height * frameAspect)}
                   projectId={projectId}
                   sessionEpoch={sessionEpoch}
                   priority={priority}
-                  onAspect={learnAspectOnce}
+                  onAspect={learnAspectOncePerRevision}
                 />
               )}
             </div>
