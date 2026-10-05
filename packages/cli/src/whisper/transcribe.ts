@@ -1,5 +1,5 @@
 // fallow-ignore-file complexity
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, mkdirSync, rmSync, statSync, unlinkSync } from "node:fs";
 import { join, extname } from "node:path";
 import { tmpdir } from "node:os";
@@ -411,6 +411,29 @@ export function dtwPresetForModel(model: string): string {
   return model.replace(/-/g, ".");
 }
 
+const acceptsNoFlashAttnByPath = new Map<string, boolean>();
+
+/** whisper.cpp's flash attention, on by default since it gained `--no-flash-attn`, silently turns `--dtw` off. */
+export function dtwArgs(whisperPath: string, model: string): string[] {
+  let acceptsNoFlashAttn = acceptsNoFlashAttnByPath.get(whisperPath);
+  if (acceptsNoFlashAttn === undefined) {
+    const help = spawnSync(whisperPath, ["--help"], { encoding: "utf-8", timeout: 10_000 });
+    acceptsNoFlashAttn = `${help.stdout}${help.stderr}`.includes("--no-flash-attn");
+    acceptsNoFlashAttnByPath.set(whisperPath, acceptsNoFlashAttn);
+  }
+  return ["--dtw", dtwPresetForModel(model), ...(acceptsNoFlashAttn ? ["--no-flash-attn"] : [])];
+}
+
+export function assertDtwTimed(segments: { tokens?: { t_dtw?: number }[] }[]): void {
+  const tokens = segments.flatMap((segment) => segment.tokens ?? []);
+  const timed = tokens.filter((token) => token.t_dtw !== undefined);
+  if (timed.length === 0 || timed.some((token) => (token.t_dtw ?? -1) > -1)) return;
+  throw new Error(
+    "whisper.cpp skipped word alignment (--dtw), so caption timing would drift. " +
+      "Its flash attention turns alignment off; update whisper-cli to a build that accepts --no-flash-attn.",
+  );
+}
+
 export function initialModelForLanguage(model: string, language?: string): string {
   const baseLanguage = language?.trim().toLowerCase().split(/[-_]/, 1)[0];
   if (baseLanguage && baseLanguage !== "en" && model.endsWith(".en")) {
@@ -495,8 +518,7 @@ export async function transcribe(
     "--output-json-full",
     "--output-file",
     outputBase,
-    "--dtw",
-    dtwPresetForModel(effectiveModel),
+    ...dtwArgs(whisper.executablePath, effectiveModel),
     "--suppress-nst",
   ];
   if (detectedLanguage) {
@@ -556,6 +578,7 @@ export async function transcribe(
       // ignore
     }
   }
+  assertDtwTimed(segments);
 
   return {
     transcriptPath,
