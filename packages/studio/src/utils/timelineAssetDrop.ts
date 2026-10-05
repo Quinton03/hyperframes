@@ -155,9 +155,12 @@ export function extendCompositionDurationIfNeeded(source: string, requiredEnd: n
  * reduce the furthest clip end (delete/trim). No-op when `contentEnd` is not > 0, so
  * an empty timeline keeps its declared duration instead of collapsing to 0.
  */
-export function setCompositionDurationToContent(source: string, contentEnd: number): string {
+export function setCompositionDurationToContent(
+  source: string,
+  contentEnd: number,
+  rootDur: number | null = readRootCompositionDuration(source),
+): string {
   if (!Number.isFinite(contentEnd) || contentEnd <= 0) return source;
-  const rootDur = readRootCompositionDuration(source);
   if (rootDur == null) return source;
   const next = roundToCenti(contentEnd);
   if (rootDur === next) return source;
