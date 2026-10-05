@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { publishAtNextFreeVersion, syncSkills } from "./clawhub-sync.mjs";
+import { syncSkills } from "./clawhub-sync.mjs";
 
 const TAKEN = (version) =>
   `Version ${version} already exists. Increment the version number and try again. (reset in 24s)`;
@@ -39,52 +39,46 @@ function fakeClawhub({
 
 const provenance = ["--changelog", "Synced from 6c353d8 (main)", "--source-commit", "6c353d8"];
 const sync = (clawhub, dryRun = false) => syncSkills({ run: clawhub.run, provenance, dryRun });
+const SYNC_ARGS = ["sync", "--all", "--json", "--bump", "patch", "--owner", "heygen-com"];
+const creativeTaken = { slug: "hyperframes-creative", message: TAKEN("1.0.13") };
 
 describe("ClawHub skill sync", () => {
-  it("publishes a skill whose bumped version is taken at the next free patch", () => {
-    const clawhub = fakeClawhub({
-      syncFailed: [{ slug: "hyperframes-creative", message: TAKEN("1.0.13") }],
-      takenVersions: ["1.0.14"],
-    });
+  it("publishes a skill whose bumped version is taken one patch past it, then reads it back", () => {
+    const clawhub = fakeClawhub({ syncFailed: [creativeTaken] });
 
     assert.deepEqual(sync(clawhub), []);
-    const [syncArgs, ...rest] = clawhub.calls;
-    assert.deepEqual(syncArgs, [
-      "sync",
-      "--all",
-      "--json",
-      "--bump",
-      "patch",
-      "--owner",
-      "heygen-com",
-      ...provenance,
-    ]);
-    const publishes = rest.filter((args) => args[0] === "publish");
-    assert.equal(publishes.length, 2);
-    assert.deepEqual(publishes[1], [
-      "publish",
-      "skills/hyperframes-creative",
-      "--slug",
-      "hyperframes-creative",
-      "--version",
-      "1.0.15",
-      "--source-path",
-      "skills/hyperframes-creative",
-      "--owner",
-      "heygen-com",
-      ...provenance,
+    assert.deepEqual(clawhub.calls, [
+      [...SYNC_ARGS, ...provenance],
+      [
+        "publish",
+        "skills/hyperframes-creative",
+        "--slug",
+        "hyperframes-creative",
+        "--version",
+        "1.0.14",
+        "--source-path",
+        "skills/hyperframes-creative",
+        "--owner",
+        "heygen-com",
+        ...provenance,
+      ],
+      ["inspect", "heygen-com/hyperframes-creative", "--json"],
     ]);
   });
 
   it("fails when the registry does not show the version it accepted", () => {
-    const clawhub = fakeClawhub({
-      syncFailed: [{ slug: "hyperframes-creative", message: TAKEN("1.0.13") }],
-      hidden: true,
-    });
+    const clawhub = fakeClawhub({ syncFailed: [creativeTaken], hidden: true });
 
     assert.deepEqual(sync(clawhub), [
       "hyperframes-creative: published 1.0.14, but the registry's latest is 1.0.12",
     ]);
+  });
+
+  it("fails rather than skipping further when the next patch is taken too", () => {
+    const clawhub = fakeClawhub({ syncFailed: [creativeTaken], takenVersions: ["1.0.14"] });
+
+    assert.deepEqual(sync(clawhub), [`hyperframes-creative: ${TAKEN("1.0.14")}`]);
+    assert.equal(clawhub.calls.filter((args) => args[0] === "publish").length, 1);
   });
 
   it("still fails on any other refusal, without retrying it", () => {
@@ -112,11 +106,10 @@ describe("ClawHub skill sync", () => {
     ]);
   });
 
-  it("gives up after a bounded number of taken versions", () => {
-    assert.throws(
-      () =>
-        publishAtNextFreeVersion([1, 0, 13], (version) => ({ ok: false, message: TAKEN(version) })),
-      /No free version within 10 patches of 1\.0\.13/,
-    );
+  it("only previews in a dry run, even when a version is taken", () => {
+    const clawhub = fakeClawhub({ syncFailed: [creativeTaken] });
+
+    assert.equal(sync(clawhub, true).length, 1);
+    assert.deepEqual(clawhub.calls, [[...SYNC_ARGS, ...provenance, "--dry-run"]]);
   });
 });

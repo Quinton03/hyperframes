@@ -1,29 +1,16 @@
 #!/usr/bin/env node
 // `clawhub sync` bumps from the registry's `latest` tag, so a version the registry has hidden
-// blocks the skill for good; such a skill is published at the next free patch, then checked live.
+// blocks the skill for good; such a skill is published one patch past it, then checked live.
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const TAKEN_VERSION = /Version (\d+)\.(\d+)\.(\d+) already exists/;
-const MAX_PATCH_BUMPS = 10;
-const OWNER = ["--owner", "heygen-com"];
+const OWNER_HANDLE = "heygen-com";
+const OWNER = ["--owner", OWNER_HANDLE];
 
 function takenVersion(message) {
   const match = TAKEN_VERSION.exec(message);
   return match ? match.slice(1, 4).map(Number) : null;
-}
-
-/** Publishes at the first patch after `taken` the registry accepts; any other refusal is thrown. */
-export function publishAtNextFreeVersion([major, minor, patch], publish) {
-  for (let bump = 1; bump <= MAX_PATCH_BUMPS; bump++) {
-    const version = `${major}.${minor}.${patch + bump}`;
-    const result = publish(version);
-    if (result.ok) return version;
-    if (!takenVersion(result.message)) throw new Error(result.message);
-  }
-  throw new Error(
-    `No free version within ${MAX_PATCH_BUMPS} patches of ${major}.${minor}.${patch}`,
-  );
 }
 
 function parsedOutput(result) {
@@ -35,7 +22,7 @@ function parsedOutput(result) {
 }
 
 function latestTag(run, slug) {
-  return parsedOutput(run(["inspect", slug, "--json"]))?.skill?.tags?.latest;
+  return parsedOutput(run(["inspect", `${OWNER_HANDLE}/${slug}`, "--json"]))?.skill?.tags?.latest;
 }
 
 function failedSkills(sync) {
@@ -50,24 +37,21 @@ const syncArgs = (provenance, dryRun) =>
 function republishTaken(run, provenance, { slug, message }) {
   const taken = takenVersion(message);
   if (!taken) return `${slug}: ${message}`;
+  const [major, minor, patch] = taken;
+  const version = `${major}.${minor}.${patch + 1}`;
   const folder = `skills/${slug}`;
-  const publishAt = (version) =>
-    run(
-      ["publish", folder, "--slug", slug, "--version", version, "--source-path", folder].concat(
-        OWNER,
-        provenance,
-      ),
-    );
-  try {
-    const version = publishAtNextFreeVersion(taken, publishAt);
-    const latest = latestTag(run, slug);
-    if (latest !== version)
-      return `${slug}: published ${version}, but the registry's latest is ${latest}`;
-    console.log(`${slug}: ${taken.join(".")} is taken, published ${version}`);
-    return null;
-  } catch (error) {
-    return `${slug}: ${error.message}`;
-  }
+  const published = run(
+    ["publish", folder, "--slug", slug, "--version", version, "--source-path", folder].concat(
+      OWNER,
+      provenance,
+    ),
+  );
+  if (!published.ok) return `${slug}: ${published.message}`;
+  const latest = latestTag(run, slug);
+  if (latest !== version)
+    return `${slug}: published ${version}, but the registry's latest is ${latest}`;
+  console.log(`${slug}: ${taken.join(".")} is taken, published ${version}`);
+  return null;
 }
 
 export function syncSkills({ run, provenance, dryRun }) {
