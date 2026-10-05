@@ -19,6 +19,7 @@ import {
   selectTarget,
   settled,
   saveFault,
+  seekTo,
   sleep,
   smoothness,
   timedWrite,
@@ -456,7 +457,9 @@ async function measureSequence({ spec, dir, files, evidence }, session, control,
   await waitForFiles(ctx.A, { timeout: 15_000 });
 
   await page.reload();
-  const reloaded = await openStudio(ctx.A);
+  // The reload opens at the case's playhead; the steps may have left it elsewhere.
+  const opened = await openStudio(ctx.A);
+  const reloaded = state.time === ctx.A.playhead ? opened : await seekTo(ctx.A, state.time);
   await shoot("reloaded");
   const shown = state.text && (await ctx.A.handles.target.evaluate((e) => e.textContent));
   const drags = steps.filter((s) => s.do === "drag");
@@ -505,7 +508,7 @@ async function measureSequence({ spec, dir, files, evidence }, session, control,
         text.shown &&
         (!text.select || (text.selection?.editing && text.selection.text.trim().length > 0)),
     },
-    reloaded,
+    reloaded: { ...reloaded, time: state.time },
     undo: {
       bytes: undo.ok && sameFiles(committedFiles, expected ?? {}),
       box: quadDistance(undone.visible, pre.visible),

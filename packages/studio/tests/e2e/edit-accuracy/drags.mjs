@@ -60,6 +60,14 @@ const GSAP_SEQUENCES = {
   resizedrag: [{ do: "drag", gesture: "resize" }, MOVE],
 };
 
+/** A box a timeline set holds: a second resize and drag after the first pair must save too. */
+const HELD_TWICE = [
+  { do: "drag", gesture: "resize" },
+  MOVE,
+  { do: "drag", gesture: "resize" },
+  { ...MOVE, by: [-90, -60] },
+];
+
 /** Text in place: a double press opens it, Enter commits; `select` first double-clicks a word to replace. */
 const TEXT = {
   edit: [{ do: "text", word: "Teleport" }],
@@ -105,6 +113,11 @@ export function dragCases() {
     })),
   );
   const fastKeys = [row("seqfastkeys", pxRoot(), FAST_KEYS)];
+  // Saves slowed as on a busy machine: each press lands before the previous save does.
+  const heldTwice = ["root", "nested"].map((nesting) => ({
+    ...row("seqheldtwice", pxRoot({ nesting }), HELD_TWICE, "tlhold"),
+    slowSaves: 800,
+  }));
   // Settled: a resize on a tween saves its size and its anchor separately, still one undo.
   const gsapSequences = Object.entries(GSAP_SEQUENCES).flatMap(([name, steps]) =>
     ["root", "nested"].map((nesting) => ({
@@ -120,5 +133,14 @@ export function dragCases() {
       other: false,
     })),
   );
-  return [...paths, ...sequences, ...plainToKeys, ...fastKeys, ...gsapSequences, ...texts, ...centred];
+  return [
+    ...paths,
+    ...sequences,
+    ...plainToKeys,
+    ...fastKeys,
+    ...heldTwice,
+    ...gsapSequences,
+    ...texts,
+    ...centred,
+  ];
 }

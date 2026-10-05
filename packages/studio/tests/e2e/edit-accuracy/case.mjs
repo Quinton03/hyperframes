@@ -307,7 +307,7 @@ export async function openStudio(ctx) {
   return settled(ctx);
 }
 
-async function seekTo(ctx, time) {
+export async function seekTo(ctx, time) {
   const seek = await ctx.page.evaluate(
     (t) => window.__editBench.call("studio_seek", { time: t }),
     time,
@@ -517,6 +517,15 @@ async function cropOutline(ctx, map) {
   return (await contentQuad(h)).map(map.toComp);
 }
 
+/** Holds every save request `ms` before it is sent, so a later press lands while it is still in flight. */
+function slowSaves(ms) {
+  const send = window.fetch;
+  window.fetch = (url, init) =>
+    /\/file-mutations\/patch-|gsap-mutations/.test(String(url))
+      ? new Promise((resolve) => setTimeout(resolve, ms)).then(() => send(url, init))
+      : send(url, init);
+}
+
 /** Screen path (one point per frame) and the per-frame tracking error for each pointer gesture. */
 function plan(gesture, pre, pressComp) {
   const at = (p) => pre.map.toScreen(p);
@@ -570,7 +579,10 @@ function plan(gesture, pre, pressComp) {
 async function sample(ctx, gesture, point, pointerScreen) {
   const m = await measure(ctx);
   if (gesture === "crop") m.outline = await cropOutline(ctx, m.map);
-  return { m, p: point(m), c: m.map.toComp(pointerScreen) };
+  // A press made while the preview reloads waits for it: Studio draws its box at the pointer meanwhile.
+  const waiting = await ctx.page.$("[data-dom-edit-press-waiting]");
+  const box = waiting && m.map.toComp((await contentQuad(waiting))[0]);
+  return { m, p: point(m), c: m.map.toComp(pointerScreen), box };
 }
 
 const TRACE_CATEGORIES = ["toplevel", "devtools.timeline", "blink.user_timing"];
@@ -755,7 +767,14 @@ export async function pointerGesture(ctx, gesture, pre, route) {
     await ctx.page.mouse.move(p[0], p[1]);
     await nextFrame(ctx.page);
     last = await sample(ctx, gesture, g.point, p);
-    errors.push(g.error(last, s0));
+    errors.push(
+      last.box && s0.box
+        ? dist(
+            [last.box[0] - s0.box[0], last.box[1] - s0.box[1]],
+            [last.c[0] - s0.c[0], last.c[1] - s0.c[1]],
+          )
+        : g.error(last, s0),
+    );
   }
   const rec = await recording(ctx.page, false);
   const smooth = smoothness(rec);
@@ -847,6 +866,7 @@ export async function inStudio({ browser, spec, dir, files, url, evidence }, dri
     await page.setViewport(VIEWPORT);
     await page.evaluateOnNewDocument(installWebMcpHost, "__editBench");
     await page.evaluateOnNewDocument(instrumentPage);
+    if (spec.slowSaves) await page.evaluateOnNewDocument(slowSaves, spec.slowSaves);
     await page.evaluateOnNewDocument(frameSamplerScript);
     await page.goto(url);
     let pre = await openStudio(ctx);
