@@ -101,16 +101,25 @@ export function createThumbnailKey(parts: Readonly<Record<string, string | numbe
     .join("&");
 }
 
-export function createThumbnailRequestIdentity(
-  request: Pick<ThumbnailRequest, "key" | "projectId" | "sessionEpoch" | "kind" | "rich">,
-) {
-  return createThumbnailKey({
-    project: request.projectId,
-    session: request.sessionEpoch,
-    request: request.key,
-    kind: request.kind,
-    rich: request.rich ? 1 : 0,
-  });
+type RequestIdentityFields = Pick<
+  ThumbnailRequest,
+  "key" | "projectId" | "sessionEpoch" | "kind" | "rich"
+>;
+const identityOfRequestObject = new WeakMap<RequestIdentityFields, string>();
+
+export function createThumbnailRequestIdentity(request: RequestIdentityFields) {
+  let identity = identityOfRequestObject.get(request);
+  if (identity === undefined) {
+    identity = createThumbnailKey({
+      project: request.projectId,
+      session: request.sessionEpoch,
+      request: request.key,
+      kind: request.kind,
+      rich: request.rich ? 1 : 0,
+    });
+    identityOfRequestObject.set(request, identity);
+  }
+  return identity;
 }
 
 /** Sole client owner for thumbnail work, cached resources, and cleanup. */
@@ -151,7 +160,6 @@ export class ThumbnailScheduler {
       this.now() - entry.failedAt >= this.budgets.metadataFailureTtlMs
     ) {
       this.retryInPlace(entry);
-      entry = this.entries.get(scopedKey);
     }
     if (!entry) {
       entry = {

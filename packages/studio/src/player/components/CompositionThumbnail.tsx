@@ -109,6 +109,7 @@ export function planCompositionStrip(
   const chunkStart = (chunk: number) => Math.max(chunk * STRIP_CHUNK_FRAMES, firstCell);
   const chunkEnd = (chunk: number) => Math.min((chunk + 1) * STRIP_CHUNK_FRAMES, lastCell + 1);
   return {
+    step,
     times: (chunk: number) =>
       Array.from({ length: chunkEnd(chunk) - chunkStart(chunk) }, (_, i) => {
         const cell = chunkStart(chunk) + i;
@@ -128,18 +129,19 @@ export function planCompositionStrip(
   };
 }
 
-function stripUrls(
+function chunkUrl(
+  urlsByStepAndChunk: Map<string, string>,
   plan: ReturnType<typeof planCompositionStrip>,
+  chunk: number,
   options: Parameters<typeof buildCompositionThumbnailUrl>[0],
 ) {
-  const urls = new Map<number, string>();
-  return (chunk: number) => {
-    const known = urls.get(chunk);
-    if (known) return known;
-    const built = buildCompositionThumbnailUrl({ ...options, times: plan.times(chunk) });
-    urls.set(chunk, built);
-    return built;
-  };
+  const key = `${plan.step}/${chunk}`;
+  let url = urlsByStepAndChunk.get(key);
+  if (url === undefined) {
+    url = buildCompositionThumbnailUrl({ ...options, times: plan.times(chunk) });
+    urlsByStepAndChunk.set(key, url);
+  }
+  return url;
 }
 
 /** The composition a preview URL renders: `/preview/comp/<path>`, or the root for `/preview`. */
@@ -211,22 +213,11 @@ function useShownStrip(cell: TileCell, posterCell: TileCell) {
   const snapshot = useThumbnailLease(cell.request);
   const next = readyImage(snapshot);
   const [last, setLast] = useState<TileCell | null>(null);
-  const fallbackCell = fallbackFor(next, last, snapshot.status === "error", posterCell);
-  const held = fallbackCell ?? last;
+  const held = last ?? (!next && snapshot.status === "error" ? posterCell : null);
   const fallback = readyImage(useThumbnailLease(held ? held.request : null));
-  const view = viewOf(cell, next, fallbackCell, fallback, posterCell);
+  const view = viewOf(cell, next, held, fallback, posterCell);
   if (view.remember && view.remember.request !== last?.request) setLast(view.remember);
   return view;
-}
-
-function fallbackFor(
-  next: StripImage | null,
-  last: TileCell | null,
-  failed: boolean,
-  posterCell: TileCell,
-) {
-  if (next) return null;
-  return last ?? (failed ? posterCell : null);
 }
 
 const NOTHING_SHOWN = { shown: null, freshAspect: null, remember: null };
@@ -370,11 +361,14 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
         : null,
     [container.width, frameW, sourceRangeDuration, sourceStart],
   );
-  const stripUrlOf = useMemo(() => plan && stripUrls(plan, urlOptions), [plan, urlOptions]);
+  const urlsByStepAndChunk = useMemo(
+    () => new Map<string, string>(),
+    [urlOptions, sourceStart, sourceRangeDuration],
+  );
   const imageOf = (index: number): TileImage | null => {
-    if (!plan || !stripUrlOf) return sourceRangeDuration > 0 ? null : { url, frame: 0, frames: 1 };
+    if (!plan) return sourceRangeDuration > 0 ? null : { url, frame: 0, frames: 1 };
     const { chunk, frame, frames } = plan.tile(index);
-    return { url: stripUrlOf(chunk), frame, frames };
+    return { url: chunkUrl(urlsByStepAndChunk, plan, chunk, urlOptions), frame, frames };
   };
 
   return (

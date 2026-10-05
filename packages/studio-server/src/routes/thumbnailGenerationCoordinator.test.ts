@@ -119,6 +119,7 @@ describe("ThumbnailGenerationCoordinator", () => {
     await expect(strip).resolves.toEqual(Buffer.from("strip"));
     await expect(poster).resolves.toEqual(Buffer.from("poster"));
     expect(starts).toEqual(["poster", "strip", "poster"]);
+    expect(posterSignals[1]?.aborted).toBe(false);
   });
 
   it("never aborts foreground work for other foreground work", async () => {
