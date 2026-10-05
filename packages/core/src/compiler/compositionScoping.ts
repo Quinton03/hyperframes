@@ -718,8 +718,11 @@ ${source.replace(/<\/(script)/gi, "<\\/$1")}
     });
   };
   __hfFindRoot();
-  window.__hfRenamedIdSelectorEntries = null;
-  __hfInstallRenamedIdSelectorShim();
+  window.__hfRefreshRenamedIdSelectors = function() {
+    window.__hfRenamedIdSelectorEntries = null;
+    __hfInstallRenamedIdSelectorShim();
+  };
+  window.__hfRefreshRenamedIdSelectors();
   __hfRecordAnimations(__hfRun);
 })();`;
 }

@@ -9,6 +9,10 @@ import {
 } from "../compiler/compositionScoping";
 import { parseImportMap } from "../compiler/importMaps";
 import { hasSameLink } from "../compiler/scriptRuns";
+import {
+  namespaceCollidingSvgIds,
+  rewriteSvgIdReferencesInCss,
+} from "../compiler/svgIdNamespacing";
 import { waitForFonts } from "./afterFonts";
 import { parseLayoutDimension } from "./compositionDimension";
 import { markFlattenedInnerRoot } from "./flattenedRoot";
@@ -33,6 +37,8 @@ type LoadExternalCompositionsParams = {
     details: Record<string, string | number | boolean | null | string[]>;
   }) => void;
 };
+
+type MountedComposition = { host: Element; namespace: string; styles: HTMLStyleElement[] };
 
 type PendingScript =
   | {
@@ -422,7 +428,7 @@ async function mountCompositionContent(params: {
     code: string;
     details: Record<string, string | number | boolean | null | string[]>;
   }) => void;
-}): Promise<void> {
+}): Promise<MountedComposition> {
   // Which node is the composition root, which id its CSS scopes to, which id
   // its scripts scope to, where its assets come from and in what order: the
   // shared assembly module answers all of it, so this path and the compiler's
@@ -467,6 +473,7 @@ async function mountCompositionContent(params: {
     params.injectedLinks.push(clonedLink);
   }
 
+  const styles: HTMLStyleElement[] = [];
   const injectScopedStyles = (styleEls: Iterable<Element>): void => {
     for (const style of styleEls) {
       const clonedStyle = style.cloneNode(true);
@@ -486,6 +493,7 @@ async function mountCompositionContent(params: {
       }
       document.head.appendChild(clonedStyle);
       params.injectedStyles.push(clonedStyle);
+      styles.push(clonedStyle);
     }
   };
   // Already in injection order: <head> styles from a non-template composition
@@ -610,14 +618,19 @@ async function mountCompositionContent(params: {
       }
     }
   }
+  return {
+    host: params.host,
+    namespace: runtimeScopeCompositionId || authoredScopeCompositionId || "",
+    styles,
+  };
 }
 
 export async function loadInlineTemplateCompositions(
   params: LoadExternalCompositionsParams,
-): Promise<void> {
+): Promise<MountedComposition[]> {
   const trackedHosts = getTrackedCompositionHosts();
   cleanupDetachedScopedVariables();
-  if (trackedHosts.length === 0) return;
+  if (trackedHosts.length === 0) return [];
   const hostIdentityByElement = assignRuntimeCompositionIds(trackedHosts);
   const hosts = trackedHosts.filter((host) => {
     if (host.hasAttribute("data-composition-src")) return false;
@@ -627,8 +640,7 @@ export async function loadInlineTemplateCompositions(
     return !!document.querySelector(`template#${CSS.escape(compId)}-template`);
   });
 
-  if (hosts.length === 0) return;
-
+  const mounted: MountedComposition[] = [];
   for (const host of hosts) {
     const hostIdentity = hostIdentityByElement.get(host);
     const compId = hostIdentity?.authoredCompositionId;
@@ -638,7 +650,7 @@ export async function loadInlineTemplateCompositions(
     )!;
 
     resetCompositionHost(host);
-    await mountCompositionContent({
+    const composition = await mountCompositionContent({
       host,
       authoredCompositionId: compId,
       runtimeCompositionId: hostIdentity?.runtimeCompositionId || compId,
@@ -653,23 +665,24 @@ export async function loadInlineTemplateCompositions(
       parseDimensionPx: params.parseDimensionPx,
       onDiagnostic: params.onDiagnostic,
     });
+    mounted.push(composition);
   }
+  return mounted;
 }
 
 export async function loadExternalCompositions(
   params: LoadExternalCompositionsParams,
-): Promise<void> {
+): Promise<MountedComposition[]> {
   const trackedHosts = getTrackedCompositionHosts();
   cleanupDetachedScopedVariables();
-  if (trackedHosts.length === 0) return;
+  if (trackedHosts.length === 0) return [];
   const hostIdentityByElement = assignRuntimeCompositionIds(trackedHosts);
   const hosts = trackedHosts.filter((host) => host.hasAttribute("data-composition-src"));
-  if (hosts.length === 0) return;
 
-  await Promise.all(
-    hosts.map(async (host) => {
+  const mounted = await Promise.all(
+    hosts.map(async (host): Promise<MountedComposition | null> => {
       const src = host.getAttribute("data-composition-src");
-      if (!src) return;
+      if (!src) return null;
       const hostIdentity = hostIdentityByElement.get(host);
       const authoredCompositionId = hostIdentity?.authoredCompositionId || null;
       const runtimeCompositionId =
@@ -689,7 +702,7 @@ export async function loadExternalCompositions(
               )
             : null;
         if (localTemplate) {
-          await mountCompositionContent({
+          return await mountCompositionContent({
             host,
             authoredCompositionId,
             runtimeCompositionId,
@@ -704,7 +717,6 @@ export async function loadExternalCompositions(
             parseDimensionPx: params.parseDimensionPx,
             onDiagnostic: params.onDiagnostic,
           });
-          return;
         }
         const response = await fetch(src);
         if (!response.ok) {
@@ -730,7 +742,7 @@ export async function loadExternalCompositions(
               )
             : null) ?? doc.querySelector<HTMLTemplateElement>("template");
         const sourceNode = template ? template.content : doc.body;
-        await mountCompositionContent({
+        return await mountCompositionContent({
           host,
           authoredCompositionId,
           runtimeCompositionId,
@@ -768,9 +780,35 @@ export async function loadExternalCompositions(
         });
         // Keep host empty on load failures to avoid rendering escaped fallback HTML.
         resetCompositionHost(host);
+        return null;
       }
     }),
   );
+  return mounted.filter((composition): composition is MountedComposition => composition !== null);
+}
+
+/** Runs once every composition is mounted: whether an SVG id collides depends on the whole document. */
+export function namespaceMountedSvgIds(mounted: readonly MountedComposition[]): void {
+  const idMaps = namespaceCollidingSvgIds(
+    document,
+    mounted.map(({ host, namespace, styles }) => ({
+      root: host,
+      namespace,
+      exclude: mounted
+        .filter((nested) => nested.host !== host && host.contains(nested.host))
+        .map((nested) => nested.host),
+      cssTexts: styles.map((style) => style.textContent || ""),
+    })),
+  );
+  idMaps.forEach((idMap, index) => {
+    if (idMap.size === 0) return;
+    for (const style of mounted[index]!.styles) {
+      const css = style.textContent || "";
+      const rewritten = rewriteSvgIdReferencesInCss(css, idMap);
+      if (rewritten !== css) style.textContent = rewritten;
+    }
+  });
+  window.__hfRefreshRenamedIdSelectors?.();
 }
 
 /**

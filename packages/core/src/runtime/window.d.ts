@@ -49,6 +49,7 @@ declare global {
     };
     __clipManifest?: RuntimeTimelineMessage;
     __clipTree?: ClipTree;
+    __hfRefreshRenamedIdSelectors?: () => void;
     __hf?: {
       colorGrading?: RuntimeColorGradingApi;
       onSwallowed?: (label: string, err: unknown) => void;

@@ -47,6 +47,9 @@ Determinism baseline:
 
 - `renderSeek` is the producer-canonical seek path.
 - 30fps quantization and readiness gates are correctness requirements.
+- Preview automation uses `?hf-capture=1`, `hyperframes snapshot`, or runtime readiness
+  (`window.__renderReady` and the seek contract), never a wait on all of `document.images`.
+  Interactive preview leaves images in hidden future clips unloaded until they are needed.
 
 ## Build
 

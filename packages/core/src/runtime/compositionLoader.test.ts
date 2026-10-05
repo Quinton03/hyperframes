@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
-import { loadExternalCompositions, loadInlineTemplateCompositions } from "./compositionLoader";
+import {
+  loadExternalCompositions,
+  loadInlineTemplateCompositions,
+  namespaceMountedSvgIds,
+} from "./compositionLoader";
 
 // jsdom doesn't provide CSS.escape
 beforeAll(() => {
@@ -1804,5 +1808,106 @@ describe("loadInlineTemplateCompositions", () => {
     expect(externalHost.getAttribute("data-hf-original-composition-id")).toBe("scene");
     expect(inlineHost.querySelector("p")?.textContent).toBe("Inline scene");
     expect(externalHost.querySelector("p")?.textContent).toBeTruthy();
+  });
+});
+
+describe("namespaceMountedSvgIds", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    document.head.querySelectorAll("style").forEach((s) => s.remove());
+    vi.restoreAllMocks();
+  });
+
+  const CLIPPED = (id: string) =>
+    `<svg><g clip-path="url(#${id})"><path d="M0 0h24v24H0z"/></g>` +
+    `<defs><clipPath id="${id}"><rect width="24" height="24"/></clipPath></defs></svg>`;
+
+  async function mountAll(files: Record<string, string>, body: string) {
+    document.body.innerHTML = body;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      return new Response(files[String(input)], { status: 200 });
+    });
+    const params = {
+      injectedStyles: [] as HTMLStyleElement[],
+      injectedScripts: [] as HTMLScriptElement[],
+      injectedLinks: [] as HTMLLinkElement[],
+      parseDimensionPx: () => null,
+    };
+    const external = await loadExternalCompositions(params);
+    namespaceMountedSvgIds([...external, ...(await loadInlineTemplateCompositions(params))]);
+    return params.injectedStyles;
+  }
+
+  const host = (id: string) =>
+    document.querySelector<HTMLElement>(`[data-composition-id="${id}"][data-composition-src]`)!;
+  const clipTarget = (el: Element | null) =>
+    document.getElementById(/#([^)"']+)/.exec(el!.getAttribute("clip-path")!)![1]!);
+  const external = (id: string) =>
+    `<div data-composition-id="${id}" data-composition-src="https://x.test/${id}.html"></div>`;
+
+  it("resolves each loaded composition's clip-path to its own clipPath when ids collide", async () => {
+    await mountAll(
+      {
+        "https://x.test/intro.html": `<div data-composition-id="intro">${CLIPPED("clip0_1_2")}</div>`,
+        "https://x.test/grid.html": `<div data-composition-id="grid">${CLIPPED("clip0_1_2")}</div>`,
+      },
+      external("intro") + external("grid"),
+    );
+
+    for (const id of ["intro", "grid"]) {
+      expect(host(id).contains(clipTarget(host(id).querySelector("g")))).toBe(true);
+    }
+    expect(host("grid").querySelector("clipPath")!.id).toBe("grid--clip0_1_2");
+  });
+
+  it("rewrites a url(#id) used only from a composition's <style> along with the element", async () => {
+    const filtered = (id: string) =>
+      `<div data-composition-id="${id}"><style>.box { filter: url(#fx); }</style>` +
+      `<svg><filter id="fx"><feGaussianBlur stdDeviation="2"/></filter></svg><div class="box"></div></div>`;
+    const styles = await mountAll(
+      { "https://x.test/a.html": filtered("a"), "https://x.test/b.html": filtered("b") },
+      external("a") + external("b"),
+    );
+
+    const css = (id: string) =>
+      styles.find((style) => style.textContent!.includes(`[data-composition-id="${id}"]`))!
+        .textContent;
+    expect(host("b").querySelector("filter")!.id).toBe("b--fx");
+    expect(css("a")).toContain("url(#fx)");
+    expect(css("b")).toContain("url(#b--fx)");
+  });
+
+  it("leaves an id that does not collide untouched", async () => {
+    await mountAll(
+      {
+        "https://x.test/a.html": `<div data-composition-id="a">${CLIPPED("c")}</div>`,
+        "https://x.test/b.html": `<div data-composition-id="b">${CLIPPED("c")}${CLIPPED("only-b")}</div>`,
+      },
+      external("a") + external("b"),
+    );
+
+    const [renamed, onlyB] = host("b").querySelectorAll("clipPath");
+    expect(renamed!.id).toBe("b--c");
+    expect(onlyB!.id).toBe("only-b");
+    expect(onlyB!.hasAttribute("data-hf-authored-id")).toBe(false);
+    expect(host("b").querySelectorAll("g")[1]!.getAttribute("clip-path")).toBe("url(#only-b)");
+  });
+
+  it("keeps a nested composition's references out of its parent's renames", async () => {
+    await mountAll(
+      {
+        "https://x.test/outer.html":
+          `<div data-composition-id="outer"><div id="inner-host" data-composition-id="inner"></div>` +
+          `${CLIPPED("c")}</div>`,
+      },
+      `<template id="inner-template"><div data-composition-id="inner">${CLIPPED("c")}</div></template>` +
+        external("outer"),
+    );
+
+    const inner = document.getElementById("inner-host")!;
+    expect(inner.contains(clipTarget(inner.querySelector("g")))).toBe(true);
+    const outerG = [...host("outer").querySelectorAll("g")].find((g) => !inner.contains(g))!;
+    const outerClip = clipTarget(outerG);
+    expect(host("outer").contains(outerClip) && !inner.contains(outerClip)).toBe(true);
   });
 });

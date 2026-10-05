@@ -266,6 +266,101 @@ describe("core runtime browser contract", () => {
     }
   }, 30_000);
 
+  it("keeps each loaded sub-composition's SVG clip ids pointing into its own section", async () => {
+    // Figma exports restart clip ids per file, so both scenes declare clip0_1_2..clip2_1_2.
+    const origin = "https://fixture.test/";
+    const icon = (clip: string | null) =>
+      clip
+        ? `<svg viewBox="0 0 24 24"><g clip-path="url(#${clip})"><path d="M0 0h24v24H0z"/></g>` +
+          `<defs><clipPath id="${clip}"><rect width="24" height="24" rx="6"/></clipPath></defs></svg>`
+        : `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>`;
+    const clipAt = new Map([
+      [0, "clip0_1_2"],
+      [1, "clip1_1_2"],
+      [15, "clip2_1_2"],
+    ]);
+    const deferredLookup = (section: string) => `<script>
+      var svg = document.querySelector("svg");
+      var target = svg.querySelector("clipPath");
+      window.__svgLookups = window.__svgLookups || {};
+      window.__svgLookups[${JSON.stringify(section)}] = function() {
+        return {
+          document: document.querySelector("#clip0_1_2") === target,
+          documentAll: document.querySelectorAll("#clip0_1_2")[0] === target,
+          element: svg.querySelector("#clip0_1_2") === target,
+          elementAll: svg.querySelectorAll("#clip0_1_2")[0] === target,
+        };
+      };
+    </script>`;
+    const scenes: Record<string, string> = {
+      "scenes/intro.html": `<template id="intro-template"><div data-composition-id="intro" data-width="320" data-height="180" data-duration="3">${[...clipAt.values()].map(icon).join("")}${deferredLookup("intro")}</div></template>`,
+      "scenes/grid.html": `<template id="grid-template"><div data-composition-id="grid" data-width="320" data-height="180" data-duration="5">${Array.from(
+        { length: 16 },
+        (_, i) => `<div class="tile">${icon(clipAt.get(i) ?? null)}</div>`,
+      ).join("")}${deferredLookup("grid")}</div></template>`,
+      "index.html": `<!doctype html><html><body>
+        <div data-composition-id="main" data-start="0" data-duration="8" data-width="320" data-height="180">
+          <div id="intro" class="clip" data-composition-id="intro" data-composition-src="scenes/intro.html" data-start="0" data-duration="3" data-track-index="0"></div>
+          <div id="grid" class="clip" data-composition-id="grid" data-composition-src="scenes/grid.html" data-start="3" data-duration="5" data-track-index="0"></div>
+        </div>
+        <script src="${origin}runtime.js"></script></body></html>`,
+    };
+    const scenePage = await browser.newPage();
+    try {
+      await scenePage.setRequestInterception(true);
+      scenePage.on("request", (request) => {
+        const path = request.url().slice(origin.length);
+        if (path === "runtime.js")
+          void request.respond({
+            contentType: "text/javascript",
+            body: readFileSync(RUNTIME_PATH),
+          });
+        else if (scenes[path])
+          void request.respond({ contentType: "text/html", body: scenes[path] });
+        else void request.continue();
+      });
+      await scenePage.goto(`${origin}index.html`);
+      await scenePage.waitForFunction(
+        () => (window as unknown as { __renderReady?: boolean }).__renderReady === true,
+      );
+
+      const strays = await scenePage.evaluate(() =>
+        ["intro", "grid"].map((section) => {
+          const host = document.getElementById(section)!;
+          const refs = [...host.querySelectorAll("[clip-path]")].map(
+            (el) => /#([^)"']+)/.exec(el.getAttribute("clip-path")!)![1]!,
+          );
+          return {
+            section,
+            refs: refs.length,
+            outside: refs.filter((id) => !host.contains(document.getElementById(id))),
+            lookups: (
+              window as unknown as {
+                __svgLookups: Record<string, () => Record<string, boolean>>;
+              }
+            ).__svgLookups[section]!(),
+          };
+        }),
+      );
+      expect(strays).toEqual([
+        {
+          section: "intro",
+          refs: 3,
+          outside: [],
+          lookups: { document: true, documentAll: true, element: true, elementAll: true },
+        },
+        {
+          section: "grid",
+          refs: 3,
+          outside: [],
+          lookups: { document: true, documentAll: true, element: true, elementAll: true },
+        },
+      ]);
+    } finally {
+      await scenePage.close();
+    }
+  }, 30_000);
+
   it("removes the control bridge during teardown", async () => {
     const result = await page.evaluate(async () => {
       const runtimeWindow = window as unknown as {

@@ -65,7 +65,11 @@ import {
 } from "./compositionLength";
 import { createRuntimeStartTimeResolver } from "./startResolver";
 import { createClipTree } from "./clipTree";
-import { loadExternalCompositions, loadInlineTemplateCompositions } from "./compositionLoader";
+import {
+  loadExternalCompositions,
+  loadInlineTemplateCompositions,
+  namespaceMountedSvgIds,
+} from "./compositionLoader";
 import { runScriptsAfterFonts } from "./afterFonts";
 import {
   applyCaptionOverrides,
@@ -3386,7 +3390,10 @@ export function initSandboxRuntimeModular(): void {
       },
     };
     void loadExternalCompositions(compositionLoaderParams)
-      .then(() => loadInlineTemplateCompositions(compositionLoaderParams))
+      .then(async (external) => {
+        const inline = await loadInlineTemplateCompositions(compositionLoaderParams);
+        namespaceMountedSvgIds([...external, ...inline]);
+      })
       .finally(() => {
         externalCompositionsReady = true;
         void settleSceneDom();
