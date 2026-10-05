@@ -729,4 +729,20 @@ describe("the desktop app link's private files", () => {
     const viaLink = await app.request("/projects/p/files/link.json");
     expect(await viaLink.text()).not.toContain("secret");
   });
+
+  it("keep everything else under .hyperframes/ out of reach too, but Studio's legacy motion file", async () => {
+    const { app, project } = fixture();
+    mkdirSync(join(project, ".hyperframes"));
+    writeFileSync(join(project, ".hyperframes", "agent-handoff.json"), '{"sessionId":"secret"}');
+    writeFileSync(
+      join(project, ".hyperframes", "studio-motion.json"),
+      '{"version":1,"motions":[]}',
+    );
+    expect((await app.request("/projects/p/files/.hyperframes/agent-handoff.json")).status).toBe(
+      403,
+    );
+    expect((await app.request("/projects/p/files/.hyperframes/studio-motion.json")).status).toBe(
+      200,
+    );
+  });
 });

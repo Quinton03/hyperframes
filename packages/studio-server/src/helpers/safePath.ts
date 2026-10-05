@@ -25,18 +25,15 @@ export function realFilePath(filePath: string): string {
   }
 }
 
-// The desktop app link's token and the app tools' token (packages/cli agentLink.ts, appTools.ts): owner-only on
-// disk, so no route serves or changes them for whoever reaches the preview port.
-const PRIVATE_PROJECT_FILES = new Set([
-  ".hyperframes/agent-link.json",
-  ".hyperframes/app-tools.json",
-]);
+// App state and the desktop link's tokens (cli agentLink.ts): no route serves it; Studio still edits the motion file.
+const STUDIO_STATE_FILES = new Set([".hyperframes/studio-motion.json"]);
 
 export function isPrivateProjectFile(projectDir: string, filePath: string): boolean {
   const rel = (from: string, to: string) => relative(from, to).split(sep).join("/").toLowerCase();
-  return (
-    PRIVATE_PROJECT_FILES.has(rel(projectDir, filePath)) ||
-    PRIVATE_PROJECT_FILES.has(rel(realFilePath(projectDir), realFilePath(filePath)))
+  return [rel(projectDir, filePath), rel(realFilePath(projectDir), realFilePath(filePath))].some(
+    (path) =>
+      (path === ".hyperframes" || path.startsWith(".hyperframes/")) &&
+      !STUDIO_STATE_FILES.has(path),
   );
 }
 

@@ -27,14 +27,18 @@ export function sameOriginPost(headers: {
   return origin === undefined || origin === `http://${host}`;
 }
 
+export const boundToLoopback = (env: NodeJS.ProcessEnv = process.env): boolean => {
+  const bound = env.HYPERFRAMES_PREVIEW_HOST?.trim();
+  return !bound || isLoopbackHost(bound);
+};
+
 export function relayFor(
   host: string,
   token: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): AgentRelay | undefined {
   const inbox = env.CLAUDE_CODE_MESSAGING_SOCKET;
-  const bound = env.HYPERFRAMES_PREVIEW_HOST?.trim();
-  if (!token || !inbox || (bound && !isLoopbackHost(bound))) return undefined;
+  if (!token || !inbox || !boundToLoopback(env)) return undefined;
   return { url: `http://${host}${AGENT_RELAY_PATH}`, token, inbox };
 }
 

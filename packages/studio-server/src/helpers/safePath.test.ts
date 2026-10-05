@@ -84,10 +84,12 @@ describe("walkDir", () => {
 });
 
 describe("isPrivateProjectFile", () => {
-  it("names the desktop app link's token files, in any case", () => {
+  it("names everything under .hyperframes/ but Studio's legacy motion file, in any case", () => {
     expect(isPrivateProjectFile("/p", "/p/.hyperframes/agent-link.json")).toBe(true);
     expect(isPrivateProjectFile("/p", "/p/.HyperFrames/App-Tools.json")).toBe(true);
-    expect(isPrivateProjectFile("/p", "/p/.hyperframes/history.json")).toBe(false);
+    expect(isPrivateProjectFile("/p", "/p/.hyperframes/agent-handoff.json")).toBe(true);
+    expect(isPrivateProjectFile("/p", "/p/.hyperframes")).toBe(true);
+    expect(isPrivateProjectFile("/p", "/p/.hyperframes/studio-motion.json")).toBe(false);
     expect(isPrivateProjectFile("/p", "/p/agent-link.json")).toBe(false);
   });
 });

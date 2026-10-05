@@ -41,7 +41,7 @@ import * as clack from "@clack/prompts";
 import { c } from "../ui/colors.js";
 import { desktopHint } from "../utils/desktopApp.js";
 import { newRelayToken, writeAgentLink } from "../utils/agentLink.js";
-import { relayFor } from "../server/desktopRoutes.js";
+import { boundToLoopback, relayFor } from "../server/desktopRoutes.js";
 import { isDevMode } from "../utils/env.js";
 import { normalizeErrorMessage as errorMessage } from "../utils/errorMessage.js";
 import { buildNpxCommand } from "../utils/npxCommand.js";
@@ -1580,7 +1580,7 @@ async function runEmbeddedMode(
   // Compute everything that may throw before acquiring the fs.watch handle.
   // Once createStudioServer returns, every subsequent exit path must close it.
   const serverBuildSignature = await loadPreviewServerBuildSignature();
-  const relayToken = newRelayToken();
+  const relayToken = boundToLoopback() ? newRelayToken() : undefined;
   const {
     app,
     watcher,
