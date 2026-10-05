@@ -110,12 +110,12 @@ export function planCompositionStrip(
   const chunkEnd = (chunk: number) => Math.min((chunk + 1) * STRIP_CHUNK_FRAMES, lastCell + 1);
   return {
     times: (chunk: number) =>
-      Array.from({ length: chunkEnd(chunk) - chunkStart(chunk) }, (_, i) =>
-        Math.min(
-          Math.max((chunkStart(chunk) + i + 0.5) * step, sourceStart),
-          sourceStart + sourceRangeDuration - LAST_FRAME_INSET_SECONDS,
-        ),
-      ),
+      Array.from({ length: chunkEnd(chunk) - chunkStart(chunk) }, (_, i) => {
+        const cell = chunkStart(chunk) + i;
+        const from = Math.max(cell * step, sourceStart);
+        const to = Math.min((cell + 1) * step, sourceStart + sourceRangeDuration);
+        return Math.min((from + to) / 2, to - LAST_FRAME_INSET_SECONDS);
+      }),
     tile: (tile: number) => {
       const cell = cellOf(tile);
       const chunk = Math.floor(cell / STRIP_CHUNK_FRAMES);
@@ -212,7 +212,8 @@ function useShownStrip(cell: TileCell, posterCell: TileCell) {
   const next = readyImage(snapshot);
   const [last, setLast] = useState<TileCell | null>(null);
   const fallbackCell = fallbackFor(next, last, snapshot.status === "error", posterCell);
-  const fallback = readyImage(useThumbnailLease(fallbackCell ? fallbackCell.request : null));
+  const held = fallbackCell ?? last;
+  const fallback = readyImage(useThumbnailLease(held ? held.request : null));
   const view = viewOf(cell, next, fallbackCell, fallback, posterCell);
   if (view.remember && view.remember.request !== last?.request) setLast(view.remember);
   return view;

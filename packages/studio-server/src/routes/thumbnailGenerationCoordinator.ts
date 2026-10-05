@@ -1,12 +1,14 @@
 export type ThumbnailGenerationValue = Buffer | null;
 export type ThumbnailGenerationWork = (signal: AbortSignal) => Promise<ThumbnailGenerationValue>;
+export const BACKGROUND_RANK = 2;
 
 interface GenerationEntry {
   key: string;
   controller: AbortController;
   leases: number;
   state: "queued" | "active";
-  yieldToSingleFrames: boolean;
+  rank: number;
+  run: number;
   work: ThumbnailGenerationWork;
   promise: Promise<ThumbnailGenerationValue>;
   resolve: (value: ThumbnailGenerationValue) => void;
@@ -30,7 +32,7 @@ export class ThumbnailGenerationCoordinator {
     key: string,
     signal: AbortSignal,
     work: ThumbnailGenerationWork,
-    { yieldToSingleFrames = false }: { yieldToSingleFrames?: boolean } = {},
+    { rank = 0 }: { rank?: number } = {},
   ): Promise<ThumbnailGenerationValue> {
     if (signal.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
 
@@ -47,17 +49,16 @@ export class ThumbnailGenerationCoordinator {
         controller: new AbortController(),
         leases: 0,
         state: "queued",
-        yieldToSingleFrames,
+        rank,
+        run: 0,
         work,
         promise,
         resolve,
         reject,
       };
       this.entries.set(key, entry);
-      const firstYielding = yieldToSingleFrames
-        ? -1
-        : this.queue.findIndex((queued) => queued.yieldToSingleFrames);
-      this.queue.splice(firstYielding < 0 ? this.queue.length : firstYielding, 0, entry);
+      this.enqueue(entry);
+      if (rank < BACKGROUND_RANK) this.preemptBackground();
     }
     entry.leases++;
     this.pump();
@@ -118,16 +119,39 @@ export class ThumbnailGenerationCoordinator {
     }
   }
 
+  private enqueue(entry: GenerationEntry): void {
+    const firstOfLaterRank = this.queue.findIndex((queued) => queued.rank > entry.rank);
+    this.queue.splice(firstOfLaterRank < 0 ? this.queue.length : firstOfLaterRank, 0, entry);
+  }
+
+  private preemptBackground(): void {
+    if (this.active < this.concurrency) return;
+    const background = [...this.activeEntries].find((active) => active.rank >= BACKGROUND_RANK);
+    if (!background) return;
+    background.controller.abort();
+    background.controller = new AbortController();
+    background.run++;
+    background.state = "queued";
+    this.activeEntries.delete(background);
+    this.active--;
+    this.enqueue(background);
+  }
+
   private async run(entry: GenerationEntry): Promise<void> {
+    const run = entry.run;
+    const current = () => entry.run === run;
     try {
-      entry.resolve(await entry.work(entry.controller.signal));
+      const value = await entry.work(entry.controller.signal);
+      if (current()) entry.resolve(value);
     } catch (error) {
-      entry.reject(error);
+      if (current()) entry.reject(error);
     } finally {
-      this.active--;
-      this.activeEntries.delete(entry);
-      if (this.entries.get(entry.key) === entry) this.entries.delete(entry.key);
-      this.pump();
+      if (current()) {
+        this.active--;
+        this.activeEntries.delete(entry);
+        if (this.entries.get(entry.key) === entry) this.entries.delete(entry.key);
+        this.pump();
+      }
     }
   }
 }

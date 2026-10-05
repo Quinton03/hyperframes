@@ -4,7 +4,7 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MockResizeObserver, reportResize } from "../../hooks/resizeObserverTestUtils";
-import { thumbnailScheduler } from "../lib/thumbnailScheduler";
+import { createThumbnailRequestIdentity, thumbnailScheduler } from "../lib/thumbnailScheduler";
 import {
   buildCompositionThumbnailUrl,
   CompositionThumbnail,
@@ -132,6 +132,11 @@ describe("planCompositionStrip", () => {
     },
   );
 
+  it("shows a clip narrower than one grid cell at the middle of its range", () => {
+    const plan = planCompositionStrip(0, 10, 16);
+    expect(plan.times(plan.tile(0).chunk)).toEqual([5]);
+  });
+
   it("asks a chunk for at most 8 ascending times", () => {
     const plan = planCompositionStrip(0, 600, 18.4);
     for (let tile = 0; tile < 33; tile++) {
@@ -159,6 +164,7 @@ describe("CompositionThumbnail", () => {
       .map((url) => new URL(url).searchParams.get("times"))
       .filter(Boolean);
   const slices = () => [...host.querySelectorAll<HTMLElement>("[data-strip-frame]")];
+  const tileWidth = () => slices()[0]?.closest<HTMLElement>(".shrink-0")?.style.width;
 
   function sizeHost(width: number, height: number) {
     Object.defineProperty(host, "clientWidth", { configurable: true, value: width });
@@ -380,17 +386,52 @@ describe("CompositionThumbnail", () => {
     sizeHost(500, 40);
     await renderThumbnail({ ...eightSeconds, contentRevision: 0 });
     await loadImage(0, 8 * 240, 135);
-    expect(slices()[0]?.parentElement?.style.width).toBe("71px");
+    expect(tileWidth()).toBe("71px");
 
     await renderThumbnail({ ...eightSeconds, contentRevision: 1 });
     await loadImage(1, 8 * 76, 135);
 
-    expect(slices()[0]?.parentElement?.parentElement?.style.width).toBe("48px");
+    expect(tileWidth()).toBe("48px");
+  });
+
+  it("never lets go of the shown strip while an edit's strip loads", async () => {
+    const live = new Map<string, number>();
+    let lowestDuringEdit = Number.POSITIVE_INFINITY;
+    let shownStrip: string | undefined;
+    let editing = false;
+    const acquire = thumbnailScheduler.acquire.bind(thumbnailScheduler);
+    const spy = vi.spyOn(thumbnailScheduler, "acquire").mockImplementation((request, listener) => {
+      const id = createThumbnailRequestIdentity(request);
+      if (!shownStrip && request.key.includes("times")) shownStrip = id;
+      live.set(id, (live.get(id) ?? 0) + 1);
+      const lease = acquire(request, listener);
+      return {
+        ...lease,
+        release: () => {
+          lease.release();
+          live.set(id, (live.get(id) ?? 1) - 1);
+          if (editing && id === shownStrip)
+            lowestDuringEdit = Math.min(lowestDuringEdit, live.get(id)!);
+        },
+      };
+    });
+    try {
+      sizeHost(500, 40);
+      await renderThumbnail({ ...eightSeconds, contentRevision: 0 });
+      await loadImage(0, 8 * 240, 135);
+
+      editing = true;
+      await renderThumbnail({ ...eightSeconds, contentRevision: 1 });
+
+      expect(lowestDuringEdit).toBeGreaterThan(0);
+      expect(fetchedUrls().filter((url) => url.includes("revision=0"))).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("keeps a portrait clip's tile width while an edit's frames load", async () => {
     sizeHost(384, 40);
-    const tileWidth = () => slices()[0]?.closest<HTMLElement>(".shrink-0")?.style.width;
     await renderThumbnail({ ...eightSeconds, contentRevision: 0 });
     await loadImage(0, 8 * 76, 135);
     expect(tileWidth()).toBe("48px");

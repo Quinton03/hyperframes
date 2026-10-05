@@ -19,7 +19,10 @@ import { STUDIO_MANUAL_EDITS_PATH } from "../helpers/manualEditsRenderScript.js"
 import { compositionInputSignature } from "../helpers/compositionInputs.js";
 import { createProjectSignature, resolveProjectAndSignature } from "../helpers/projectSignature.js";
 import { STUDIO_MOTION_PATH } from "../helpers/studioMotionRenderScript.js";
-import { thumbnailGenerationCoordinator } from "./thumbnailGenerationCoordinator.js";
+import {
+  BACKGROUND_RANK,
+  thumbnailGenerationCoordinator,
+} from "./thumbnailGenerationCoordinator.js";
 import { requestSubPath } from "../helpers/requestSubPath.js";
 import {
   isProjectRootMissing,
@@ -319,7 +322,7 @@ export function registerThumbnailRoutes(api: Hono, adapter: StudioApiAdapter): v
           writeThumbnailAtomically(cachePath, generated);
           return generated;
         },
-        { yieldToSingleFrames: stripTimes !== null },
+        { rank: url.searchParams.get("background") === "1" ? BACKGROUND_RANK : stripTimes ? 1 : 0 },
       );
       if (!buffer) {
         return c.json(

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ThumbnailGenerationCoordinator } from "./thumbnailGenerationCoordinator";
+import { BACKGROUND_RANK, ThumbnailGenerationCoordinator } from "./thumbnailGenerationCoordinator";
 
 function deferred() {
   let resolve!: (value: Buffer | null) => void;
@@ -46,12 +46,12 @@ describe("ThumbnailGenerationCoordinator", () => {
     expect(starts).toEqual(["a", "b", "c"]);
   });
 
-  it("starts queued single frames before queued background strips, keeping order within each", async () => {
+  it("starts queued work by rank, keeping arrival order within a rank", async () => {
     const coordinator = new ThumbnailGenerationCoordinator(1);
     const running = deferred();
     const starts: string[] = [];
     const signal = new AbortController().signal;
-    const job = (key: string, yieldToSingleFrames = false) =>
+    const job = (key: string, rank = 0) =>
       coordinator.acquire(
         key,
         signal,
@@ -59,20 +59,85 @@ describe("ThumbnailGenerationCoordinator", () => {
           starts.push(key);
           return key === "running" ? running.promise : Buffer.from(key);
         },
-        { yieldToSingleFrames },
+        { rank },
       );
 
     const all = [
-      job("running", true),
-      job("strip-1", true),
+      job("running", 1),
+      job("next-open-poster", 2),
+      job("strip-1", 1),
       job("poster-1"),
-      job("strip-2", true),
+      job("strip-2", 1),
       job("poster-2"),
     ];
     running.resolve(Buffer.from("running"));
     await Promise.all(all);
 
-    expect(starts).toEqual(["running", "poster-1", "poster-2", "strip-1", "strip-2"]);
+    expect(starts).toEqual([
+      "running",
+      "poster-1",
+      "poster-2",
+      "strip-1",
+      "strip-2",
+      "next-open-poster",
+    ]);
+  });
+
+  it("aborts running background work for foreground work and finishes it afterwards", async () => {
+    const coordinator = new ThumbnailGenerationCoordinator(1);
+    const starts: string[] = [];
+    const posterSignals: AbortSignal[] = [];
+    const poster = coordinator.acquire(
+      "next-open-poster",
+      new AbortController().signal,
+      async (signal) => {
+        starts.push("poster");
+        posterSignals.push(signal);
+        if (posterSignals.length > 1) return Buffer.from("poster");
+        await new Promise((aborted) => signal.addEventListener("abort", aborted, { once: true }));
+        return Buffer.from("aborted");
+      },
+      { rank: BACKGROUND_RANK },
+    );
+    const strip = coordinator.acquire(
+      "strip",
+      new AbortController().signal,
+      async () => {
+        starts.push("strip");
+        return Buffer.from("strip");
+      },
+      { rank: 1 },
+    );
+
+    await expect(strip).resolves.toEqual(Buffer.from("strip"));
+    await expect(poster).resolves.toEqual(Buffer.from("poster"));
+    expect(starts).toEqual(["poster", "strip", "poster"]);
+    expect(posterSignals[0]?.aborted).toBe(true);
+  });
+
+  it("never aborts foreground work for other foreground work", async () => {
+    const coordinator = new ThumbnailGenerationCoordinator(1);
+    const running = deferred();
+    const starts: string[] = [];
+    const job = (key: string, rank: number, work: () => Promise<Buffer>) =>
+      coordinator.acquire(
+        key,
+        new AbortController().signal,
+        async () => {
+          starts.push(key);
+          return work();
+        },
+        { rank },
+      );
+
+    const strip = job("strip", 1, () => running.promise as Promise<Buffer>);
+    const frame = job("frame", 0, async () => Buffer.from("frame"));
+    await Promise.resolve();
+    expect(starts).toEqual(["strip"]);
+
+    running.resolve(Buffer.from("strip"));
+    await Promise.all([strip, frame]);
+    expect(starts).toEqual(["strip", "frame"]);
   });
 
   it("keeps shared work alive until its final lease leaves", async () => {
