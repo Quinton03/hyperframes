@@ -131,9 +131,9 @@ export function NLEProvider({
   // Lightweight reload: change iframe src instead of destroying the Player.
   const prevRefreshKeyRef = useRef(refreshKey);
   useEffect(() => {
-    if (refreshKey === prevRefreshKeyRef.current) return;
-    prevRefreshKeyRef.current = refreshKey;
     try {
+      if (refreshKey === prevRefreshKeyRef.current) return;
+      prevRefreshKeyRef.current = refreshKey;
       refreshPlayer();
     } finally {
       previewReloadBegun();

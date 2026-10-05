@@ -40,10 +40,10 @@ export function useGsapAwareGroupMove({
     ): Promise<import("../utils/previewFeatureUsage").GeometryCommitResult> => {
       const writes = observeGsapGesture(gsapCommitMutation);
       const writer = writes.commit;
+      if (!writer) return { ok: true, changed: false };
       const stamps = new Map(
         updates.map((u) => [u.selection, freezeDragStamp(u.selection.element)]),
       );
-      if (!writer) return { ok: true, changed: false };
       const toastRefusal = options.refusalToast !== false;
       // One coalesce key across slow writes keeps the group drag in one undo entry.
       const coalesceKey = `group-drag:${++groupDragCommitCounter}`;

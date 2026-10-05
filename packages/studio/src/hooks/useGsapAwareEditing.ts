@@ -148,13 +148,13 @@ export function useGsapAwareEditing({
       next: { x: number; y: number },
       modifiers?: MoveCommitOptions,
     ) => {
-      const stamp = freezeDragStamp(selection.element);
       const writes = observeGsapGesture(gsapCommitMutation);
       if (modifiers?.plainTranslate ?? editsPlainCss(selection.element, "move")) {
         const result = await stageElementPositionOffset(selection, next, true).save();
         return writes.finish(result?.changed === true);
       }
       if (writes.commit) {
+        const stamp = freezeDragStamp(selection.element);
         try {
           const ownedAnimations = getGsapAnimationsForSelection(selection);
           const targetAnimations = Array.isArray(ownedAnimations)
@@ -210,12 +210,12 @@ export function useGsapAwareEditing({
       restore: () => void = () => undefined,
       route?: { plainTranslate: boolean },
     ) => {
-      const stamp = freezeDragStamp(selection.element);
       const writes = observeGsapGesture(gsapCommitMutation);
       if (route?.plainTranslate ?? editsPlainCss(selection.element, "resize")) {
         const result = await handleDomBoxSizeCommit(selection, next, offset, restore);
         return writes.finish(result?.changed === true);
       }
+      const stamp = freezeDragStamp(selection.element);
       let targetAnimations: GsapAnimation[];
       try {
         const ownedAnimations = getGsapAnimationsForSelection(selection);
@@ -368,13 +368,13 @@ export function useGsapAwareEditing({
 
   const handleGsapAwareRotationCommit = useCallback(
     async (selection: DomEditSelection, next: RotationCommit) => {
-      const stamp = freezeDragStamp(selection.element);
       const writes = observeGsapGesture(gsapCommitMutation);
       if (next.plain === undefined ? editsPlainCss(selection.element, "rotate") : next.plain) {
         const result = await handleDomRotationCommit(selection, next);
         return writes.finish(result?.changed === true);
       }
       if (writes.commit) {
+        const stamp = freezeDragStamp(selection.element);
         try {
           const targetAnimations = await getGsapAnimationsForSelection(selection);
           // A keyframe or a tl.set; a computed source rejects, so the gesture restores its draft.

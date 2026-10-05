@@ -74,6 +74,9 @@ function isTap(g: { startX: number; startY: number; travelled?: boolean }, e: Re
   );
 }
 
+// The reloaded preview no longer has the pressed element: the press is dropped, never left waiting.
+const MAX_SETTLED_WAIT_FRAMES = 60;
+
 const shifted = (rect: OverlayRect, dx: number, dy: number): OverlayRect => ({
   ...rect,
   left: rect.left + dx,
@@ -150,24 +153,24 @@ export function createDomEditOverlayGestureHandlers(opts: UseDomEditOverlayGestu
     opts.boxRef.current?.setAttribute(PRESS_WAITING_ATTR, "true");
     opts.rafPausedRef.current = true;
     let shownFrames = 0;
+    let settledFrames = 0;
     const poll = () => {
       if (opts.waitingPressRef.current !== press) return;
       const elements = pressed();
       const live = opts.iframeRef.current?.contentDocument;
-      const shown = !isPreviewChanging() && elements.every((el) => el.ownerDocument === live);
+      const settled = !isPreviewChanging();
+      const shown = settled && elements.every((el) => el.ownerDocument === live);
       shownFrames = shown ? shownFrames + 1 : 0;
+      settledFrames = settled ? settledFrames + 1 : 0;
       // Shown: the overlay measures the element on the new page for a frame, then the drag starts there.
       opts.rafPausedRef.current = !shown;
-      if (elements.length > 0 && shownFrames < 2) {
+      const lost = elements.length === 0 || settledFrames > MAX_SETTLED_WAIT_FRAMES;
+      if (!lost && shownFrames < 2) {
         press.frame = requestAnimationFrame(poll);
         return;
       }
       endWaitingPress();
-      if (
-        elements.length === 0 ||
-        !start(down as unknown as React.PointerEvent<HTMLElement>, at, true)
-      )
-        return;
+      if (lost || !start(down as unknown as React.PointerEvent<HTMLElement>, at, true)) return;
       if (press.moved) onPointerMove(press.moved);
       if (press.released) onPointerUp(press.released);
     };
@@ -207,6 +210,7 @@ export function createDomEditOverlayGestureHandlers(opts: UseDomEditOverlayGestu
           kind,
           pressed,
           opts,
+          // A waited start measures the element on the new page, not the rect from the old one.
           waited ? { resizeHandle: options?.resizeHandle, at } : { ...options, at },
         ),
       kind === "drag" ? drawPressedBox(opts.overlayRectRef.current) : null,
@@ -442,7 +446,7 @@ export function createDomEditOverlayGestureHandlers(opts: UseDomEditOverlayGestu
       setDraftGroupOverlayItems(
         groupG.originItems.map((item) => ({
           ...item,
-          rect: { ...item.rect, left: item.rect.left + dx, top: item.rect.top + dy },
+          rect: shifted(item.rect, dx, dy),
         })),
       );
       const updates = groupG.members.map((member) => ({

@@ -22,6 +22,7 @@ import {
 import type { GsapEditOutcome } from "./gsapEditOutcome";
 import { commitValueAtPlayhead, planValueEdit } from "./gsapValueAtPlayhead";
 import { editMoment } from "./editMoment";
+import type { EditMoment } from "../components/editor/manualEditsTypes";
 
 /**
  * The tween's keyframes with one inserted at `percentage`. Any existing keyframe
@@ -96,6 +97,7 @@ export function gsapPositionFromDragOutcome(
   studioOffset: { x: number; y: number },
   gsapPos: { x: number; y: number },
   iframe: HTMLIFrameElement | null,
+  moment?: EditMoment,
 ): GsapEditOutcome {
   if (anim.arcPath?.enabled) return { status: "persisted" };
   const { newX, newY, baseGsapX, baseGsapY } = computeDraggedGsapPosition(
@@ -105,6 +107,7 @@ export function gsapPositionFromDragOutcome(
   );
   const plan = planValueEdit(selection, anim, { x: newX, y: newY }, iframe, {
     backfill: { x: baseGsapX, y: baseGsapY },
+    moment,
   });
   return plan.ok
     ? { status: "persisted" }

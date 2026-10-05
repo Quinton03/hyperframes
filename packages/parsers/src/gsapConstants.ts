@@ -196,9 +196,10 @@ export function keyframeHoldForAnimation(
   // An untouched tween keeps only the hold it made: one with its own first value.
   const kept = (property: string, value: unknown) =>
     touched ? pinned.has(property) : pinned.get(property) === value;
+  const startsLate = start > 0.001;
   const pins = (group: PropertyGroupName, property: string, value: unknown) =>
     (group === "position" || group === "size") &&
-    (((lone || (group === "position" && start > 0.001)) && touched) || kept(property, value));
+    (((lone || (group === "position" && startsLate)) && touched) || kept(property, value));
   const hold: Record<string, number> = {};
   for (const [property, value] of Object.entries(atStart.properties)) {
     if (!pins(classifyPropertyGroup(property), property, value) || typeof value !== "number")

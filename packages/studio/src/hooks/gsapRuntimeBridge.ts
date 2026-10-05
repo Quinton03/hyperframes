@@ -33,6 +33,7 @@ import { roundTo3 } from "../utils/rounding";
 import type { GsapDragCommitCallbacks } from "./gsapDragCommit";
 import { readDragStamp, type DragStamp } from "./draggedGsapPosition";
 import { editMoment } from "./editMoment";
+import type { EditMoment } from "../components/editor/manualEditsTypes";
 import { isInstantHold, selectorFromSelection, writeTargetSelector } from "./gsapShared";
 import {
   findGsapPositionAnimation,
@@ -207,6 +208,7 @@ async function planDrag(
   allAnimations: GsapAnimation[],
   iframe: HTMLIFrameElement | null,
   options: { altKey?: boolean },
+  moment: EditMoment,
 ): Promise<GsapEditOutcome> {
   const selector = selectorFromSelection(selection);
   if (!selector) return { status: "blocked", reason: "no-selector" };
@@ -215,8 +217,15 @@ async function planDrag(
   const animations = keeper
     ? own.filter((a) => a === keeper || !isPositionWriteOf(selector)(a))
     : own;
-  const resolved = await resolveGroupTween("position", animations, selection, async () => {});
-  const posAnim = resolved?.anim ?? findGsapPositionAnimation(animations, selector);
+  const resolved = await resolveGroupTween(
+    "position",
+    animations,
+    selection,
+    async () => {},
+    undefined,
+    moment.time,
+  );
+  const posAnim = resolved?.anim ?? findGsapPositionAnimation(animations, selector, moment.time);
   const route = dragRoute(posAnim, iframe, selector, options.altKey);
   if (route === "static") return { status: "persisted" };
   if (!posAnim) {
@@ -229,7 +238,7 @@ async function planDrag(
       : { status: "persisted" };
   }
   const gsapPos = readGsapPositionFromIframe(iframe, selector) ?? { x: 0, y: 0 };
-  return gsapPositionFromDragOutcome(selection, posAnim, offset, gsapPos, iframe);
+  return gsapPositionFromDragOutcome(selection, posAnim, offset, gsapPos, iframe, moment);
 }
 
 /** Commits a drag through the GSAP script. Callers reject `blocked` (the gesture layer
@@ -249,6 +258,9 @@ export async function tryGsapDragIntercept(
     stamp?: DragStamp;
   },
 ): Promise<GsapEditOutcome> {
+  const stamp = options?.stamp ?? readDragStamp(selection.element);
+  const moment = editMoment(stamp);
+  const time = moment.time;
   if (!options?.preflightPassed) {
     const preflight = await preflightGsapDragIntercept(
       selection,
@@ -260,7 +272,7 @@ export async function tryGsapDragIntercept(
     if (preflight.status !== "persisted") return preflight;
     if (options?.preflightOnly) {
       return options.group
-        ? planDrag(selection, offset, allAnimations, iframe, options)
+        ? planDrag(selection, offset, allAnimations, iframe, options, moment)
         : preflight;
     }
   }
@@ -271,8 +283,6 @@ export async function tryGsapDragIntercept(
   // The preflight above proves this; retain a defensive result for DOM churn.
   if (!selector) return { status: "blocked", reason: "no-selector" };
   const commitMutation = oneUndoStep(gestureCommit);
-  const stamp = options?.stamp ?? readDragStamp(selection.element);
-  const time = editMoment(stamp).time;
 
   // Self-heal: enforce a single position write BEFORE committing. A corrupted
   // file can carry 2+ conflicting position writes for one selector (e.g. a

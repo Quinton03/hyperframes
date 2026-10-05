@@ -582,6 +582,7 @@ async function sample(ctx, gesture, point, pointerScreen) {
   // A press made while the preview reloads waits for it: Studio draws its box at the pointer meanwhile.
   const waiting = await ctx.page.$("[data-dom-edit-press-waiting]");
   const box = waiting && m.map.toComp((await contentQuad(waiting))[0]);
+  await waiting?.dispose();
   return { m, p: point(m), c: m.map.toComp(pointerScreen), box };
 }
 
