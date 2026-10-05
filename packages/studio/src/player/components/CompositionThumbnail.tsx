@@ -1,14 +1,24 @@
-import { memo, useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
-import { useThumbnailLease } from "../../hooks/useThumbnailLease";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { useThumbnailStripSize } from "../../hooks/useThumbnailStripSize";
 import {
   createThumbnailKey,
   type ThumbnailPriority,
   type ThumbnailRequest,
   readyImage,
+  thumbnailScheduler,
 } from "../lib/thumbnailScheduler";
 import { TIMELINE_VIEWPORT_BUDGETS } from "../lib/timelineViewportBudgets";
-import { ThumbnailTiles } from "./ThumbnailTiles";
+import { ThumbnailTiles, visibleTileRange } from "./ThumbnailTiles";
 import { computeThumbnailStrip, probeImageAspect } from "./thumbnailUtils";
 import { studioApiFetch } from "../../utils/studioApiFetch";
 
@@ -95,17 +105,13 @@ const STRIP_CHUNK_FRAMES = 8;
 const MIN_FRAME_STEP_SECONDS = 1 / 32;
 const LAST_FRAME_INSET_SECONDS = 0.001;
 
+const gridStepFor = (tileSeconds: number) =>
+  2 ** Math.floor(Math.log2(Math.max(tileSeconds, MIN_FRAME_STEP_SECONDS)));
+
 // Tiles map onto a power-of-two grid from 0, at least one cell per tile; chunks follow the grid, so zooms reuse frames.
-export function planCompositionStrip(
-  sourceStart: number,
-  sourceRangeDuration: number,
-  tileSeconds: number,
-) {
-  const step = 2 ** Math.floor(Math.log2(Math.max(tileSeconds, MIN_FRAME_STEP_SECONDS)));
+function compositionStripGrid(sourceStart: number, sourceRangeDuration: number, step: number) {
   const firstCell = Math.floor(sourceStart / step);
   const lastCell = Math.ceil((sourceStart + sourceRangeDuration) / step) - 1;
-  const cellOf = (tile: number) =>
-    Math.min(lastCell, Math.floor((sourceStart + (tile + 0.5) * tileSeconds) / step));
   const chunkStart = (chunk: number) => Math.max(chunk * STRIP_CHUNK_FRAMES, firstCell);
   const chunkEnd = (chunk: number) => Math.min((chunk + 1) * STRIP_CHUNK_FRAMES, lastCell + 1);
   return {
@@ -117,8 +123,11 @@ export function planCompositionStrip(
         const to = Math.min((cell + 1) * step, sourceStart + sourceRangeDuration);
         return Math.min((from + to) / 2, to - LAST_FRAME_INSET_SECONDS);
       }),
-    tile: (tile: number) => {
-      const cell = cellOf(tile);
+    tileAt: (tileSeconds: number) => (tile: number) => {
+      const cell = Math.min(
+        lastCell,
+        Math.floor((sourceStart + (tile + 0.5) * tileSeconds) / step),
+      );
       const chunk = Math.floor(cell / STRIP_CHUNK_FRAMES);
       return {
         chunk,
@@ -129,19 +138,13 @@ export function planCompositionStrip(
   };
 }
 
-function chunkUrl(
-  urlsByStepAndChunk: Map<string, string>,
-  plan: ReturnType<typeof planCompositionStrip>,
-  chunk: number,
-  options: Parameters<typeof buildCompositionThumbnailUrl>[0],
+export function planCompositionStrip(
+  sourceStart: number,
+  sourceRangeDuration: number,
+  tileSeconds: number,
 ) {
-  const key = `${plan.step}/${chunk}`;
-  let url = urlsByStepAndChunk.get(key);
-  if (url === undefined) {
-    url = buildCompositionThumbnailUrl({ ...options, times: plan.times(chunk) });
-    urlsByStepAndChunk.set(key, url);
-  }
-  return url;
+  const grid = compositionStripGrid(sourceStart, sourceRangeDuration, gridStepFor(tileSeconds));
+  return { times: grid.times, tile: grid.tileAt(tileSeconds) };
 }
 
 /** The composition a preview URL renders: `/preview/comp/<path>`, or the root for `/preview`. */
@@ -190,58 +193,64 @@ async function loadCompositionImage(url: string, signal: AbortSignal, frames: nu
   }
 }
 
-interface TileImage {
-  url: string;
-  frame: number;
-  frames: number;
-}
-
-interface CompositionTileProps extends TileImage {
-  posterUrl: string;
-  letterbox: boolean;
-  projectId: string;
-  sessionEpoch: number;
-  priority: ThumbnailPriority;
-  onAspect: (frameAspect: number) => void;
-}
-
 type StripImage = NonNullable<ReturnType<typeof readyImage>>;
-type TileCell = { request: ThumbnailRequest; frame: number; frames: number };
+type ShownCell = { request: ThumbnailRequest; frame: number; frames: number };
+type ShownTile = ShownCell & { strip: StripImage };
 
-/** The tile's strip once ready; until then what it showed last (kept leased), or the poster if it never had one. */
-function useShownStrip(cell: TileCell, posterCell: TileCell) {
-  const snapshot = useThumbnailLease(cell.request);
-  const next = readyImage(snapshot);
-  const [last, setLast] = useState<TileCell | null>(null);
-  const held = last ?? (!next && snapshot.status === "error" ? posterCell : null);
-  const fallback = readyImage(useThumbnailLease(held ? held.request : null));
-  const view = viewOf(cell, next, held, fallback, posterCell);
-  if (view.remember && view.remember.request !== last?.request) setLast(view.remember);
-  return view;
+const imageOf = (request: ThumbnailRequest) => readyImage(thumbnailScheduler.getSnapshot(request));
+
+/** A tile's own frame once ready; until then what it showed last, or the poster if its strip failed. */
+function cellToShow(cell: ShownCell, last: ShownCell | undefined, posterCell: ShownCell) {
+  if (imageOf(cell.request)) return cell;
+  if (last && imageOf(last.request)) return last;
+  return thumbnailScheduler.getSnapshot(cell.request).status === "error" ? posterCell : null;
 }
 
-const NOTHING_SHOWN = { shown: null, freshAspect: null, remember: null };
-
-function viewOf(
-  cell: TileCell,
-  next: StripImage | null,
-  fallbackCell: TileCell | null,
-  fallback: StripImage | null,
-  posterCell: TileCell,
+function showTiles(
+  [first, end]: readonly [number, number],
+  cellAt: (index: number) => ShownCell | null,
+  lastShown: ReadonlyMap<number, ShownCell>,
+  posterCell: ShownCell,
 ) {
-  if (next)
-    return {
-      shown: { ...cell, strip: next },
-      freshAspect: next.aspect / cell.frames,
-      remember: cell,
+  const tiles = new Map<number, ShownTile>();
+  const leased = new Set<ThumbnailRequest>();
+  let freshAspect: number | null = null;
+  for (let index = first; index < end; index++) {
+    const cell = cellAt(index);
+    if (!cell) continue;
+    leased.add(cell.request);
+    const shown = cellToShow(cell, lastShown.get(index), posterCell);
+    if (!shown) continue;
+    leased.add(shown.request);
+    const strip = imageOf(shown.request);
+    if (!strip) continue;
+    tiles.set(index, { ...shown, strip });
+    if (shown === cell || shown === posterCell) freshAspect ??= strip.aspect / shown.frames;
+  }
+  return { tiles, leased, freshAspect };
+}
+
+/** Holds a lease on exactly the given requests, re-rendering when any of them changes. */
+function useThumbnailLeases(requests: ReadonlySet<ThumbnailRequest>) {
+  const [, rerender] = useReducer((renders: number) => renders + 1, 0);
+  const leases = useRef(new Map<ThumbnailRequest, { release(): void }>());
+  useLayoutEffect(() => {
+    const held = leases.current;
+    for (const request of requests)
+      if (!held.has(request)) held.set(request, thumbnailScheduler.acquire(request, rerender));
+    for (const [request, lease] of held) {
+      if (requests.has(request)) continue;
+      lease.release();
+      held.delete(request);
+    }
+  }, [requests]);
+  useEffect(() => {
+    const held = leases.current;
+    return () => {
+      for (const lease of held.values()) lease.release();
+      held.clear();
     };
-  if (!fallback || !fallbackCell) return NOTHING_SHOWN;
-  const current = fallbackCell === posterCell;
-  return {
-    shown: { ...fallbackCell, strip: fallback },
-    freshAspect: current ? fallback.aspect : null,
-    remember: current ? posterCell : null,
-  };
+  }, []);
 }
 
 function StripSlice({
@@ -271,42 +280,6 @@ function StripSlice({
   );
   return letterbox ? <div className="absolute inset-0 flex justify-center">{slice}</div> : slice;
 }
-
-const CompositionTile = memo(function CompositionTile({
-  url,
-  posterUrl,
-  frame,
-  frames,
-  letterbox,
-  projectId,
-  sessionEpoch,
-  priority,
-  onAspect,
-}: CompositionTileProps) {
-  const request = useMemo(
-    () =>
-      compositionThumbnailRequest(url, projectId, { sessionEpoch, priority, rich: true }, frames),
-    [frames, priority, projectId, sessionEpoch, url],
-  );
-  const cell = useMemo(() => ({ request, frame, frames }), [frame, frames, request]);
-  const posterCell = useMemo(
-    () => ({
-      request: compositionThumbnailRequest(posterUrl, projectId, {
-        sessionEpoch,
-        priority,
-        rich: true,
-      }),
-      frame: 0,
-      frames: 1,
-    }),
-    [posterUrl, priority, projectId, sessionEpoch],
-  );
-  const { shown, freshAspect } = useShownStrip(cell, posterCell);
-  useEffect(() => {
-    if (freshAspect) onAspect(freshAspect);
-  }, [freshAspect, onAspect]);
-  return shown ? <StripSlice {...shown} letterbox={letterbox} /> : null;
-});
 
 /** Server-rendered composition frames, deduplicated and budgeted by project/session. */
 export const CompositionThumbnail = memo(function CompositionThumbnail({
@@ -350,26 +323,63 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
     container.height,
     48,
   );
-  const plan = useMemo(
+  const measured = container.width > 0;
+  const tileSeconds = measured ? (sourceRangeDuration * frameW) / container.width : 0;
+  const step = gridStepFor(tileSeconds);
+  const grid = useMemo(
     () =>
-      sourceRangeDuration > 0 && container.width > 0
-        ? planCompositionStrip(
-            sourceStart,
-            sourceRangeDuration,
-            (sourceRangeDuration * frameW) / container.width,
-          )
+      sourceRangeDuration > 0 && measured
+        ? compositionStripGrid(sourceStart, sourceRangeDuration, step)
         : null,
-    [container.width, frameW, sourceRangeDuration, sourceStart],
+    [measured, sourceRangeDuration, sourceStart, step],
   );
-  const urlsByStepAndChunk = useMemo(
-    () => new Map<string, string>(),
-    [urlOptions, sourceStart, sourceRangeDuration],
+  const posterCell = useMemo(
+    () => ({
+      request: compositionThumbnailRequest(url, projectId, { sessionEpoch, priority, rich: true }),
+      frame: 0,
+      frames: 1,
+    }),
+    [priority, projectId, sessionEpoch, url],
   );
-  const imageOf = (index: number): TileImage | null => {
-    if (!plan) return sourceRangeDuration > 0 ? null : { url, frame: 0, frames: 1 };
-    const { chunk, frame, frames } = plan.tile(index);
-    return { url: chunkUrl(urlsByStepAndChunk, plan, chunk, urlOptions), frame, frames };
+  const chunkRequest = useMemo(() => {
+    if (!grid) return null;
+    const requests = new Map<number, ThumbnailRequest>();
+    return (chunk: number, frames: number) => {
+      let request = requests.get(chunk);
+      if (!request) {
+        const chunkUrl = buildCompositionThumbnailUrl({ ...urlOptions, times: grid.times(chunk) });
+        request = compositionThumbnailRequest(
+          chunkUrl,
+          projectId,
+          { sessionEpoch, priority, rich: true },
+          frames,
+        );
+        requests.set(chunk, request);
+      }
+      return request;
+    };
+  }, [grid, priority, projectId, sessionEpoch, urlOptions]);
+  const tileOf = grid?.tileAt(tileSeconds);
+  const cellAt = (index: number): ShownCell | null => {
+    if (!tileOf || !chunkRequest) return sourceRangeDuration > 0 ? null : posterCell;
+    const { chunk, frame, frames } = tileOf(index);
+    return { request: chunkRequest(chunk, frames), frame, frames };
   };
+  const lastShown = useRef<ReadonlyMap<number, ShownCell>>(new Map());
+  const { tiles, leased, freshAspect } = showTiles(
+    visibleTileRange(container, frameW, frameCount),
+    cellAt,
+    lastShown.current,
+    posterCell,
+  );
+  useThumbnailLeases(leased);
+  useLayoutEffect(() => {
+    lastShown.current = tiles;
+  });
+  useEffect(() => {
+    if (freshAspect) learnAspectOncePerRevision(freshAspect);
+  }, [freshAspect, learnAspectOncePerRevision]);
+  const letterbox = frameW > Math.round(container.height * frameAspect);
 
   return (
     <div ref={setContainerRef} className="absolute inset-0 overflow-hidden">
@@ -384,22 +394,19 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
         }}
       >
         {(index) => {
-          const image = imageOf(index);
+          const tile = tiles.get(index);
           return (
             <div
               key={index}
               className="relative h-full shrink-0 overflow-hidden"
               style={{ width: frameW }}
             >
-              {image && (
-                <CompositionTile
-                  {...image}
-                  posterUrl={url}
-                  letterbox={frameW > Math.round(container.height * frameAspect)}
-                  projectId={projectId}
-                  sessionEpoch={sessionEpoch}
-                  priority={priority}
-                  onAspect={learnAspectOncePerRevision}
+              {tile && (
+                <StripSlice
+                  strip={tile.strip}
+                  frame={tile.frame}
+                  frames={tile.frames}
+                  letterbox={letterbox}
                 />
               )}
             </div>

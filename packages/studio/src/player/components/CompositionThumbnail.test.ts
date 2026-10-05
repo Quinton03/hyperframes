@@ -334,6 +334,20 @@ describe("CompositionThumbnail", () => {
     expect(slices().every((slice) => slice.style.aspectRatio === "")).toBe(true);
   });
 
+  it("holds one lease per chunk for the whole clip, however many tiles show it", async () => {
+    const acquire = vi.spyOn(thumbnailScheduler, "acquire");
+    try {
+      sizeHost(500, 40);
+      await renderThumbnail(eightSeconds);
+      await loadImage(0, 8 * 240, 135);
+
+      expect(slices()).toHaveLength(8);
+      expect(acquire).toHaveBeenCalledTimes(1);
+    } finally {
+      acquire.mockRestore();
+    }
+  });
+
   it("asks for nothing before the clip has a width, then only its strip", async () => {
     await renderThumbnail(eightSeconds);
     expect(globalThis.fetch).not.toHaveBeenCalled();
