@@ -196,6 +196,47 @@ function useReadyImage(request: ThumbnailRequest | null) {
   return snapshot.status === "ready" && snapshot.value.kind === "image" ? snapshot.value : null;
 }
 
+type StripImage = NonNullable<ReturnType<typeof useReadyImage>>;
+
+/** The tile's strip once ready; until then the one it showed last, kept leased so it stays decoded. */
+function useShownStrip(cell: { request: ThumbnailRequest; frame: number; frames: number }) {
+  const next = useReadyImage(cell.request);
+  const [last, setLast] = useState<typeof cell | null>(null);
+  if (next && last !== cell) setLast(cell);
+  const held = useReadyImage(last && last.request);
+  const source = next ? cell : last;
+  const strip = next ?? held;
+  return strip && source && { ...source, strip };
+}
+
+function StripSlice({
+  strip,
+  frame,
+  frames,
+  letterbox,
+}: {
+  strip: StripImage;
+  frame: number;
+  frames: number;
+  letterbox: boolean;
+}) {
+  const slice = (
+    <div
+      data-strip-frame={frame}
+      className={letterbox ? "h-full max-w-full" : "absolute inset-0"}
+      style={{
+        opacity: "var(--timeline-composition-thumbnail-opacity)",
+        animation: "hf-thumb-fade 200ms ease-out",
+        aspectRatio: letterbox ? String(strip.aspect / frames) : undefined,
+        backgroundImage: `url(${strip.url})`,
+        backgroundSize: `${frames * 100}% 100%`,
+        backgroundPositionX: frames > 1 ? `${(frame / (frames - 1)) * 100}%` : "0%",
+      }}
+    />
+  );
+  return letterbox ? <div className="absolute inset-0 flex justify-center">{slice}</div> : slice;
+}
+
 const CompositionTile = memo(function CompositionTile({
   url,
   frame,
@@ -211,35 +252,14 @@ const CompositionTile = memo(function CompositionTile({
       compositionThumbnailRequest(url, projectId, { sessionEpoch, priority, rich: true }, frames),
     [frames, priority, projectId, sessionEpoch, url],
   );
-  const next = useReadyImage(request);
-  // Until its next image is ready, a tile keeps showing (and leasing) the one it showed last.
-  const [shown, setShown] = useState<{ request: ThumbnailRequest } & TileImage>();
-  if (next && (shown?.request !== request || shown?.frame !== frame)) {
-    setShown({ request, url, frame, frames });
-  }
-  const held = useReadyImage(shown?.request ?? null);
-  const strip = next ?? held;
-  const cell = next ? { frame, frames } : shown;
-  const cellFrames = cell?.frames;
+  const cell = useMemo(() => ({ request, frame, frames }), [frame, frames, request]);
+  const shown = useShownStrip(cell);
+  const strip = shown?.strip;
+  const shownFrames = shown?.frames;
   useLayoutEffect(() => {
-    if (strip && cellFrames) onAspect(strip.aspect / cellFrames);
-  }, [cellFrames, onAspect, strip]);
-  if (!strip || !cell) return null;
-  const slice = (
-    <div
-      data-strip-frame={cell.frame}
-      className={letterbox ? "h-full max-w-full" : "absolute inset-0"}
-      style={{
-        opacity: "var(--timeline-composition-thumbnail-opacity)",
-        animation: "hf-thumb-fade 200ms ease-out",
-        aspectRatio: letterbox ? String(strip.aspect / cell.frames) : undefined,
-        backgroundImage: `url(${strip.url})`,
-        backgroundSize: `${cell.frames * 100}% 100%`,
-        backgroundPositionX: cell.frames > 1 ? `${(cell.frame / (cell.frames - 1)) * 100}%` : "0%",
-      }}
-    />
-  );
-  return letterbox ? <div className="absolute inset-0 flex justify-center">{slice}</div> : slice;
+    if (strip && shownFrames) onAspect(strip.aspect / shownFrames);
+  }, [onAspect, shownFrames, strip]);
+  return shown ? <StripSlice {...shown} letterbox={letterbox} /> : null;
 });
 
 /** Server-rendered composition frames, deduplicated and budgeted by project/session. */
