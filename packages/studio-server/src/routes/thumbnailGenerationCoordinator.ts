@@ -128,31 +128,31 @@ export class ThumbnailGenerationCoordinator {
     if (this.active < this.concurrency) return;
     const background = [...this.activeEntries].find((active) => active.rank >= BACKGROUND_RANK);
     if (!background) return;
-    background.controller.abort();
-    background.controller = new AbortController();
     background.run++;
-    background.state = "queued";
-    this.activeEntries.delete(background);
-    this.active--;
-    this.enqueue(background);
+    background.controller.abort();
   }
 
   private async run(entry: GenerationEntry): Promise<void> {
     const run = entry.run;
-    const current = () => entry.run === run;
+    const preempted = () => entry.run !== run;
     try {
       const value = await entry.work(entry.controller.signal);
-      if (current()) entry.resolve(value);
+      if (!preempted()) entry.resolve(value);
     } catch (error) {
-      if (current()) entry.reject(error);
+      if (!preempted()) entry.reject(error);
     } finally {
-      if (current()) {
-        this.active--;
-        this.activeEntries.delete(entry);
-        if (this.entries.get(entry.key) === entry) this.entries.delete(entry.key);
-        this.pump();
-      }
+      this.active--;
+      this.activeEntries.delete(entry);
+      if (preempted() && entry.leases > 0) this.requeueBehindForeground(entry);
+      else if (this.entries.get(entry.key) === entry) this.entries.delete(entry.key);
+      this.pump();
     }
+  }
+
+  private requeueBehindForeground(entry: GenerationEntry): void {
+    entry.controller = new AbortController();
+    entry.state = "queued";
+    this.enqueue(entry);
   }
 }
 

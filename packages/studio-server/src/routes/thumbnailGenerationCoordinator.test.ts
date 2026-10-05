@@ -87,15 +87,15 @@ describe("ThumbnailGenerationCoordinator", () => {
     const coordinator = new ThumbnailGenerationCoordinator(1);
     const starts: string[] = [];
     const posterSignals: AbortSignal[] = [];
+    const abortedRenderStops = deferred();
+    const stripWork = deferred();
     const poster = coordinator.acquire(
       "next-open-poster",
       new AbortController().signal,
       async (signal) => {
         starts.push("poster");
         posterSignals.push(signal);
-        if (posterSignals.length > 1) return Buffer.from("poster");
-        await new Promise((aborted) => signal.addEventListener("abort", aborted, { once: true }));
-        return Buffer.from("aborted");
+        return posterSignals.length > 1 ? Buffer.from("poster") : abortedRenderStops.promise;
       },
       { rank: BACKGROUND_RANK },
     );
@@ -104,15 +104,21 @@ describe("ThumbnailGenerationCoordinator", () => {
       new AbortController().signal,
       async () => {
         starts.push("strip");
-        return Buffer.from("strip");
+        return stripWork.promise;
       },
       { rank: 1 },
     );
 
+    expect(posterSignals[0]?.aborted).toBe(true);
+    expect(starts).toEqual(["poster"]);
+    abortedRenderStops.resolve(Buffer.from("aborted"));
+    await vi.waitFor(() => expect(starts).toEqual(["poster", "strip"]));
+    expect(coordinator.protectedKeys()).toContain("next-open-poster");
+
+    stripWork.resolve(Buffer.from("strip"));
     await expect(strip).resolves.toEqual(Buffer.from("strip"));
     await expect(poster).resolves.toEqual(Buffer.from("poster"));
     expect(starts).toEqual(["poster", "strip", "poster"]);
-    expect(posterSignals[0]?.aborted).toBe(true);
   });
 
   it("never aborts foreground work for other foreground work", async () => {
