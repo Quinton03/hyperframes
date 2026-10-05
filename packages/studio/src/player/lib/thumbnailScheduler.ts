@@ -183,7 +183,7 @@ export class ThumbnailScheduler {
     entry.leases.set(leaseId, request.priority);
     entry.listeners.set(leaseId, listener);
     entry.lastAccess = this.nextSequence++;
-    this.pump();
+    if (entry.state === "queued") this.pump();
 
     let released = false;
     return {
@@ -211,7 +211,6 @@ export class ThumbnailScheduler {
             this.deleteEntry(scopedKey, current);
           }
         }
-        this.evict();
       },
     };
   }
