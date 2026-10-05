@@ -183,6 +183,7 @@ interface CompositionTileProps {
   stripUrl: string | null;
   frame: number;
   frames: number;
+  letterbox: boolean;
   projectId: string;
   sessionEpoch: number;
   priority: ThumbnailPriority;
@@ -193,6 +194,7 @@ const CompositionTile = memo(function CompositionTile({
   stripUrl,
   frame,
   frames,
+  letterbox,
   projectId,
   sessionEpoch,
   priority,
@@ -223,21 +225,20 @@ const CompositionTile = memo(function CompositionTile({
       />
     );
   }
-  return (
-    <div className="absolute inset-0 flex justify-center">
-      <div
-        data-strip-frame={frame}
-        className="h-full max-w-full"
-        style={{
-          opacity,
-          aspectRatio: String(strip.aspect / frames),
-          backgroundImage: `url(${strip.url})`,
-          backgroundSize: `${frames * 100}% 100%`,
-          backgroundPositionX: frames > 1 ? `${(frame / (frames - 1)) * 100}%` : "0%",
-        }}
-      />
-    </div>
+  const slice = (
+    <div
+      data-strip-frame={frame}
+      className={letterbox ? "h-full max-w-full" : "absolute inset-0"}
+      style={{
+        opacity,
+        aspectRatio: letterbox ? String(strip.aspect / frames) : undefined,
+        backgroundImage: `url(${strip.url})`,
+        backgroundSize: `${frames * 100}% 100%`,
+        backgroundPositionX: frames > 1 ? `${(frame / (frames - 1)) * 100}%` : "0%",
+      }}
+    />
   );
+  return letterbox ? <div className="absolute inset-0 flex justify-center">{slice}</div> : slice;
 });
 
 /** Server-rendered composition poster, deduplicated and budgeted by project/session. */
@@ -318,6 +319,7 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
                   stripUrl={tile ? buildCompositionStripUrl(url, plan!.times(tile.chunk)) : null}
                   frame={tile?.frame ?? 0}
                   frames={tile?.frames ?? 1}
+                  letterbox={frameW > Math.round(container.height * value.aspect)}
                   projectId={projectId}
                   sessionEpoch={sessionEpoch}
                   priority={priority}
@@ -326,9 +328,6 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
             );
           }}
         </ThumbnailTiles>
-      )}
-      {snapshot.status === "loading" && (
-        <div className="absolute inset-0 animate-pulse bg-text-0/[0.035]" />
       )}
       {label && (
         <div className="absolute inset-y-0 left-3 z-10 flex items-center">

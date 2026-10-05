@@ -3,6 +3,7 @@ import { resolveTimelineViewportBudgets } from "./timelineViewportBudgets";
 import {
   createThumbnailKey,
   createThumbnailRequestIdentity,
+  MOTION_SETTLE_MS,
   ThumbnailScheduler,
   type ThumbnailLoadedResult,
   type ThumbnailPriority,
@@ -151,6 +152,26 @@ describe("ThumbnailScheduler", () => {
     scheduler.setScrolling(false);
     await flush();
     expect(richLoad).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds rich work while the timeline keeps moving and starts it once it has held still", async () => {
+    vi.useFakeTimers();
+    try {
+      const scheduler = new ThumbnailScheduler();
+      const richLoad = vi.fn(async () => result("rich"));
+      scheduler.noteMotion();
+      scheduler.acquire(request("rich", richLoad, "visible", { rich: true }), vi.fn());
+
+      await vi.advanceTimersByTimeAsync(MOTION_SETTLE_MS - 1);
+      scheduler.noteMotion();
+      await vi.advanceTimersByTimeAsync(MOTION_SETTLE_MS - 1);
+      expect(richLoad).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(richLoad).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("holds composition renders while the preview reloads and re-runs the ones it preempted", async () => {

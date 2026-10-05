@@ -1,5 +1,6 @@
 import { TIMELINE_VIEWPORT_BUDGETS, type TimelineViewportBudgets } from "./timelineViewportBudgets";
 
+export const MOTION_SETTLE_MS = 150;
 export type ThumbnailPriority = "overscan" | "visible" | "interaction";
 export type ThumbnailJobKind = "video" | "image" | "composition" | "waveform";
 
@@ -116,6 +117,7 @@ export class ThumbnailScheduler {
   private nextLeaseId = 1;
   private nextSequence = 1;
   private scrolling = false;
+  private motionSettle: ReturnType<typeof setTimeout> | null = null;
   private previewReloading = false;
   private pageHidden = false;
   private cacheBytes = 0;
@@ -209,6 +211,15 @@ export class ThumbnailScheduler {
     const entry = this.entries.get(createThumbnailRequestIdentity(request));
     if (!entry) return EMPTY_SNAPSHOT;
     return entry.snapshot;
+  }
+
+  noteMotion(): void {
+    this.setScrolling(true);
+    if (this.motionSettle) clearTimeout(this.motionSettle);
+    this.motionSettle = setTimeout(() => {
+      this.motionSettle = null;
+      this.setScrolling(false);
+    }, MOTION_SETTLE_MS);
   }
 
   setScrolling(scrolling: boolean): void {

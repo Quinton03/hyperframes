@@ -235,6 +235,24 @@ describe("CompositionThumbnail", () => {
     expect(host.querySelector("img")?.parentElement?.style.width).toBe("108px");
   });
 
+  it("draws nothing over the clip's own fill while its frames load", async () => {
+    globalThis.fetch = vi.fn(() => new Promise<Response>(() => {}));
+    root = createRoot(host);
+    await act(async () => {
+      root!.render(
+        React.createElement(CompositionThumbnail, {
+          previewUrl: "/api/projects/demo/preview",
+          label: "",
+          labelColor: "#fff",
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalled();
+    expect(host.firstElementChild?.childElementCount).toBe(0);
+  });
+
   it("aborts its scheduled off-DOM image probe when unmounted", async () => {
     const probe = await renderThumbnail();
     expect(host.querySelector("img")).toBeNull();
@@ -361,6 +379,43 @@ describe("CompositionThumbnail", () => {
     slices.forEach((slice, tile) =>
       expect(slice.style.backgroundPositionX).toBe(`${(frames[tile]! / 7) * 100}%`),
     );
-    expect(parseFloat(slices[0]!.style.aspectRatio)).toBeCloseTo(240 / 135);
+    // A tile exactly one frame wide is filled edge to edge, so neighbours meet without a seam.
+    expect(slices.every((slice) => slice.style.aspectRatio === "")).toBe(true);
+  });
+
+  it("letterboxes a portrait frame at its own aspect in a tile held at the minimum width", async () => {
+    Object.defineProperty(host, "clientWidth", { configurable: true, value: 384 });
+    Object.defineProperty(host, "clientHeight", { configurable: true, value: 40 });
+    root = createRoot(host);
+    await act(async () => {
+      root!.render(
+        React.createElement(CompositionThumbnail, {
+          previewUrl: "/api/projects/demo/preview",
+          label: "",
+          labelColor: "#fff",
+          sourceStart: 0,
+          sourceRangeDuration: 8,
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      const poster = MockImage.instances[0]!;
+      poster.naturalWidth = 1080;
+      poster.naturalHeight = 1920;
+      poster.onload?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      const strip = MockImage.instances[1]!;
+      strip.naturalWidth = 8 * 76;
+      strip.naturalHeight = 135;
+      strip.onload?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const slice = host.querySelector<HTMLElement>("[data-strip-frame]")!;
+    expect(slice.parentElement?.parentElement?.style.width).toBe("48px");
+    expect(parseFloat(slice.style.aspectRatio)).toBeCloseTo(76 / 135);
   });
 });
