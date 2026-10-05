@@ -170,6 +170,8 @@ export function useRenderClipContent({
 
           seekTime: resolveThumbnailSeekTime(el.duration),
           duration: 0,
+          sourceStart: el.playbackStart ?? 0,
+          sourceRangeDuration: el.duration * (el.playbackRate ?? 1),
           projectId: pid,
           sessionEpoch,
           contentRevision: thumbnailRevisionOf(thumbnailRevisions, compSrc),
@@ -199,6 +201,8 @@ export function useRenderClipContent({
           selectorIndex: el.selectorIndex,
           seekTime: el.start,
           duration: el.duration,
+          sourceStart: el.start,
+          sourceRangeDuration: el.duration,
           projectId: pid,
           sessionEpoch,
           contentRevision: thumbnailRevisionOf(
@@ -252,6 +256,8 @@ export function useRenderClipContent({
           selectorIndex: el.selectorIndex,
           seekTime: el.start,
           duration: el.duration,
+          sourceStart: el.start,
+          sourceRangeDuration: el.duration,
           projectId: pid,
           sessionEpoch,
           contentRevision: thumbnailRevisionOf(thumbnailRevisions, "index.html"),

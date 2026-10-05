@@ -6,6 +6,7 @@ interface GenerationEntry {
   controller: AbortController;
   leases: number;
   state: "queued" | "active";
+  yieldToSingleFrames: boolean;
   work: ThumbnailGenerationWork;
   promise: Promise<ThumbnailGenerationValue>;
   resolve: (value: ThumbnailGenerationValue) => void;
@@ -29,6 +30,7 @@ export class ThumbnailGenerationCoordinator {
     key: string,
     signal: AbortSignal,
     work: ThumbnailGenerationWork,
+    { yieldToSingleFrames = false }: { yieldToSingleFrames?: boolean } = {},
   ): Promise<ThumbnailGenerationValue> {
     if (signal.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
 
@@ -45,13 +47,17 @@ export class ThumbnailGenerationCoordinator {
         controller: new AbortController(),
         leases: 0,
         state: "queued",
+        yieldToSingleFrames,
         work,
         promise,
         resolve,
         reject,
       };
       this.entries.set(key, entry);
-      this.queue.push(entry);
+      const firstYielding = yieldToSingleFrames
+        ? -1
+        : this.queue.findIndex((queued) => queued.yieldToSingleFrames);
+      this.queue.splice(firstYielding < 0 ? this.queue.length : firstYielding, 0, entry);
     }
     entry.leases++;
     this.pump();

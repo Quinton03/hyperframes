@@ -26,6 +26,8 @@ interface CompositionThumbnailProps {
   contentRevision?: number;
   priority?: ThumbnailPriority;
   rich?: boolean;
+  sourceStart?: number;
+  sourceRangeDuration?: number;
 }
 
 const THUMBNAIL_URL_VERSION = "v3";
@@ -85,6 +87,51 @@ export function buildCompositionThumbnailUrl({
   return thumbnailUrl.toString();
 }
 
+const STRIP_CHUNK_FRAMES = 8;
+const MIN_FRAME_STEP_SECONDS = 1 / 32;
+const LAST_FRAME_INSET_SECONDS = 0.001;
+
+// Tiles map onto a power-of-two time grid from 0, no finer than a tile: distinct neighbours, frames reused on zoom.
+export function planCompositionStrip(
+  sourceStart: number,
+  sourceRangeDuration: number,
+  tileSeconds: number,
+) {
+  const step = 2 ** Math.floor(Math.log2(Math.max(tileSeconds, MIN_FRAME_STEP_SECONDS)));
+  // From the clip's range alone, so a chunk changes only with the step, never with the zoom inside it.
+  const firstCell = Math.floor(sourceStart / step);
+  const lastCell = Math.ceil((sourceStart + sourceRangeDuration) / step) - 1;
+  const cellOf = (tile: number) =>
+    Math.min(lastCell, Math.floor((sourceStart + (tile + 0.5) * tileSeconds) / step));
+  const chunkStart = (chunk: number) => Math.max(chunk * STRIP_CHUNK_FRAMES, firstCell);
+  const chunkEnd = (chunk: number) => Math.min((chunk + 1) * STRIP_CHUNK_FRAMES, lastCell + 1);
+  return {
+    times: (chunk: number) =>
+      Array.from({ length: chunkEnd(chunk) - chunkStart(chunk) }, (_, i) =>
+        Math.min(
+          Math.max((chunkStart(chunk) + i + 0.5) * step, sourceStart),
+          sourceStart + sourceRangeDuration - LAST_FRAME_INSET_SECONDS,
+        ),
+      ),
+    tile: (tile: number) => {
+      const cell = cellOf(tile);
+      const chunk = Math.floor(cell / STRIP_CHUNK_FRAMES);
+      return {
+        chunk,
+        frame: cell - chunkStart(chunk),
+        frames: chunkEnd(chunk) - chunkStart(chunk),
+      };
+    },
+  };
+}
+
+export function buildCompositionStripUrl(posterUrl: string, times: readonly number[]): string {
+  const url = new URL(posterUrl);
+  url.searchParams.delete("t");
+  url.searchParams.set("times", times.map((t) => t.toFixed(3)).join(","));
+  return url.toString();
+}
+
 /** The composition a preview URL renders: `/preview/comp/<path>`, or the root for `/preview`. */
 export function compositionPathOfPreviewUrl(previewUrl: string): string {
   const match = /\/preview\/comp\/([^?#]+)/.exec(previewUrl);
@@ -95,6 +142,7 @@ export function compositionThumbnailRequest(
   url: string,
   projectId: string,
   { sessionEpoch = 0, priority = "visible", rich = false }: Partial<ThumbnailRequest> = {},
+  frames = 1,
 ): ThumbnailRequest {
   return {
     key: createThumbnailKey({ kind: "composition", url }),
@@ -103,11 +151,11 @@ export function compositionThumbnailRequest(
     kind: "composition",
     priority,
     rich,
-    load: (signal: AbortSignal) => loadCompositionImage(url, signal),
+    load: (signal: AbortSignal) => loadCompositionImage(url, signal, frames),
   };
 }
 
-async function loadCompositionImage(url: string, signal: AbortSignal) {
+async function loadCompositionImage(url: string, signal: AbortSignal, frames: number) {
   const response = await studioApiFetch(url, { signal });
   if (!response.ok) throw new Error(`Composition thumbnail failed (${response.status})`);
   const blob = await response.blob();
@@ -120,7 +168,8 @@ async function loadCompositionImage(url: string, signal: AbortSignal) {
       weight:
         TIMELINE_VIEWPORT_BUDGETS.posterMaxPhysicalWidth *
         TIMELINE_VIEWPORT_BUDGETS.posterMaxPhysicalHeight *
-        4,
+        4 *
+        frames,
       dispose: () => URL.revokeObjectURL(objectUrl),
     };
   } catch (error) {
@@ -128,6 +177,68 @@ async function loadCompositionImage(url: string, signal: AbortSignal) {
     throw error;
   }
 }
+
+interface CompositionTileProps {
+  posterUrl: string;
+  stripUrl: string | null;
+  frame: number;
+  frames: number;
+  projectId: string;
+  sessionEpoch: number;
+  priority: ThumbnailPriority;
+}
+
+const CompositionTile = memo(function CompositionTile({
+  posterUrl,
+  stripUrl,
+  frame,
+  frames,
+  projectId,
+  sessionEpoch,
+  priority,
+}: CompositionTileProps) {
+  const request = useMemo(
+    () =>
+      stripUrl &&
+      compositionThumbnailRequest(
+        stripUrl,
+        projectId,
+        { sessionEpoch, priority, rich: true },
+        frames,
+      ),
+    [frames, priority, projectId, sessionEpoch, stripUrl],
+  );
+  const snapshot = useThumbnailLease(request || null);
+  const strip =
+    snapshot.status === "ready" && snapshot.value.kind === "image" ? snapshot.value : null;
+  const opacity = "var(--timeline-composition-thumbnail-opacity)";
+  if (!strip) {
+    return (
+      <img
+        src={posterUrl}
+        alt=""
+        draggable={false}
+        className="absolute inset-0 h-full w-full object-contain"
+        style={{ opacity }}
+      />
+    );
+  }
+  return (
+    <div className="absolute inset-0 flex justify-center">
+      <div
+        data-strip-frame={frame}
+        className="h-full max-w-full"
+        style={{
+          opacity,
+          aspectRatio: String(strip.aspect / frames),
+          backgroundImage: `url(${strip.url})`,
+          backgroundSize: `${frames * 100}% 100%`,
+          backgroundPositionX: frames > 1 ? `${(frame / (frames - 1)) * 100}%` : "0%",
+        }}
+      />
+    </div>
+  );
+});
 
 /** Server-rendered composition poster, deduplicated and budgeted by project/session. */
 export const CompositionThumbnail = memo(function CompositionThumbnail({
@@ -142,6 +253,8 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
   sessionEpoch = 0,
   contentRevision = 0,
   priority = "visible",
+  sourceStart = 0,
+  sourceRangeDuration = 0,
 }: CompositionThumbnailProps) {
   const [container, setContainerRef, watchGap] = useThumbnailStripSize();
   const url = buildCompositionThumbnailUrl({
@@ -166,6 +279,17 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
     container.height,
     48,
   );
+  const plan = useMemo(
+    () =>
+      sourceRangeDuration > 0 && frameCount > 1 && container.width > 0
+        ? planCompositionStrip(
+            sourceStart,
+            sourceRangeDuration,
+            (sourceRangeDuration * frameW) / container.width,
+          )
+        : null,
+    [container.width, frameCount, frameW, sourceRangeDuration, sourceStart],
+  );
 
   return (
     <div ref={setContainerRef} className="absolute inset-0 overflow-hidden">
@@ -181,21 +305,26 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
               "var(--timeline-composition-thumbnail-blend)" as CSSProperties["mixBlendMode"],
           }}
         >
-          {(index) => (
-            <div
-              key={index}
-              className="relative h-full shrink-0 overflow-hidden"
-              style={{ width: frameW }}
-            >
-              <img
-                src={value.url}
-                alt=""
-                draggable={false}
-                className="absolute inset-0 h-full w-full object-contain"
-                style={{ opacity: "var(--timeline-composition-thumbnail-opacity)" }}
-              />
-            </div>
-          )}
+          {(index) => {
+            const tile = plan?.tile(index);
+            return (
+              <div
+                key={index}
+                className="relative h-full shrink-0 overflow-hidden"
+                style={{ width: frameW }}
+              >
+                <CompositionTile
+                  posterUrl={value.url}
+                  stripUrl={tile ? buildCompositionStripUrl(url, plan!.times(tile.chunk)) : null}
+                  frame={tile?.frame ?? 0}
+                  frames={tile?.frames ?? 1}
+                  projectId={projectId}
+                  sessionEpoch={sessionEpoch}
+                  priority={priority}
+                />
+              </div>
+            );
+          }}
         </ThumbnailTiles>
       )}
       {snapshot.status === "loading" && (

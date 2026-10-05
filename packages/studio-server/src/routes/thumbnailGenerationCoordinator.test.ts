@@ -46,6 +46,35 @@ describe("ThumbnailGenerationCoordinator", () => {
     expect(starts).toEqual(["a", "b", "c"]);
   });
 
+  it("starts queued single frames before queued background strips, keeping order within each", async () => {
+    const coordinator = new ThumbnailGenerationCoordinator(1);
+    const running = deferred();
+    const starts: string[] = [];
+    const signal = new AbortController().signal;
+    const job = (key: string, yieldToSingleFrames = false) =>
+      coordinator.acquire(
+        key,
+        signal,
+        async () => {
+          starts.push(key);
+          return key === "running" ? running.promise : Buffer.from(key);
+        },
+        { yieldToSingleFrames },
+      );
+
+    const all = [
+      job("running", true),
+      job("strip-1", true),
+      job("poster-1"),
+      job("strip-2", true),
+      job("poster-2"),
+    ];
+    running.resolve(Buffer.from("running"));
+    await Promise.all(all);
+
+    expect(starts).toEqual(["running", "poster-1", "poster-2", "strip-1", "strip-2"]);
+  });
+
   it("keeps shared work alive until its final lease leaves", async () => {
     const coordinator = new ThumbnailGenerationCoordinator();
     const firstController = new AbortController();

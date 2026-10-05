@@ -5,7 +5,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MockResizeObserver, reportResize } from "../../hooks/resizeObserverTestUtils";
 import { thumbnailScheduler } from "../lib/thumbnailScheduler";
-import { buildCompositionThumbnailUrl, CompositionThumbnail } from "./CompositionThumbnail";
+import {
+  buildCompositionThumbnailUrl,
+  CompositionThumbnail,
+  planCompositionStrip,
+} from "./CompositionThumbnail";
 
 Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
   configurable: true,
@@ -92,6 +96,57 @@ describe("buildCompositionThumbnailUrl", () => {
     });
 
     expect(new URL(url).searchParams.get("revision")).toBe("7");
+  });
+});
+
+describe("planCompositionStrip", () => {
+  const timeOf = (plan: ReturnType<typeof planCompositionStrip>, tile: number) => {
+    const { chunk, frame } = plan.tile(tile);
+    return plan.times(chunk)[frame]!;
+  };
+
+  it.each([
+    [0, 10, 1.25],
+    [1.5, 7, 0.6],
+    [0, 600, 18.4],
+    [3, 0.2, 0.045],
+    [0, 8, 1.136],
+  ])(
+    "gives each tile a later frame inside its own span (start %s, range %s, tile %s s)",
+    (start, range, tile) => {
+      const plan = planCompositionStrip(start, range, tile);
+      const tiles = Math.ceil(range / tile);
+      for (let i = 0; i < tiles; i++) {
+        const time = timeOf(plan, i);
+        const [from, to] = [start + i * tile, start + (i + 1) * tile];
+        if (to <= start + range + 1e-9) {
+          expect(time).toBeGreaterThanOrEqual(from);
+          expect(time).toBeLessThanOrEqual(to);
+          if (i > 0) expect(time).toBeGreaterThan(timeOf(plan, i - 1));
+        } else {
+          // The last tile runs past the clip's end and shows the clip's last frame.
+          expect(time).toBeGreaterThan(start + range - tile);
+          expect(time).toBeLessThan(start + range);
+        }
+      }
+    },
+  );
+
+  it("asks a chunk for at most 8 ascending times", () => {
+    const plan = planCompositionStrip(0, 600, 18.4);
+    for (let tile = 0; tile < 33; tile++) {
+      const times = plan.times(plan.tile(tile).chunk);
+      expect(times.length).toBeLessThanOrEqual(8);
+      expect([...times].sort((a, b) => a - b)).toEqual(times);
+    }
+  });
+
+  it("asks for the same chunks at every zoom inside one power of two", () => {
+    // A 6 s clip from 1.25 s at tiles from 0.86 s down to 0.5 s wide: a 0.5 s step throughout.
+    const plans = [0.86, 0.67, 0.55, 0.5].map((tile) => planCompositionStrip(1.25, 6, tile));
+    for (const chunk of [0, 1]) {
+      expect(new Set(plans.map((plan) => String(plan.times(chunk)))).size).toBe(1);
+    }
   });
 });
 
@@ -250,5 +305,62 @@ describe("CompositionThumbnail", () => {
     });
     expect(MockImage.instances).toHaveLength(1);
     expect(MockImage.instances[0]?.src).toBe("blob:composition-thumbnail");
+  });
+
+  it("shows each tile the frame the composition renders at that tile's time", async () => {
+    Object.defineProperty(host, "clientWidth", { configurable: true, value: 500 });
+    Object.defineProperty(host, "clientHeight", { configurable: true, value: 40 });
+    root = createRoot(host);
+    await act(async () => {
+      root!.render(
+        React.createElement(CompositionThumbnail, {
+          previewUrl: "/api/projects/demo/preview",
+          label: "",
+          labelColor: "#fff",
+          sourceStart: 0,
+          sourceRangeDuration: 8,
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      const poster = MockImage.instances[0]!;
+      poster.naturalWidth = 1920;
+      poster.naturalHeight = 1080;
+      poster.onload?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const urls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map(([url]) =>
+      String(url),
+    );
+    const strips = urls.filter((url) => url.includes("times="));
+    expect(strips).toHaveLength(1);
+    expect(new URL(strips[0]!).searchParams.get("times")).toBe(
+      "0.500,1.500,2.500,3.500,4.500,5.500,6.500,7.500",
+    );
+
+    await act(async () => {
+      const strip = MockImage.instances[1]!;
+      strip.naturalWidth = 8 * 240;
+      strip.naturalHeight = 135;
+      strip.onload?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    // 500 px at 71 px tiles: 8 tiles of 1.136 s; the last runs past the 8 s clip and shows its last frame.
+    const slices = [...host.querySelectorAll<HTMLElement>("[data-strip-frame]")];
+    const frames = slices.map((slice) => Number(slice.dataset.stripFrame));
+    expect(frames).toEqual([0, 1, 2, 3, 5, 6, 7, 7]);
+    const times = new URL(strips[0]!).searchParams.get("times")!.split(",").map(Number);
+    frames.slice(0, 7).forEach((frame, tile) => {
+      const tileSeconds = (8 * 71) / 500;
+      expect(times[frame]).toBeGreaterThanOrEqual(tile * tileSeconds);
+      expect(times[frame]).toBeLessThanOrEqual((tile + 1) * tileSeconds);
+    });
+    // Each slice shows its own cell of the 8-frame strip, at one frame's aspect.
+    slices.forEach((slice, tile) =>
+      expect(slice.style.backgroundPositionX).toBe(`${(frames[tile]! / 7) * 100}%`),
+    );
+    expect(parseFloat(slices[0]!.style.aspectRatio)).toBeCloseTo(240 / 135);
   });
 });
