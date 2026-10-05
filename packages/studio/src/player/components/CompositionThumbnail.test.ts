@@ -328,6 +328,16 @@ describe("CompositionThumbnail", () => {
     expect(slices().every((slice) => slice.style.aspectRatio === "")).toBe(true);
   });
 
+  it("asks for nothing before the clip has a width, then only its strip", async () => {
+    await renderThumbnail(eightSeconds);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+
+    act(() => reportResize(500, 40));
+    await act(flush);
+    expect(fetchedUrls()).toHaveLength(1);
+    expect(stripTimes()).toHaveLength(1);
+  });
+
   it("keeps a tile's last frame until its new chunk arrives", async () => {
     sizeHost(500, 40);
     await renderThumbnail(eightSeconds);

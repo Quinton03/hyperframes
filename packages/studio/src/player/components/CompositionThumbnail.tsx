@@ -308,8 +308,8 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
         : null,
     [container.width, frameW, sourceRangeDuration, sourceStart],
   );
-  const imageOf = (index: number): TileImage => {
-    if (!plan) return { url, frame: 0, frames: 1 };
+  const imageOf = (index: number): TileImage | null => {
+    if (!plan) return sourceRangeDuration > 0 ? null : { url, frame: 0, frames: 1 };
     const { chunk, frame, frames } = plan.tile(index);
     return { url: buildCompositionStripUrl(url, plan.times(chunk)), frame, frames };
   };
@@ -326,22 +326,27 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
             "var(--timeline-composition-thumbnail-blend)" as CSSProperties["mixBlendMode"],
         }}
       >
-        {(index) => (
-          <div
-            key={index}
-            className="relative h-full shrink-0 overflow-hidden"
-            style={{ width: frameW }}
-          >
-            <CompositionTile
-              {...imageOf(index)}
-              letterbox={frameW > Math.round(container.height * frameAspect)}
-              projectId={projectId}
-              sessionEpoch={sessionEpoch}
-              priority={priority}
-              onAspect={learnAspectOnce}
-            />
-          </div>
-        )}
+        {(index) => {
+          const image = imageOf(index);
+          return (
+            <div
+              key={index}
+              className="relative h-full shrink-0 overflow-hidden"
+              style={{ width: frameW }}
+            >
+              {image && (
+                <CompositionTile
+                  {...image}
+                  letterbox={frameW > Math.round(container.height * frameAspect)}
+                  projectId={projectId}
+                  sessionEpoch={sessionEpoch}
+                  priority={priority}
+                  onAspect={learnAspectOnce}
+                />
+              )}
+            </div>
+          );
+        }}
       </ThumbnailTiles>
       {label && (
         <div className="absolute inset-y-0 left-3 z-10 flex items-center">
