@@ -348,6 +348,33 @@ describe("CompositionThumbnail", () => {
     }
   });
 
+  it("moves its held lease to a new priority instead of taking another", async () => {
+    const priorities: string[] = [];
+    const acquire = thumbnailScheduler.acquire.bind(thumbnailScheduler);
+    const spy = vi.spyOn(thumbnailScheduler, "acquire").mockImplementation((request, listener) => {
+      const lease = acquire(request, listener);
+      return {
+        ...lease,
+        updatePriority: (priority) => {
+          priorities.push(priority);
+          lease.updatePriority(priority);
+        },
+      };
+    });
+    try {
+      sizeHost(500, 40);
+      await renderThumbnail({ ...eightSeconds, priority: "visible" });
+      await loadImage(0, 8 * 240, 135);
+      await renderThumbnail({ ...eightSeconds, priority: "overscan" });
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(priorities).toEqual(["overscan"]);
+      expect(slices()).toHaveLength(8);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("asks for nothing before the clip has a width, then only its strip", async () => {
     await renderThumbnail(eightSeconds);
     expect(globalThis.fetch).not.toHaveBeenCalled();

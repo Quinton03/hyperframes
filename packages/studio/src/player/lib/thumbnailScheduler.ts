@@ -160,6 +160,7 @@ export class ThumbnailScheduler {
       this.now() - entry.failedAt >= this.budgets.metadataFailureTtlMs
     ) {
       this.retryInPlace(entry);
+      entry = this.entries.get(scopedKey);
     }
     if (!entry) {
       entry = {

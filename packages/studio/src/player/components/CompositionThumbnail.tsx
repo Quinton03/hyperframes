@@ -12,8 +12,11 @@ import {
 import { useThumbnailStripSize } from "../../hooks/useThumbnailStripSize";
 import {
   createThumbnailKey,
+  createThumbnailRequestIdentity,
+  type ThumbnailLease,
   type ThumbnailPriority,
   type ThumbnailRequest,
+  type ThumbnailSnapshot,
   readyImage,
   thumbnailScheduler,
 } from "../lib/thumbnailScheduler";
@@ -210,15 +213,15 @@ function showTiles(
   posterCell: ShownCell,
 ) {
   const tiles = new Map<number, ShownCell>();
-  const leased = new Set<ThumbnailRequest>();
+  const leased = new Map<ThumbnailRequest, ThumbnailSnapshot>();
   let freshAspect: number | null = null;
   for (let index = first; index < end; index++) {
     const cell = cellAt(index);
     if (!cell) continue;
-    leased.add(cell.request);
+    leased.set(cell.request, thumbnailScheduler.getSnapshot(cell.request));
     const shown = cellToShow(cell, lastShown.get(index), posterCell);
     if (!shown) continue;
-    leased.add(shown.request);
+    leased.set(shown.request, thumbnailScheduler.getSnapshot(shown.request));
     const strip = imageOf(shown.request);
     if (!strip) continue;
     tiles.set(index, shown);
@@ -227,24 +230,43 @@ function showTiles(
   return { tiles, leased, freshAspect };
 }
 
-/** Holds a lease on exactly the given requests, re-rendering when any of them changes. */
-function useThumbnailLeases(requests: ReadonlySet<ThumbnailRequest>) {
+const showable = (snapshot: ThumbnailSnapshot) =>
+  snapshot.status === "ready" || snapshot.status === "error";
+
+/** Holds one lease per request identity, re-rendering when any changes after the snapshot render read. */
+function useThumbnailLeases(
+  snapshotsRead: ReadonlyMap<ThumbnailRequest, ThumbnailSnapshot>,
+  priority: ThumbnailPriority,
+) {
   const [, rerender] = useReducer((renders: number) => renders + 1, 0);
-  const leases = useRef(new Map<ThumbnailRequest, { release(): void }>());
+  const leases = useRef(new Map<string, { lease: ThumbnailLease; priority: ThumbnailPriority }>());
   useLayoutEffect(() => {
     const held = leases.current;
-    for (const request of requests)
-      if (!held.has(request)) held.set(request, thumbnailScheduler.acquire(request, rerender));
-    for (const [request, lease] of held) {
-      if (requests.has(request)) continue;
-      lease.release();
-      held.delete(request);
+    const wanted = new Set<string>();
+    for (const [request, read] of snapshotsRead) {
+      const identity = createThumbnailRequestIdentity(request);
+      wanted.add(identity);
+      const current = held.get(identity) ?? {
+        lease: thumbnailScheduler.acquire(request, rerender),
+        priority: request.priority,
+      };
+      if (current.priority !== priority) current.lease.updatePriority(priority);
+      current.priority = priority;
+      if (held.has(identity)) continue;
+      held.set(identity, current);
+      const now = thumbnailScheduler.getSnapshot(request);
+      if (now !== read && showable(now)) rerender();
     }
-  }, [requests]);
+    for (const [identity, { lease }] of held) {
+      if (wanted.has(identity)) continue;
+      lease.release();
+      held.delete(identity);
+    }
+  }, [priority, snapshotsRead]);
   useEffect(() => {
     const held = leases.current;
     return () => {
-      for (const lease of held.values()) lease.release();
+      for (const { lease } of held.values()) lease.release();
       held.clear();
     };
   }, []);
@@ -378,7 +400,7 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
     lastShown.current,
     posterCell,
   );
-  useThumbnailLeases(leased);
+  useThumbnailLeases(leased, priority);
   useLayoutEffect(() => {
     lastShown.current = tiles;
   });
