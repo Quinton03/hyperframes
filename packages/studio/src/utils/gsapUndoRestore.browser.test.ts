@@ -1,11 +1,11 @@
 // Real Chrome: the box GSAP and a stylesheet translate produce together is what no DOM emulation computes.
 import { mkdtempSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { builtinModules, createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer, { type Browser } from "puppeteer-core";
-import { build } from "vite";
+import { build, type Plugin } from "esbuild";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { findSystemChrome } from "../../vite.browser";
 import { writeFixture } from "../../tests/e2e/edit-accuracy/grid.mjs";
@@ -18,20 +18,29 @@ let browser: Browser;
 let undoBundle: string;
 let softReloadBundle: string;
 
+// What a browser build of a Node built-in is: an empty module, as Vite's browser builds make it.
+const emptyNodeBuiltins: Plugin = {
+  name: "empty-node-builtins",
+  setup(build) {
+    const builtin = new RegExp(`^(node:)?(${builtinModules.join("|")})$`);
+    build.onResolve({ filter: builtin }, ({ path }) => ({ path, namespace: "empty" }));
+    build.onLoad({ filter: /.*/, namespace: "empty" }, () => ({ contents: "module.exports = {}" }));
+  },
+};
+
 async function bundle(file: string, name: string): Promise<string> {
   const out = await build({
-    configFile: false,
+    entryPoints: [fileURLToPath(new URL(file, import.meta.url))],
+    bundle: true,
+    write: false,
+    platform: "browser",
+    format: "iife",
+    globalName: name,
+    alias: { canvas: fileURLToPath(new URL("../shims/canvasBrowserStub.js", import.meta.url)) },
+    plugins: [emptyNodeBuiltins],
     logLevel: "silent",
-    resolve: {
-      alias: { canvas: fileURLToPath(new URL("../shims/canvasBrowserStub.js", import.meta.url)) },
-    },
-    build: {
-      write: false,
-      minify: false,
-      lib: { entry: fileURLToPath(new URL(file, import.meta.url)), formats: ["iife"], name },
-    },
   });
-  return (Array.isArray(out) ? out[0]! : (out as { output: [{ code: string }] })).output[0].code;
+  return out.outputFiles[0]!.text;
 }
 
 beforeAll(async () => {
