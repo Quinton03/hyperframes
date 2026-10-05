@@ -115,6 +115,7 @@ export class ThumbnailScheduler {
   private readonly budgets: Readonly<TimelineViewportBudgets>;
   private nextLeaseId = 1;
   private nextSequence = 1;
+  private pumpQueued = false;
   private scrolling = false;
   private previewReloading = false;
   private pageHidden = false;
@@ -285,6 +286,15 @@ export class ThumbnailScheduler {
     };
   }
 
+  private pumpAfterReleaseBatch(): void {
+    if (this.pumpQueued) return;
+    this.pumpQueued = true;
+    queueMicrotask(() => {
+      this.pumpQueued = false;
+      this.pump();
+    });
+  }
+
   private pump(): void {
     if (this.pageHidden) return;
     const queued = Array.from(this.entries.values())
@@ -316,7 +326,7 @@ export class ThumbnailScheduler {
       slotFree = true;
       this.activeByBucket[bucket]--;
       this.activeByKind[entry.request.kind]--;
-      this.pump();
+      this.pumpAfterReleaseBatch();
     };
     controller.signal.addEventListener("abort", freeSlot, { once: true });
     this.notify(entry);
