@@ -323,7 +323,7 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
     (next: number) => setLearned((known) => (known?.url === url ? known : { url, aspect: next })),
     [url],
   );
-  const frameAspect = aspect ?? 16 / 9;
+  const frameAspect = aspect ?? learned?.aspect ?? 16 / 9;
   const { frameW, frameCount } = computeThumbnailStrip(
     container.width,
     frameAspect,

@@ -8,8 +8,8 @@
       "total.requests.thumbnail": 25
     },
     "raised": {
-      "thumbnailRenders": "timeline composition clips show their own frames: one strip per clip beside the sidebar poster",
-      "total.requests.thumbnail": "timeline composition clips show their own frames: one strip per clip beside the sidebar poster"
+      "thumbnailRenders": "timeline composition clips show their own frames: one strip per clip; the sidebar cards keep their posters, which the timeline no longer shares",
+      "total.requests.thumbnail": "timeline composition clips show their own frames: one strip per clip; the sidebar cards keep their posters, which the timeline no longer shares"
     }
   }
 }

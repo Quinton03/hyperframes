@@ -388,6 +388,18 @@ describe("CompositionThumbnail", () => {
     expect(slices()[0]?.parentElement?.parentElement?.style.width).toBe("48px");
   });
 
+  it("keeps a portrait clip's tile width while an edit's frames load", async () => {
+    sizeHost(384, 40);
+    const tileWidth = () => slices()[0]?.parentElement?.parentElement?.style.width;
+    await renderThumbnail({ ...eightSeconds, contentRevision: 0 });
+    await loadImage(0, 8 * 76, 135);
+    expect(tileWidth()).toBe("48px");
+
+    await renderThumbnail({ ...eightSeconds, contentRevision: 1 });
+
+    expect(tileWidth()).toBe("48px");
+  });
+
   it("letterboxes a portrait frame at its own aspect in a tile held at the minimum width", async () => {
     sizeHost(384, 40);
     await renderThumbnail(eightSeconds);

@@ -150,8 +150,7 @@ export class ThumbnailScheduler {
       entry.failedAt !== undefined &&
       this.now() - entry.failedAt >= this.budgets.metadataFailureTtlMs
     ) {
-      this.deleteEntry(scopedKey, entry);
-      entry = this.entries.get(scopedKey);
+      this.retryInPlace(entry);
     }
     if (!entry) {
       entry = {
@@ -514,6 +513,14 @@ export class ThumbnailScheduler {
         },
       );
     });
+  }
+
+  private retryInPlace(entry: ThumbnailEntry): void {
+    entry.state = "queued";
+    entry.error = undefined;
+    entry.failedAt = undefined;
+    entry.snapshot = Object.freeze({ status: "queued" });
+    this.notify(entry);
   }
 
   private deleteEntry(key: string, entry: ThumbnailEntry): void {

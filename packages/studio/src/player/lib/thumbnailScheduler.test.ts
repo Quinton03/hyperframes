@@ -303,11 +303,41 @@ describe("ThumbnailScheduler", () => {
       status: "ready",
       value: { url: "recovered" },
     });
-    expect(scheduler.getDiagnostics().leases).toBe(2);
+    expect(scheduler.getDiagnostics().leases).toBe(3);
     firstLease.release();
     nestedLease?.release();
     outerLease.release();
     vi.useRealTimers();
+  });
+
+  it("lets every lease on an expired failure see its retry's result", async () => {
+    vi.useFakeTimers();
+    try {
+      const scheduler = new ThumbnailScheduler(
+        resolveTimelineViewportBudgets({ metadataFailureTtlMs: 10 }),
+      );
+      const load = vi
+        .fn<ThumbnailRequest["load"]>()
+        .mockRejectedValueOnce(new Error("temporary"))
+        .mockResolvedValue(result("recovered"));
+      const failed = request("retry", load);
+      const seenByFirst: string[] = [];
+      const first = scheduler.acquire(failed, () =>
+        seenByFirst.push(scheduler.getSnapshot(failed).status),
+      );
+      await flush();
+      vi.advanceTimersByTime(11);
+
+      const second = scheduler.acquire(failed, vi.fn());
+      await flush();
+
+      expect(seenByFirst.at(-1)).toBe("ready");
+      expect(scheduler.getDiagnostics().leases).toBe(2);
+      first.release();
+      second.release();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("times out a hung loader, frees its bucket, and disposes a late result", async () => {
