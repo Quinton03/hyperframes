@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -59,6 +59,19 @@ describe("agent link", () => {
       sessionId: "s-1",
       inbox: "/tmp/cc-socks/2.sock",
     });
+  });
+
+  it("keeps the app's marks while the link names the same session, drops them for a resumed one", () => {
+    const dir = film();
+    writeAgentLink(dir, { env: SESSION });
+    const file = join(dir, AGENT_LINK_FILE);
+    writeFileSync(file, JSON.stringify({ ...readAgentLink(dir), briefed: true }));
+    writeAgentLink(dir, { env: SESSION });
+    expect(JSON.parse(readFileSync(file, "utf8")).briefed).toBe(true);
+    writeAgentLink(dir, {
+      env: { ...SESSION, CLAUDE_CODE_MESSAGING_SOCKET: "/tmp/cc-socks/2.sock" },
+    });
+    expect(JSON.parse(readFileSync(file, "utf8")).briefed).toBeUndefined();
   });
 
   it("refreshes only projects already linked", () => {

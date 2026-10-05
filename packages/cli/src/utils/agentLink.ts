@@ -40,11 +40,20 @@ function isRelay(value: unknown): value is AgentRelay {
   );
 }
 
-export function readAgentLink(dir: string): AgentLink | null {
+function readLinkFile(dir: string): Record<string, unknown> | null {
   try {
     const link: unknown = JSON.parse(readFileSync(join(dir, AGENT_LINK_FILE), "utf8"));
-    if (typeof link !== "object" || link === null) return null;
-    const { engine, sessionId, inbox, relay } = link as Record<string, unknown>;
+    return typeof link === "object" && link !== null ? (link as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function readAgentLink(dir: string): AgentLink | null {
+  try {
+    const link = readLinkFile(dir);
+    if (!link) return null;
+    const { engine, sessionId, inbox, relay } = link;
     if (engine !== "claude" || typeof sessionId !== "string" || typeof inbox !== "string")
       return null;
     return { engine, sessionId, inbox, ...(isRelay(relay) && { relay }) };
@@ -61,8 +70,14 @@ export function writeAgentLink(
 ): AgentLink | null {
   const session = linkFromEnv(env);
   if (!session) return null;
+  const before = readLinkFile(dir);
   const kept = relay ?? readAgentLink(dir)?.relay;
-  const link: AgentLink = { ...session, ...(kept?.inbox === session.inbox && { relay: kept }) };
+  const link: AgentLink = {
+    // The app's own marks (briefed, handedOver) stay while the link names the same session.
+    ...(before?.sessionId === session.sessionId && before.inbox === session.inbox && before),
+    ...session,
+    ...(kept?.inbox === session.inbox && { relay: kept }),
+  };
   const file = join(dir, AGENT_LINK_FILE);
   try {
     mkdirSync(join(dir, ".hyperframes"), { recursive: true });

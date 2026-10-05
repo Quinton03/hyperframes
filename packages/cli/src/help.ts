@@ -28,6 +28,7 @@ const GROUPS: Group[] = [
       ["publish", "Upload a project to a stable URL (private by default)"],
       ["render", "Render a composition to MP4 or WebM"],
       ["open", "Open a project in the HyperFrames desktop app"],
+      ["app-tools", "Use the desktop app's picture and window tools from a linked session"],
     ],
   },
   {
