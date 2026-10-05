@@ -1,9 +1,8 @@
-import { memo, useMemo, useRef, useSyncExternalStore, type CSSProperties } from "react";
+import { memo, useCallback, useLayoutEffect, useMemo, useState, type CSSProperties } from "react";
 import { useThumbnailLease } from "../../hooks/useThumbnailLease";
 import { useThumbnailStripSize } from "../../hooks/useThumbnailStripSize";
 import {
   createThumbnailKey,
-  thumbnailScheduler,
   type ThumbnailPriority,
   type ThumbnailRequest,
 } from "../lib/thumbnailScheduler";
@@ -92,14 +91,13 @@ const STRIP_CHUNK_FRAMES = 8;
 const MIN_FRAME_STEP_SECONDS = 1 / 32;
 const LAST_FRAME_INSET_SECONDS = 0.001;
 
-// Tiles map onto a power-of-two time grid from 0, no finer than a tile: distinct neighbours, frames reused on zoom.
+// Tiles map onto a power-of-two grid from 0, no finer than a tile; chunks follow the grid, so zooms reuse frames.
 export function planCompositionStrip(
   sourceStart: number,
   sourceRangeDuration: number,
   tileSeconds: number,
 ) {
   const step = 2 ** Math.floor(Math.log2(Math.max(tileSeconds, MIN_FRAME_STEP_SECONDS)));
-  // From the clip's range alone, so a chunk changes only with the step, never with the zoom inside it.
   const firstCell = Math.floor(sourceStart / step);
   const lastCell = Math.ceil((sourceStart + sourceRangeDuration) / step) - 1;
   const cellOf = (tile: number) =>
@@ -126,7 +124,7 @@ export function planCompositionStrip(
   };
 }
 
-export function buildCompositionStripUrl(posterUrl: string, times: readonly number[]): string {
+function buildCompositionStripUrl(posterUrl: string, times: readonly number[]): string {
   const url = new URL(posterUrl);
   url.searchParams.delete("t");
   url.searchParams.set("times", times.map((t) => t.toFixed(3)).join(","));
@@ -179,70 +177,72 @@ async function loadCompositionImage(url: string, signal: AbortSignal, frames: nu
   }
 }
 
-interface CompositionTileProps {
-  posterUrl: string;
-  stripUrl: string | null;
+interface TileImage {
+  url: string;
   frame: number;
   frames: number;
+}
+
+interface CompositionTileProps extends TileImage {
   letterbox: boolean;
   projectId: string;
   sessionEpoch: number;
   priority: ThumbnailPriority;
+  onAspect: (frameAspect: number) => void;
+}
+
+function useReadyImage(request: ThumbnailRequest | null) {
+  const snapshot = useThumbnailLease(request);
+  return snapshot.status === "ready" && snapshot.value.kind === "image" ? snapshot.value : null;
 }
 
 const CompositionTile = memo(function CompositionTile({
-  posterUrl,
-  stripUrl,
+  url,
   frame,
   frames,
   letterbox,
   projectId,
   sessionEpoch,
   priority,
+  onAspect,
 }: CompositionTileProps) {
   const request = useMemo(
     () =>
-      stripUrl &&
-      compositionThumbnailRequest(
-        stripUrl,
-        projectId,
-        { sessionEpoch, priority, rich: true },
-        frames,
-      ),
-    [frames, priority, projectId, sessionEpoch, stripUrl],
+      compositionThumbnailRequest(url, projectId, { sessionEpoch, priority, rich: true }, frames),
+    [frames, priority, projectId, sessionEpoch, url],
   );
-  const snapshot = useThumbnailLease(request || null);
-  const strip =
-    snapshot.status === "ready" && snapshot.value.kind === "image" ? snapshot.value : null;
-  const opacity = "var(--timeline-composition-thumbnail-opacity)";
-  if (!strip) {
-    return (
-      <img
-        src={posterUrl}
-        alt=""
-        draggable={false}
-        className="absolute inset-0 h-full w-full object-contain"
-        style={{ opacity }}
-      />
-    );
+  const next = useReadyImage(request);
+  // Until its next image is ready, a tile keeps showing (and leasing) the one it showed last.
+  const [shown, setShown] = useState<{ request: ThumbnailRequest } & TileImage>();
+  if (next && (shown?.request !== request || shown?.frame !== frame)) {
+    setShown({ request, url, frame, frames });
   }
+  const held = useReadyImage(shown?.request ?? null);
+  const strip = next ?? held;
+  const cell = next ? { frame, frames } : shown;
+  const cellFrames = cell?.frames;
+  useLayoutEffect(() => {
+    if (strip && cellFrames) onAspect(strip.aspect / cellFrames);
+  }, [cellFrames, onAspect, strip]);
+  if (!strip || !cell) return null;
   const slice = (
     <div
-      data-strip-frame={frame}
+      data-strip-frame={cell.frame}
       className={letterbox ? "h-full max-w-full" : "absolute inset-0"}
       style={{
-        opacity,
-        aspectRatio: letterbox ? String(strip.aspect / frames) : undefined,
+        opacity: "var(--timeline-composition-thumbnail-opacity)",
+        animation: "hf-thumb-fade 200ms ease-out",
+        aspectRatio: letterbox ? String(strip.aspect / cell.frames) : undefined,
         backgroundImage: `url(${strip.url})`,
-        backgroundSize: `${frames * 100}% 100%`,
-        backgroundPositionX: frames > 1 ? `${(frame / (frames - 1)) * 100}%` : "0%",
+        backgroundSize: `${cell.frames * 100}% 100%`,
+        backgroundPositionX: cell.frames > 1 ? `${(cell.frame / (cell.frames - 1)) * 100}%` : "0%",
       }}
     />
   );
   return letterbox ? <div className="absolute inset-0 flex justify-center">{slice}</div> : slice;
 });
 
-/** Server-rendered composition poster, deduplicated and budgeted by project/session. */
+/** Server-rendered composition frames, deduplicated and budgeted by project/session. */
 export const CompositionThumbnail = memo(function CompositionThumbnail({
   previewUrl,
   label,
@@ -268,82 +268,68 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
     origin: window.location.origin,
     contentRevision,
   });
-  const request = useMemo(
-    () => compositionThumbnailRequest(url, projectId, { sessionEpoch, priority, rich: true }),
-    [priority, projectId, sessionEpoch, url],
-  );
-  const snapshot = useThumbnailLease(request);
-  const value =
-    snapshot.status === "ready" && snapshot.value.kind === "image" ? snapshot.value : null;
+  const [aspect, setAspect] = useState<number | null>(null);
+  const learnAspectOnce = useCallback((next: number) => setAspect((known) => known ?? next), []);
+  const frameAspect = aspect ?? 16 / 9;
   const { frameW, frameCount } = computeThumbnailStrip(
     container.width,
-    value?.aspect ?? 16 / 9,
+    frameAspect,
     container.height,
     48,
   );
-  const moving = useSyncExternalStore(
-    thumbnailScheduler.subscribeMotion,
-    thumbnailScheduler.isMoving,
-    () => false,
+  const plan = useMemo(
+    () =>
+      sourceRangeDuration > 0 && container.width > 0
+        ? planCompositionStrip(
+            sourceStart,
+            sourceRangeDuration,
+            (sourceRangeDuration * frameW) / container.width,
+          )
+        : null,
+    [container.width, frameW, sourceRangeDuration, sourceStart],
   );
-  const settledPlan = useRef<ReturnType<typeof planCompositionStrip> | null>(null);
-  // While the timeline scrolls or zooms, tiles keep the plan they had when it last held still.
-  const plan = useMemo(() => {
-    if (moving && settledPlan.current) return settledPlan.current;
-    return sourceRangeDuration > 0 && frameCount > 1 && container.width > 0
-      ? planCompositionStrip(
-          sourceStart,
-          sourceRangeDuration,
-          (sourceRangeDuration * frameW) / container.width,
-        )
-      : null;
-  }, [container.width, frameCount, frameW, moving, sourceRangeDuration, sourceStart]);
-  settledPlan.current = plan;
+  const imageOf = (index: number): TileImage => {
+    if (!plan) return { url, frame: 0, frames: 1 };
+    const { chunk, frame, frames } = plan.tile(index);
+    return { url: buildCompositionStripUrl(url, plan.times(chunk)), frame, frames };
+  };
 
   return (
     <div ref={setContainerRef} className="absolute inset-0 overflow-hidden">
-      {value && (
-        <ThumbnailTiles
-          strip={container}
-          frameW={frameW}
-          frameCount={frameCount}
-          watchGap={watchGap}
-          style={{
-            animation: "hf-thumb-fade 200ms ease-out",
-            mixBlendMode:
-              "var(--timeline-composition-thumbnail-blend)" as CSSProperties["mixBlendMode"],
-          }}
-        >
-          {(index) => {
-            const tile = plan?.tile(index);
-            return (
-              <div
-                key={index}
-                className="relative h-full shrink-0 overflow-hidden"
-                style={{ width: frameW }}
-              >
-                <CompositionTile
-                  posterUrl={value.url}
-                  stripUrl={tile ? buildCompositionStripUrl(url, plan!.times(tile.chunk)) : null}
-                  frame={tile?.frame ?? 0}
-                  frames={tile?.frames ?? 1}
-                  letterbox={frameW > Math.round(container.height * value.aspect)}
-                  projectId={projectId}
-                  sessionEpoch={sessionEpoch}
-                  priority={priority}
-                />
-              </div>
-            );
-          }}
-        </ThumbnailTiles>
-      )}
+      <ThumbnailTiles
+        strip={container}
+        frameW={frameW}
+        frameCount={frameCount}
+        watchGap={watchGap}
+        style={{
+          mixBlendMode:
+            "var(--timeline-composition-thumbnail-blend)" as CSSProperties["mixBlendMode"],
+        }}
+      >
+        {(index) => (
+          <div
+            key={index}
+            className="relative h-full shrink-0 overflow-hidden"
+            style={{ width: frameW }}
+          >
+            <CompositionTile
+              {...imageOf(index)}
+              letterbox={frameW > Math.round(container.height * frameAspect)}
+              projectId={projectId}
+              sessionEpoch={sessionEpoch}
+              priority={priority}
+              onAspect={learnAspectOnce}
+            />
+          </div>
+        )}
+      </ThumbnailTiles>
       {label && (
         <div className="absolute inset-y-0 left-3 z-10 flex items-center">
           <span
             className="block max-w-full truncate text-[10px] font-semibold leading-none"
             style={{
               color: labelColor,
-              textShadow: value ? "0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.6)" : "none",
+              textShadow: aspect ? "0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.6)" : "none",
             }}
           >
             {label}

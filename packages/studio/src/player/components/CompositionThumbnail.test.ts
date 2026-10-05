@@ -124,7 +124,7 @@ describe("planCompositionStrip", () => {
           expect(time).toBeLessThanOrEqual(to);
           if (i > 0) expect(time).toBeGreaterThan(timeOf(plan, i - 1));
         } else {
-          // The last tile runs past the clip's end and shows the clip's last frame.
+          // The last tile runs past the clip's end and shows the clip's last grid cell.
           expect(time).toBeGreaterThan(start + range - tile);
           expect(time).toBeLessThan(start + range);
         }
@@ -151,116 +151,118 @@ describe("planCompositionStrip", () => {
 });
 
 describe("CompositionThumbnail", () => {
-  async function renderThumbnail(): Promise<MockImage> {
-    root = createRoot(host);
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const fetchedUrls = () =>
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map(([url]) => String(url));
+  const stripTimes = () =>
+    fetchedUrls()
+      .map((url) => new URL(url).searchParams.get("times"))
+      .filter(Boolean);
+  const slices = () => [...host.querySelectorAll<HTMLElement>("[data-strip-frame]")];
+
+  function sizeHost(width: number, height: number) {
+    Object.defineProperty(host, "clientWidth", { configurable: true, value: width });
+    Object.defineProperty(host, "clientHeight", { configurable: true, value: height });
+  }
+
+  async function renderThumbnail(props: Record<string, unknown> = {}) {
+    root ??= createRoot(host);
     await act(async () => {
       root!.render(
         React.createElement(CompositionThumbnail, {
           previewUrl: "/api/projects/demo/preview",
           label: "",
           labelColor: "#fff",
+          ...props,
         }),
       );
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
-    const probe = MockImage.instances[0];
-    if (!probe) throw new Error("Expected an image probe");
-    return probe;
   }
 
+  async function loadImage(index: number, width: number, height: number) {
+    const image = MockImage.instances[index];
+    if (!image) throw new Error(`Expected image probe ${index}`);
+    await act(async () => {
+      image.naturalWidth = width;
+      image.naturalHeight = height;
+      image.onload?.();
+      await flush();
+    });
+  }
+
+  const eightSeconds = { sourceStart: 0, sourceRangeDuration: 8 };
+
   it("renders visible tiles after the scheduled off-DOM probe loads", async () => {
-    const probe = await renderThumbnail();
+    sizeHost(500, 40);
+    await renderThumbnail();
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining("/api/projects/demo/thumbnail/index.html"),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(probe.src).toBe("blob:composition-thumbnail");
+    expect(MockImage.instances[0]?.src).toBe("blob:composition-thumbnail");
 
-    await act(async () => {
-      probe.naturalWidth = 1920;
-      probe.naturalHeight = 1080;
-      probe.onload?.();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    await loadImage(0, 1920, 1080);
 
-    const tiles = [...host.querySelectorAll("img")];
-    expect(tiles.length).toBeGreaterThan(0);
-    expect(tiles.every((tile) => !tile.classList.contains("hidden"))).toBe(true);
+    expect(slices().length).toBeGreaterThan(0);
     // Pictures read untinted by default, like video filmstrips; the theme tokens own any dimming.
     expect(
-      tiles.every((tile) => tile.style.opacity === "var(--timeline-composition-thumbnail-opacity)"),
+      slices().every(
+        (slice) => slice.style.opacity === "var(--timeline-composition-thumbnail-opacity)",
+      ),
     ).toBe(true);
-    expect(tiles[0]?.parentElement?.parentElement?.style.mixBlendMode).toBe(
+    expect(slices()[0]?.parentElement?.parentElement?.style.mixBlendMode).toBe(
       "var(--timeline-composition-thumbnail-blend)",
     );
   });
 
   it.each([
-    { name: "a wide", width: 2700, height: 1000, tileWidth: 108 },
-    { name: "a square", width: 1000, height: 1000, tileWidth: 48 },
-    { name: "a portrait", width: 1080, height: 1920, tileWidth: 48 },
+    { name: "a wide", width: 2700, height: 1000, tileWidth: 108, letterboxed: false },
+    { name: "a square", width: 1000, height: 1000, tileWidth: 48, letterboxed: true },
+    { name: "a portrait", width: 1080, height: 1920, tileWidth: 48, letterboxed: true },
   ])(
     "shows $name picture whole at the clip's measured height",
-    async ({ width, height, tileWidth }) => {
-      Object.defineProperty(host, "clientWidth", { configurable: true, value: 500 });
-      Object.defineProperty(host, "clientHeight", { configurable: true, value: 40 });
-      const probe = await renderThumbnail();
+    async ({ width, height, tileWidth, letterboxed }) => {
+      sizeHost(500, 40);
+      await renderThumbnail();
+      await loadImage(0, width, height);
 
-      await act(async () => {
-        probe.naturalWidth = width;
-        probe.naturalHeight = height;
-        probe.onload?.();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
-
-      const img = host.querySelector("img")!;
-      expect(img.parentElement?.style.width).toBe(`${tileWidth}px`);
+      const slice = slices()[0]!;
+      const tile = letterboxed ? slice.parentElement?.parentElement : slice.parentElement;
+      expect(tile?.style.width).toBe(`${tileWidth}px`);
       // A tile held at its minimum width letterboxes the picture instead of cropping it.
-      expect(img.classList.contains("object-contain")).toBe(true);
+      expect(slice.style.aspectRatio !== "").toBe(letterboxed);
     },
   );
 
   it("re-tiles at the height the resize observer reports", async () => {
-    const probe = await renderThumbnail();
-    await act(async () => {
-      probe.naturalWidth = 2700;
-      probe.naturalHeight = 1000;
-      probe.onload?.();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    await renderThumbnail();
+    await loadImage(0, 2700, 1000);
 
     act(() => reportResize(500, 40));
 
-    expect(host.querySelector("img")?.parentElement?.style.width).toBe("108px");
+    expect(slices()[0]?.parentElement?.style.width).toBe("108px");
   });
 
   it("draws nothing over the clip's own fill while its frames load", async () => {
     globalThis.fetch = vi.fn(() => new Promise<Response>(() => {}));
-    root = createRoot(host);
-    await act(async () => {
-      root!.render(
-        React.createElement(CompositionThumbnail, {
-          previewUrl: "/api/projects/demo/preview",
-          label: "",
-          labelColor: "#fff",
-        }),
-      );
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    sizeHost(500, 40);
+    await renderThumbnail(eightSeconds);
 
     expect(globalThis.fetch).toHaveBeenCalled();
-    expect(host.firstElementChild?.childElementCount).toBe(0);
+    expect(host.querySelectorAll("img, [data-strip-frame], .animate-pulse")).toHaveLength(0);
   });
 
   it("aborts its scheduled off-DOM image probe when unmounted", async () => {
-    const probe = await renderThumbnail();
-    expect(host.querySelector("img")).toBeNull();
+    await renderThumbnail();
+    const probe = MockImage.instances[0]!;
+    expect(slices()).toHaveLength(0);
     expect(probe.src).toBe("blob:composition-thumbnail");
 
     await act(async () => {
       root?.unmount();
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
     root = null;
 
@@ -277,194 +279,87 @@ describe("CompositionThumbnail", () => {
       signals.push(init?.signal as AbortSignal);
       return new Promise<Response>((resolve) => resolveFetches.push(resolve));
     });
-    root = createRoot(host);
 
-    await act(async () => {
-      root!.render(
-        React.createElement(CompositionThumbnail, {
-          previewUrl: "/api/projects/demo/preview",
-          label: "",
-          labelColor: "#fff",
-          projectId: "demo",
-          contentRevision: 0,
-        }),
-      );
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    await act(async () => {
-      root!.render(
-        React.createElement(CompositionThumbnail, {
-          previewUrl: "/api/projects/demo/preview",
-          label: "",
-          labelColor: "#fff",
-          projectId: "demo",
-          contentRevision: 1,
-        }),
-      );
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    await renderThumbnail({ projectId: "demo", contentRevision: 0 });
+    await renderThumbnail({ projectId: "demo", contentRevision: 1 });
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     expect(signals[0]?.aborted).toBe(true);
     expect(signals[1]?.aborted).toBe(false);
-    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[1]?.[0]).toContain(
-      "revision=1",
-    );
+    expect(fetchedUrls()[1]).toContain("revision=1");
 
     await act(async () => {
       resolveFetches[0]?.(new Response(new Blob(["stale"]), { status: 200 }));
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
     expect(MockImage.instances).toHaveLength(0);
 
     await act(async () => {
       resolveFetches[1]?.(new Response(new Blob(["fresh"]), { status: 200 }));
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
     expect(MockImage.instances).toHaveLength(1);
     expect(MockImage.instances[0]?.src).toBe("blob:composition-thumbnail");
   });
 
-  it("shows each tile the frame the composition renders at that tile's time", async () => {
-    Object.defineProperty(host, "clientWidth", { configurable: true, value: 500 });
-    Object.defineProperty(host, "clientHeight", { configurable: true, value: 40 });
-    root = createRoot(host);
-    await act(async () => {
-      root!.render(
-        React.createElement(CompositionThumbnail, {
-          previewUrl: "/api/projects/demo/preview",
-          label: "",
-          labelColor: "#fff",
-          sourceStart: 0,
-          sourceRangeDuration: 8,
-        }),
-      );
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    await act(async () => {
-      const poster = MockImage.instances[0]!;
-      poster.naturalWidth = 1920;
-      poster.naturalHeight = 1080;
-      poster.onload?.();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+  it("shows each tile the frame the composition renders at that tile's time, in one request", async () => {
+    sizeHost(500, 40);
+    await renderThumbnail(eightSeconds);
 
-    const urls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map(([url]) =>
-      String(url),
-    );
-    const strips = urls.filter((url) => url.includes("times="));
-    expect(strips).toHaveLength(1);
-    expect(new URL(strips[0]!).searchParams.get("times")).toBe(
-      "0.500,1.500,2.500,3.500,4.500,5.500,6.500,7.500",
-    );
+    // One strip and nothing else: a clip costs the server one render, as a lone poster did.
+    expect(fetchedUrls()).toHaveLength(1);
+    expect(stripTimes()).toEqual(["0.500,1.500,2.500,3.500,4.500,5.500,6.500,7.500"]);
 
-    await act(async () => {
-      const strip = MockImage.instances[1]!;
-      strip.naturalWidth = 8 * 240;
-      strip.naturalHeight = 135;
-      strip.onload?.();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    // 500 px at 71 px tiles: 8 tiles of 1.136 s; the last runs past the 8 s clip and shows its last frame.
-    const slices = [...host.querySelectorAll<HTMLElement>("[data-strip-frame]")];
-    const frames = slices.map((slice) => Number(slice.dataset.stripFrame));
+    await loadImage(0, 8 * 240, 135);
+    // 500 px at 71 px tiles: 8 tiles of 1.136 s; the last runs past the 8 s clip.
+    const frames = slices().map((slice) => Number(slice.dataset.stripFrame));
     expect(frames).toEqual([0, 1, 2, 3, 5, 6, 7, 7]);
-    const times = new URL(strips[0]!).searchParams.get("times")!.split(",").map(Number);
+    const times = stripTimes()[0]!.split(",").map(Number);
     frames.slice(0, 7).forEach((frame, tile) => {
       const tileSeconds = (8 * 71) / 500;
       expect(times[frame]).toBeGreaterThanOrEqual(tile * tileSeconds);
       expect(times[frame]).toBeLessThanOrEqual((tile + 1) * tileSeconds);
     });
-    // Each slice shows its own cell of the 8-frame strip, at one frame's aspect.
-    slices.forEach((slice, tile) =>
+    // Each slice shows its own cell of the 8-frame strip.
+    slices().forEach((slice, tile) =>
       expect(slice.style.backgroundPositionX).toBe(`${(frames[tile]! / 7) * 100}%`),
     );
     // A tile exactly one frame wide is filled edge to edge, so neighbours meet without a seam.
-    expect(slices.every((slice) => slice.style.aspectRatio === "")).toBe(true);
+    expect(slices().every((slice) => slice.style.aspectRatio === "")).toBe(true);
   });
 
-  it("keeps its tiles' strips through a zoom and asks for the new zoom's once the timeline holds still", async () => {
-    Object.defineProperty(host, "clientWidth", { configurable: true, value: 500 });
-    Object.defineProperty(host, "clientHeight", { configurable: true, value: 40 });
-    root = createRoot(host);
-    await act(async () => {
-      root!.render(
-        React.createElement(CompositionThumbnail, {
-          previewUrl: "/api/projects/demo/preview",
-          label: "",
-          labelColor: "#fff",
-          sourceStart: 0,
-          sourceRangeDuration: 8,
-        }),
-      );
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    for (const [index, width] of [
-      [0, 1920],
-      [1, 8 * 240],
-    ] as const) {
-      await act(async () => {
-        const image = MockImage.instances[index]!;
-        image.naturalWidth = width;
-        image.naturalHeight = index === 0 ? 1080 : 135;
-        image.onload?.();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
-    }
-    const stripTimes = () =>
-      (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
-        .map(([url]) => new URL(String(url)).searchParams.get("times"))
-        .filter(Boolean);
-    expect(stripTimes()).toHaveLength(1);
+  it("keeps a tile's last frame until its new chunk arrives", async () => {
+    sizeHost(500, 40);
+    await renderThumbnail(eightSeconds);
+    await loadImage(0, 8 * 240, 135);
 
-    act(() => thumbnailScheduler.setScrolling(true));
     act(() => reportResize(1000, 40));
-    expect(host.querySelectorAll("[data-strip-frame]").length).toBeGreaterThan(0);
+    await act(flush);
 
-    await act(async () => {
-      thumbnailScheduler.setScrolling(false);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
     // 1000 px is 15 tiles of 0.568 s: a 0.5 s step, in two chunks.
     expect(stripTimes().slice(1).sort()).toEqual([
       "0.250,0.750,1.250,1.750,2.250,2.750,3.250,3.750",
       "4.250,4.750,5.250,5.750,6.250,6.750,7.250,7.750",
     ]);
+    expect(slices().map((slice) => Number(slice.dataset.stripFrame))).toEqual([
+      0, 1, 2, 3, 5, 6, 7, 7,
+    ]);
+
+    await loadImage(1, 8 * 240, 135);
+    await loadImage(2, 8 * 240, 135);
+    expect(slices()).toHaveLength(15);
+    expect(fetchedUrls()).toHaveLength(3);
   });
 
   it("letterboxes a portrait frame at its own aspect in a tile held at the minimum width", async () => {
-    Object.defineProperty(host, "clientWidth", { configurable: true, value: 384 });
-    Object.defineProperty(host, "clientHeight", { configurable: true, value: 40 });
-    root = createRoot(host);
-    await act(async () => {
-      root!.render(
-        React.createElement(CompositionThumbnail, {
-          previewUrl: "/api/projects/demo/preview",
-          label: "",
-          labelColor: "#fff",
-          sourceStart: 0,
-          sourceRangeDuration: 8,
-        }),
-      );
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    await act(async () => {
-      const poster = MockImage.instances[0]!;
-      poster.naturalWidth = 1080;
-      poster.naturalHeight = 1920;
-      poster.onload?.();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    await act(async () => {
-      const strip = MockImage.instances[1]!;
-      strip.naturalWidth = 8 * 76;
-      strip.naturalHeight = 135;
-      strip.onload?.();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    sizeHost(384, 40);
+    await renderThumbnail(eightSeconds);
+    await loadImage(0, 8 * 76, 135);
 
-    const slice = host.querySelector<HTMLElement>("[data-strip-frame]")!;
+    const slice = slices()[0]!;
     expect(slice.parentElement?.parentElement?.style.width).toBe("48px");
     expect(parseFloat(slice.style.aspectRatio)).toBeCloseTo(76 / 135);
+    // The 16:9 guess and the learned shape give the same 1 s grid here, so nothing is asked twice.
+    expect(fetchedUrls()).toHaveLength(1);
   });
 });

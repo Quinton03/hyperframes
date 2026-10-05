@@ -169,9 +169,6 @@ export function registerThumbnailRoutes(api: Hono, adapter: StudioApiAdapter): v
     const selector = url.searchParams.get("selector") || undefined;
     const format = url.searchParams.get("format") === "png" ? "png" : "jpeg";
     const contentType = format === "png" ? "image/png" : "image/jpeg";
-    if (rawTimes != null && (!stripTimes || format === "png")) {
-      return c.json({ error: "times must be up to 8 non-negative numbers, jpeg only" }, 400);
-    }
     const requestedOutput = url.searchParams.get("output");
     // PNG is the legacy source-density capture contract. Callers can opt either
     // format into the bounded preview contract explicitly.
@@ -179,6 +176,9 @@ export function registerThumbnailRoutes(api: Hono, adapter: StudioApiAdapter): v
       requestedOutput === "source" || (requestedOutput !== "preview" && format === "png")
         ? "source"
         : "preview";
+    if (rawTimes != null && (!stripTimes || outputMode === "source")) {
+      return c.json({ error: "times must be up to 8 non-negative numbers, at preview size" }, 400);
+    }
     const rawSelectorIndex = Number.parseInt(url.searchParams.get("selectorIndex") || "0", 10);
     const selectorIndex =
       Number.isFinite(rawSelectorIndex) && rawSelectorIndex > 0 ? rawSelectorIndex : undefined;

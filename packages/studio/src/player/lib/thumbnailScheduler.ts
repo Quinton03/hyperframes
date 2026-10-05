@@ -22,7 +22,7 @@ export interface ThumbnailRequest {
   sessionEpoch: number;
   kind: ThumbnailJobKind;
   priority: ThumbnailPriority;
-  /** Rich work is paused while the timeline is fast-scrolling. */
+  /** Rich work is paused while the timeline zooms. */
   rich?: boolean;
   /** For work whose result nobody reads: it is dropped, not cached, once its last lease ends. */
   discardWhenReleased?: boolean;
@@ -118,7 +118,6 @@ export class ThumbnailScheduler {
   private nextSequence = 1;
   private scrolling = false;
   private motionSettle: ReturnType<typeof setTimeout> | null = null;
-  private readonly motionListeners = new Set<() => void>();
   private previewReloading = false;
   private pageHidden = false;
   private cacheBytes = 0;
@@ -223,17 +222,9 @@ export class ThumbnailScheduler {
     }, MOTION_SETTLE_MS);
   }
 
-  readonly isMoving = (): boolean => this.scrolling;
-
-  readonly subscribeMotion = (listener: () => void): (() => void) => {
-    this.motionListeners.add(listener);
-    return () => this.motionListeners.delete(listener);
-  };
-
   setScrolling(scrolling: boolean): void {
     if (this.scrolling === scrolling) return;
     this.scrolling = scrolling;
-    for (const listener of this.motionListeners) listener();
     if (!scrolling) this.pump();
   }
 

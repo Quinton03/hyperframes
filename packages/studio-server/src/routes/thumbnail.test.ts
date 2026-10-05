@@ -116,7 +116,7 @@ describe("registerThumbnailRoutes", () => {
     });
   });
 
-  it.each(["", "1,,2", "x", "0,1,2,3,4,5,6,7,8", "1,2&format=png"])(
+  it.each(["", "1,,2", "x", "0,1,2,3,4,5,6,7,8", "1,2&format=png", "1,2&output=source"])(
     "refuses a malformed strip (times=%s) instead of rendering a single frame",
     async (times) => {
       const adapter = createAdapter();
