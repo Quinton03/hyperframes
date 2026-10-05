@@ -38,7 +38,12 @@ describe("openInDesktop", () => {
       ...LIVE,
       open: (id, dir) => (asked.push(`${id} ${dir}`), true),
     });
-    expect(result).toEqual({ opened: true, app: "the HyperFrames desktop app", handedOver: null });
+    expect(result).toEqual({
+      opened: true,
+      app: "the HyperFrames desktop app",
+      handedOver: null,
+      link: null,
+    });
     expect(asked).toEqual([`dev.hyperframes.desktop ${FILM}`]);
   });
 
@@ -76,7 +81,12 @@ describe("openInDesktop on Windows", () => {
       started.push(`${executable} ${dir}`), true
     );
     const result = openInDesktop(FILM, { ...WIN, exists: () => true, launch });
-    expect(result).toEqual({ opened: true, app: "the HyperFrames desktop app", handedOver: null });
+    expect(result).toEqual({
+      opened: true,
+      app: "the HyperFrames desktop app",
+      handedOver: null,
+      link: null,
+    });
     expect(started).toEqual([`${exe("HyperFrames")} ${FILM}`]);
   });
 

@@ -2,6 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, win32 } from "node:path";
+import { writeAgentLink, type AgentLink, type AgentRelay } from "./agentLink.js";
 
 // The HyperFrames desktop app (not "Studio"): `open -b` on macOS, its executable elsewhere; released, then Canary.
 const DESKTOP_BUNDLE_IDS = ["dev.hyperframes.desktop", "dev.hyperframes.desktop.canary"] as const;
@@ -42,7 +43,7 @@ export function agentSession(env: NodeJS.ProcessEnv = process.env): AgentSession
 type AppName = "the HyperFrames desktop app" | "HyperFrames Canary";
 
 export type DesktopOpenResult =
-  | { opened: true; app: AppName; handedOver: AgentSession | null }
+  | { opened: true; app: AppName; handedOver: AgentSession | null; link: AgentLink | null }
   | {
       opened: false;
       reason: "handoff-unavailable" | "unsupported-platform" | "not-installed" | "open-failed";
@@ -141,8 +142,10 @@ export function openInDesktop(
     launch = launchApp,
     installed = () => desktopInstalled({ platform }),
     env = process.env,
+    relay,
     ...where
   }: AppLookup & {
+    relay?: AgentRelay;
     ready?: boolean;
     open?: (bundleId: string, dir: string) => boolean;
     launch?: (executable: string, dir: string) => boolean;
@@ -160,6 +163,7 @@ export function openInDesktop(
     opened: true,
     app: canary ? "HyperFrames Canary" : "the HyperFrames desktop app",
     handedOver: leaveHandoff(dir, agentSession(env)),
+    link: writeAgentLink(dir, { env, ...(relay && { relay }) }),
   });
   if (!ready) return notOpened("handoff-unavailable");
   if (platform === "darwin") {

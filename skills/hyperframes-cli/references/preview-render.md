@@ -25,6 +25,8 @@ Use the actual port and project directory name; treat `index.html` as source-cod
 
 Two ways a handed URL turns out dead — check both before handing it back: the URL is missing its `#project/<project-name>` hash (Studio loads but has no project to open), or the server is not actually running. Bare `preview` automatically creates a managed persistent session in a non-TTY agent shell; `--background` remains the clearest explicit form. Verify the printed URL returns HTTP 200, keep it alive for the whole review, and stop it explicitly with `npx hyperframes preview --stop` afterward. Use the printed URL as-is: HyperFrames URL-encodes project names that contain route metacharacters.
 
+Under Claude Code, start it as a background task of your own session instead: `npx hyperframes preview --foreground`, left running in the background rather than detached. Wherever a workflow says `preview --background`, this form replaces it there. It stays tied to this conversation, so the HyperFrames desktop app's chat can reach you through it even when the session skips permission prompts; it stops when the session ends, and `--stop` still stops it.
+
 ### Agent context from Studio selection
 
 `preview --context` and `preview --selection` are the agent bridge into a running Studio session. They do **not** start a new server; they find the active preview server for the current project, read agent-useful state from Studio, print it, and exit.

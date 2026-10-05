@@ -40,6 +40,8 @@ import { createRequire } from "node:module";
 import * as clack from "@clack/prompts";
 import { c } from "../ui/colors.js";
 import { desktopHint } from "../utils/desktopApp.js";
+import { newRelayToken, writeAgentLink } from "../utils/agentLink.js";
+import { relayFor } from "../server/desktopRoutes.js";
 import { isDevMode } from "../utils/env.js";
 import { normalizeErrorMessage as errorMessage } from "../utils/errorMessage.js";
 import { buildNpxCommand } from "../utils/npxCommand.js";
@@ -1578,6 +1580,7 @@ async function runEmbeddedMode(
   // Compute everything that may throw before acquiring the fs.watch handle.
   // Once createStudioServer returns, every subsequent exit path must close it.
   const serverBuildSignature = await loadPreviewServerBuildSignature();
+  const relayToken = newRelayToken();
   const {
     app,
     watcher,
@@ -1587,6 +1590,7 @@ async function runEmbeddedMode(
     projectName: pName,
     autoProxy: options?.autoProxy,
     browserGpuMode: options?.browserGpuMode,
+    relayToken,
   });
   let result: FindPortResult;
   try {
@@ -1642,6 +1646,8 @@ async function runEmbeddedMode(
   }
 
   const url = `http://localhost:${result.port}`;
+  const relay = relayFor(`localhost:${result.port}`, relayToken);
+  if (relay) writeAgentLink(dir, { relay });
   if (options?.json) {
     writeLifecycleJson(foregroundPreviewReadyPayload(pName, url, dir, process.pid));
   } else {

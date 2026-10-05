@@ -21,7 +21,15 @@ const WHY_NOT: Record<Extract<DesktopOpenResult, { opened: false }>["reason"], s
 function printResult(project: ProjectDir, result: DesktopOpenResult): void {
   if (result.opened) {
     console.log(`${c.success("◇")}  Opening ${c.accent(project.name)} in ${result.app}`);
-    if (result.handedOver) {
+    if (result.link) {
+      console.log(
+        `   ${c.dim("Its chat goes to this Claude Code session while it is open, then picks up the conversation.")}`,
+      );
+      if (!result.link.relay)
+        console.log(
+          `   ${c.dim(`To reach it also when permission prompts are skipped, keep ${c.accent("npx hyperframes preview --foreground")} running as this session's own background task.`)}`,
+        );
+    } else if (result.handedOver) {
       const agent = result.handedOver.engine === "claude" ? "Claude Code" : "Codex";
       console.log(`   ${c.dim(`Its chat picks up this ${agent} conversation.`)}`);
     }

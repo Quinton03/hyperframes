@@ -5,7 +5,16 @@ import {
   desktopInstalled,
   openInDesktop,
 } from "../utils/desktopApp.js";
+import {
+  AGENT_RELAY_PATH,
+  postToInbox,
+  relayAuthorized,
+  type AgentRelay,
+} from "../utils/agentLink.js";
 import { identityAllowed } from "./telemetryIdentity.js";
+
+/** The longest message the relay forwards; Claude Code itself refuses near a million characters. */
+const RELAY_MAX_CHARS = 200_000;
 
 /** A bodiless POST is a simple request, so any page can send one to localhost: it has to come from this Studio. */
 export function sameOriginPost(headers: {
@@ -19,7 +28,18 @@ export function sameOriginPost(headers: {
   return origin === undefined || origin === `http://${host}`;
 }
 
-/** Edit with Framey's route: whether to show it, where to download, and whether the app takes the project. */
+/** The relay this preview is, as the link records it; none outside a Claude Code session. */
+export function relayFor(
+  host: string,
+  token: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): AgentRelay | undefined {
+  const inbox = env.CLAUDE_CODE_MESSAGING_SOCKET;
+  return token && inbox ? { url: `http://${host}${AGENT_RELAY_PATH}`, token, inbox } : undefined;
+}
+
+/** Edit with Framey's route: whether to show it, where to download, and whether the app takes the project. With a
+ * relay token, the desktop app's messages to the session that started this preview go through it. */
 export function mountDesktopRoutes(
   app: Hono,
   projectDir: string,
@@ -28,6 +48,17 @@ export function mountDesktopRoutes(
     open = openInDesktop,
     platform = process.platform,
     installed = () => desktopInstalled({ platform }),
+    relayToken,
+    env = process.env,
+    post = postToInbox,
+  }: {
+    ready?: boolean;
+    open?: typeof openInDesktop;
+    platform?: NodeJS.Platform;
+    installed?: () => boolean;
+    relayToken?: string;
+    env?: NodeJS.ProcessEnv;
+    post?: typeof postToInbox;
   } = {},
 ): void {
   const downloadUrl = desktopDownloadUrl(platform);
@@ -47,6 +78,26 @@ export function mountDesktopRoutes(
         reason: "handoff-unavailable",
         downloadUrl,
       });
-    return c.json(open(projectDir));
+    const relay = relayFor(c.req.header("host") ?? "", relayToken, env);
+    return c.json(open(projectDir, { env, ...(relay && { relay }) }));
   });
+  app.post(AGENT_RELAY_PATH, async (c) => {
+    const inbox = env.CLAUDE_CODE_MESSAGING_SOCKET;
+    if (!relayToken || !inbox || !identityAllowed(c.req.header("host")))
+      return c.json({ error: "not-found" }, 404);
+    if (!relayAuthorized(c.req.header("authorization"), relayToken))
+      return c.json({ error: "forbidden" }, 403);
+    const text = relayText(await c.req.json().catch(() => null));
+    if (!text) return c.json({ error: "bad-request" }, 400);
+    return post(inbox, text, env.CLAUDE_CODE_MESSAGING_TOKEN).then(
+      () => c.json({ sent: true }, 202),
+      () => c.json({ error: "inbox-unreachable" }, 502),
+    );
+  });
+}
+
+/** The text a relay request carries; null when there is none to forward. */
+function relayText(body: unknown): string | null {
+  const text = typeof body === "object" && body !== null && "text" in body ? body.text : null;
+  return typeof text === "string" && text && text.length <= RELAY_MAX_CHARS ? text : null;
 }

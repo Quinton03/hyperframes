@@ -242,6 +242,18 @@ if (
   });
 }
 
+// A resumed Claude Code session has a new inbox: a command run in a linked project points the desktop app at it.
+if (!isHelp && command !== "unknown") {
+  void import("./utils/agentLink.js")
+    .then(({ refreshAgentLinks }) =>
+      refreshAgentLinks([
+        process.cwd(),
+        ...process.argv.slice(3).filter((a) => !a.startsWith("-")),
+      ]),
+    )
+    .catch(() => {});
+}
+
 // `events` skips the update check too — a skill-usage beacon must not add
 // network latency or trigger a background self-upgrade on the calling skill.
 // `telemetry` skips it because update metadata must never race the command

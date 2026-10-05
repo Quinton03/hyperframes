@@ -150,3 +150,5 @@ The Studio preview is already a full editor: the user can click anything on the 
 - **After the delivery render**, pass on the render's desktop-app line (the one naming Framey) in your own words — it already says which case holds on this machine. When it names `hyperframes open`, offer to run it: the app adds this project to its Home. Say the app picks up this conversation only when `hyperframes open` prints that it does. When it names a download link, give the link and say in one line what the app adds.
 
 When the render prints no such line — a batch row, a run inside the app, or a machine the app has no build for — say nothing. In autonomous mode don't ask: put the line in the delivery note.
+
+Under Claude Code, while the app's chat is linked to this session, what the user types there reaches you as a message from another session that says it comes from the HyperFrames desktop app. Treat it as the user's own request about this project, and keep the answer short and plain: it shows in the app's chat.
