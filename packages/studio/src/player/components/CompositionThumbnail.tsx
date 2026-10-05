@@ -1,8 +1,9 @@
-import { memo, useMemo, type CSSProperties } from "react";
+import { memo, useMemo, useRef, useSyncExternalStore, type CSSProperties } from "react";
 import { useThumbnailLease } from "../../hooks/useThumbnailLease";
 import { useThumbnailStripSize } from "../../hooks/useThumbnailStripSize";
 import {
   createThumbnailKey,
+  thumbnailScheduler,
   type ThumbnailPriority,
   type ThumbnailRequest,
 } from "../lib/thumbnailScheduler";
@@ -280,17 +281,24 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
     container.height,
     48,
   );
-  const plan = useMemo(
-    () =>
-      sourceRangeDuration > 0 && frameCount > 1 && container.width > 0
-        ? planCompositionStrip(
-            sourceStart,
-            sourceRangeDuration,
-            (sourceRangeDuration * frameW) / container.width,
-          )
-        : null,
-    [container.width, frameCount, frameW, sourceRangeDuration, sourceStart],
+  const moving = useSyncExternalStore(
+    thumbnailScheduler.subscribeMotion,
+    thumbnailScheduler.isMoving,
+    () => false,
   );
+  const settledPlan = useRef<ReturnType<typeof planCompositionStrip> | null>(null);
+  // While the timeline scrolls or zooms, tiles keep the plan they had when it last held still.
+  const plan = useMemo(() => {
+    if (moving && settledPlan.current) return settledPlan.current;
+    return sourceRangeDuration > 0 && frameCount > 1 && container.width > 0
+      ? planCompositionStrip(
+          sourceStart,
+          sourceRangeDuration,
+          (sourceRangeDuration * frameW) / container.width,
+        )
+      : null;
+  }, [container.width, frameCount, frameW, moving, sourceRangeDuration, sourceStart]);
+  settledPlan.current = plan;
 
   return (
     <div ref={setContainerRef} className="absolute inset-0 overflow-hidden">

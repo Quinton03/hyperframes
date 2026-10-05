@@ -383,6 +383,55 @@ describe("CompositionThumbnail", () => {
     expect(slices.every((slice) => slice.style.aspectRatio === "")).toBe(true);
   });
 
+  it("keeps its tiles' strips through a zoom and asks for the new zoom's once the timeline holds still", async () => {
+    Object.defineProperty(host, "clientWidth", { configurable: true, value: 500 });
+    Object.defineProperty(host, "clientHeight", { configurable: true, value: 40 });
+    root = createRoot(host);
+    await act(async () => {
+      root!.render(
+        React.createElement(CompositionThumbnail, {
+          previewUrl: "/api/projects/demo/preview",
+          label: "",
+          labelColor: "#fff",
+          sourceStart: 0,
+          sourceRangeDuration: 8,
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    for (const [index, width] of [
+      [0, 1920],
+      [1, 8 * 240],
+    ] as const) {
+      await act(async () => {
+        const image = MockImage.instances[index]!;
+        image.naturalWidth = width;
+        image.naturalHeight = index === 0 ? 1080 : 135;
+        image.onload?.();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+    const stripTimes = () =>
+      (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
+        .map(([url]) => new URL(String(url)).searchParams.get("times"))
+        .filter(Boolean);
+    expect(stripTimes()).toHaveLength(1);
+
+    act(() => thumbnailScheduler.setScrolling(true));
+    act(() => reportResize(1000, 40));
+    expect(host.querySelectorAll("[data-strip-frame]").length).toBeGreaterThan(0);
+
+    await act(async () => {
+      thumbnailScheduler.setScrolling(false);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    // 1000 px is 15 tiles of 0.568 s: a 0.5 s step, in two chunks.
+    expect(stripTimes().slice(1).sort()).toEqual([
+      "0.250,0.750,1.250,1.750,2.250,2.750,3.250,3.750",
+      "4.250,4.750,5.250,5.750,6.250,6.750,7.250,7.750",
+    ]);
+  });
+
   it("letterboxes a portrait frame at its own aspect in a tile held at the minimum width", async () => {
     Object.defineProperty(host, "clientWidth", { configurable: true, value: 384 });
     Object.defineProperty(host, "clientHeight", { configurable: true, value: 40 });
