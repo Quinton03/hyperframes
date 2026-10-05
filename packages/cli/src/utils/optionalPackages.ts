@@ -130,7 +130,6 @@ function loadInstalled(dir: string, name: string): unknown | null {
   return entry === null ? null : createRequire(join(dir, "package.json"))(entry);
 }
 
-/** Reads pinned package provenance without loading its exports, including symlinked layouts. */
 export function pinnedPackageBesideCli(
   name: PinnedPackage,
   cliUrl = import.meta.url,
@@ -141,7 +140,6 @@ export function pinnedPackageBesideCli(
     try {
       entry = realpathSync(req.resolve(name));
     } catch {
-      // An accepted package with a missing entry is broken, not absent. Let its child load report why.
       const copy = (req.resolve.paths(name) ?? [])
         .map((dir) => join(dir, name))
         .find((dir) => existsSync(join(dir, "package.json")));

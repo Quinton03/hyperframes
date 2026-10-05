@@ -71,7 +71,6 @@ async function installParakeet(json: boolean): Promise<void> {
     const { changed, runtimePath } = await installMissing(sherpa, spin, cancellation.signal);
     spin?.stop(c.success(changed ? "Parakeet installed" : "Parakeet is already installed"));
     if (json) {
-      // runtimeDir is the cache destination; runtimePath identifies the selected healthy entry.
       const { SHERPA_RUNTIME_DIR: runtimeDir, PARAKEET_MODEL_DIR: modelDir } = sherpa;
       console.log(
         JSON.stringify({
