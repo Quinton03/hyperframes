@@ -148,6 +148,7 @@ export function useGsapAwareEditing({
       next: { x: number; y: number },
       modifiers?: MoveCommitOptions,
     ) => {
+      const stamp = freezeDragStamp(selection.element);
       const writes = observeGsapGesture(gsapCommitMutation);
       if (modifiers?.plainTranslate ?? editsPlainCss(selection.element, "move")) {
         const result = await stageElementPositionOffset(selection, next, true).save();
@@ -166,7 +167,7 @@ export function useGsapAwareEditing({
             previewIframeRef.current,
             writes.commit,
             makeFetchFallback(selection),
-            modifiers,
+            { ...modifiers, stamp },
           );
           await saveMove(outcome, async () => {
             const staged = writes.drawKeepingUndone(() =>
@@ -367,6 +368,7 @@ export function useGsapAwareEditing({
 
   const handleGsapAwareRotationCommit = useCallback(
     async (selection: DomEditSelection, next: RotationCommit) => {
+      const stamp = freezeDragStamp(selection.element);
       const writes = observeGsapGesture(gsapCommitMutation);
       if (next.plain === undefined ? editsPlainCss(selection.element, "rotate") : next.plain) {
         const result = await handleDomRotationCommit(selection, next);
@@ -383,6 +385,7 @@ export function useGsapAwareEditing({
             previewIframeRef.current,
             writes.commit,
             makeFetchFallback(selection),
+            stamp,
           );
           assertGsapEditPersisted(outcome);
           return writes.finish();

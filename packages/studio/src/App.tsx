@@ -62,6 +62,7 @@ import { useStudioSessionStart } from "./hooks/useStudioSessionStart";
 import { useTimelineAddAtPlayhead } from "./hooks/useTimelineAddAtPlayhead";
 import { readStudioUrlStateFromWindow, resolveMasterCompositionPath } from "./utils/studioUrlState";
 import { useActiveComposition } from "./hooks/useActiveComposition";
+import { requestPreviewReload } from "./player/previewReloading";
 const getTimelineSelectionSet = () => usePlayerStore.getState().selectedElementIds;
 
 export interface StudioAppProps {
@@ -104,7 +105,10 @@ export function StudioApp({ readOnlyPreview = false, readOnlyPreviewReason }: St
   const handleDomZIndexReorderCommitRef = useRef<TimelineZIndexReorderCommit | null>(null);
   const pendingTimelineEditPathRef = useRef(new Set<string>());
   const isGestureRecordingRef = useRef(false);
-  const reloadPreview = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const reloadPreview = useCallback(() => {
+    requestPreviewReload();
+    setRefreshKey((k) => k + 1);
+  }, []);
   const fileManagerResult = useFileManager({
     projectId,
     showToast,
@@ -144,7 +148,7 @@ export function StudioApp({ readOnlyPreview = false, readOnlyPreviewReason }: St
     recordEdit: editHistory.recordEdit,
     previewIframeRef,
     activeCompPathRef,
-    reloadPreview: () => setRefreshKey((k) => k + 1),
+    reloadPreview,
   });
   const previewPersistence = useStableHandlers(previewPersistenceResult, projectId);
   const externalFileChanges = useStudioExternalFileChanges({

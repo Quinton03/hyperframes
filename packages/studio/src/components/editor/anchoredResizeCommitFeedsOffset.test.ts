@@ -159,6 +159,7 @@ function buildHarness(
     gestureRef: ref<GestureState | null>(null),
     groupGestureRef: ref(null),
     blockedMoveRef: ref(null),
+    waitingPressRef: ref(null),
     rafPausedRef: ref(false),
     suppressNextBoxClickRef: ref(false),
     setOverlayRect: () => {},

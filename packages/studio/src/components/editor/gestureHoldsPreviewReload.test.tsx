@@ -17,6 +17,10 @@ import "./domEditOverlayTestMocks";
 import { DomEditOverlay } from "./DomEditOverlay";
 import { PreviewReadOnlyProvider } from "./previewReadOnlyContext";
 import { STUDIO_MANUAL_EDIT_GESTURE_ATTR } from "./manualEditsTypes";
+import { PRESS_WAITING_ATTR } from "./domEditOverlayGestures";
+import { readDragStamp } from "../../hooks/draggedGsapPosition";
+import { usePlayerStore } from "../../player/store/playerStore";
+import { whileScriptWrites } from "../../player/previewReloading";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -112,14 +116,14 @@ function mountEditor(
   );
   const host = document.body.appendChild(document.createElement("div"));
   overlayRoot = createRoot(host);
-  const render = (readOnly: boolean) =>
+  const render = (readOnly: boolean, selection = selections[0]!) =>
     act(() =>
       overlayRoot.render(
         <PreviewReadOnlyProvider readOnly={readOnly}>
           <DomEditOverlay
             iframeRef={api().iframeRef}
             activeCompositionPath={null}
-            selection={group ? null : selections[0]!}
+            selection={group ? null : selection}
             groupSelections={group ? selections : []}
             hoverSelection={null}
             onCanvasMouseDown={() => undefined}
@@ -265,6 +269,52 @@ describe("a reload during a drag", () => {
     const fresh = served("?_t=2");
     expect(await paintShadow(api, fresh)).toBeGreaterThan(requested);
     expect(byId(fresh, "title").style.getPropertyValue("translate")).toBe("40px 20px");
+  });
+});
+
+describe("a press while the preview reloads", () => {
+  it("drags its element on the reloaded preview, at the time it was pressed", async () => {
+    const editor = mountEditor(false);
+    act(() => usePlayerStore.setState({ currentTime: 2 }));
+    act(() => api().refreshPlayer());
+    pointer(editor.box, "pointerdown", 150, 150);
+    pointer(editor.overlay, "pointermove", 190, 170);
+    expect(marked(editor.live.contentDocument!), "the page being replaced").toHaveLength(0);
+    expect(editor.box.hasAttribute(PRESS_WAITING_ATTR), "drawn at the pointer").toBe(true);
+    pointer(editor.overlay, "pointerup", 190, 170);
+    act(() => usePlayerStore.setState({ currentTime: 3 }));
+    let pressedAt: number | undefined;
+    const save = editor.onPathOffsetCommit.getMockImplementation()!;
+    editor.onPathOffsetCommit.mockImplementationOnce((sel, ...rest) => {
+      pressedAt = readDragStamp(sel.element).at?.time;
+      return save(sel, ...rest);
+    });
+
+    const shown = served("?_t=1");
+    await paintShadow(api, shown);
+    editor.render(false, makeSelection("title", byId(shown, "title")));
+    await vi.waitFor(() => expect(file.title).toBe("translate: 40px 20px"));
+    expect(byId(shown, "title").style.getPropertyValue("translate")).toBe("40px 20px");
+    expect(pressedAt).toBe(2);
+  });
+});
+
+describe("a press while a script write is out", () => {
+  it("waits for the write to land, then drags", async () => {
+    const editor = mountEditor(false);
+    let land: () => void = () => {};
+    const write = whileScriptWrites(() => new Promise<void>((resolve) => (land = resolve)));
+    pointer(editor.box, "pointerdown", 150, 150);
+    pointer(editor.overlay, "pointermove", 190, 170);
+    pointer(editor.overlay, "pointerup", 190, 170);
+    expect(marked(editor.live.contentDocument!), "no drag before the write lands").toHaveLength(0);
+    expect(editor.onPathOffsetCommit).not.toHaveBeenCalled();
+
+    await act(async () => {
+      land();
+      await write;
+    });
+    await vi.waitFor(() => expect(file.title).toBe("translate: 40px 20px"));
   });
 });
 

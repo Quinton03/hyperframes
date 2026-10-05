@@ -6,6 +6,8 @@ import {
   STUDIO_ROTATION_PROP,
   STUDIO_PATH_OFFSET_ATTR,
   STUDIO_MANUAL_EDIT_GESTURE_ATTR,
+  STUDIO_EDIT_MOMENT_ATTR,
+  type EditMoment,
   STUDIO_BOX_SIZE_ATTR,
   STUDIO_ROTATION_ATTR,
   STUDIO_ORIGINAL_TRANSLATE_ATTR,
@@ -52,10 +54,13 @@ const GESTURE_DRAWS: Record<StudioGestureDraws, readonly string[]> = {
 export function beginStudioManualEditGesture(
   element: HTMLElement,
   draws: StudioGestureDraws,
+  at?: EditMoment,
 ): string {
   studioManualEditGestureId += 1;
   const token = `gesture-${studioManualEditGestureId}:${draws}`;
   element.setAttribute(STUDIO_MANUAL_EDIT_GESTURE_ATTR, token);
+  if (at) element.setAttribute(STUDIO_EDIT_MOMENT_ATTR, JSON.stringify(at));
+  else element.removeAttribute(STUDIO_EDIT_MOMENT_ATTR);
   return token;
 }
 
@@ -65,6 +70,7 @@ export function endStudioManualEditGesture(element: HTMLElement, token?: string)
   if (token && element.getAttribute(STUDIO_MANUAL_EDIT_GESTURE_ATTR) !== token) return;
   if (!element.hasAttribute(STUDIO_MANUAL_EDIT_GESTURE_ATTR)) return;
   element.removeAttribute(STUDIO_MANUAL_EDIT_GESTURE_ATTR);
+  element.removeAttribute(STUDIO_EDIT_MOMENT_ATTR);
   const doc = element.ownerDocument;
   doc.dispatchEvent(new (doc.defaultView?.Event ?? Event)(GESTURE_ENDED));
 }

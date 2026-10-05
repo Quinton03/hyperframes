@@ -21,6 +21,7 @@ import {
 } from "./gsapDragCommit";
 import type { GsapEditOutcome } from "./gsapEditOutcome";
 import { commitValueAtPlayhead, planValueEdit } from "./gsapValueAtPlayhead";
+import { editMoment } from "./editMoment";
 
 /**
  * The tween's keyframes with one inserted at `percentage`. Any existing keyframe
@@ -132,7 +133,8 @@ export async function commitGsapPositionFromDrag(
   const restoreOffset = () => restoreDragOffset(el, stamp);
 
   if (anim.arcPath?.enabled) {
-    const { activeKeyframePct, currentTime, setActiveKeyframePct } = usePlayerStore.getState();
+    const { keyframePct: activeKeyframePct, time: currentTime } = editMoment(stamp);
+    const { setActiveKeyframePct } = usePlayerStore.getState();
     const tweenStart = resolveTweenStart(anim);
     const tweenDuration = resolveTweenDuration(anim);
     if (
@@ -165,7 +167,7 @@ export async function commitGsapPositionFromDrag(
       );
       return { status: "persisted" };
     }
-    const pct = activeKeyframePct ?? computeCurrentPercentage(selection, anim);
+    const pct = activeKeyframePct ?? computeCurrentPercentage(selection, anim, currentTime);
     const keyframes = anim.keyframes?.keyframes ?? [];
     // A drag counts as on a waypoint when it plays within KEYFRAME_PCT_MATCH of it,
     // so landing a fraction of a percent off an authored waypoint updates that point
@@ -212,9 +214,16 @@ export async function commitGsapPositionFromDrag(
     );
     return { status: "persisted" };
   }
-  return commitValueAtPlayhead(selection, anim, { x: newX, y: newY }, iframe, callbacks, {
-    label: "Move layer",
-    backfill: { x: baseGsapX, y: baseGsapY },
-    beforeReload: restoreOffset,
-  });
+  return commitValueAtPlayhead(
+    selection,
+    anim,
+    { x: newX, y: newY },
+    iframe,
+    { ...callbacks, stamp },
+    {
+      label: "Move layer",
+      backfill: { x: baseGsapX, y: baseGsapY },
+      beforeReload: restoreOffset,
+    },
+  );
 }

@@ -1,3 +1,4 @@
+import type React from "react";
 import type { RefObject } from "react";
 import type { DomEditSelection } from "./domEditing";
 import type {
@@ -119,6 +120,20 @@ export interface BlockedMoveState {
   pointerId: number;
   startX: number;
   startY: number;
+}
+
+/** Marks the selection box while its press waits for a reload: it is drawn at the pointer, not at the element. */
+export const PRESS_WAITING_ATTR = "data-dom-edit-press-waiting";
+
+/** A press that landed while the preview reloads: it starts once the new preview shows what it pressed. */
+export interface WaitingPressState {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  draw: ((dx: number, dy: number) => void) | null;
+  frame: number;
+  moved: React.PointerEvent<HTMLDivElement> | null;
+  released: React.PointerEvent<HTMLDivElement> | null;
 }
 
 export type FocusableDomEditOverlay = {
@@ -255,6 +270,7 @@ export type UseDomEditOverlayGesturesOptions = {
   gestureRef: RefObject<GestureState | null>;
   groupGestureRef: RefObject<GroupGestureState | null>;
   blockedMoveRef: RefObject<BlockedMoveState | null>;
+  waitingPressRef: RefObject<WaitingPressState | null>;
   rafPausedRef: RefObject<boolean>;
   suppressNextBoxClickRef: RefObject<boolean>;
   setOverlayRect: (next: OverlayRect | null) => void;

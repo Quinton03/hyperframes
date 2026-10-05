@@ -10,6 +10,7 @@ import { useZOrderCrossedFlash, ZOrderCrossedFlash } from "./useZOrderCrossedFla
 import { useCanvasContextMenuState } from "./useCanvasContextMenuState";
 import {
   type BlockedMoveState,
+  type WaitingPressState,
   type DomEditGroupPathOffsetCommit,
   type FocusableDomEditOverlay,
   type MoveCommitOptions,
@@ -166,6 +167,7 @@ export const DomEditOverlay = memo(function DomEditOverlay({
   const gestureRef = useRef<GestureState | null>(null);
   const groupGestureRef = useRef<GroupGestureState | null>(null);
   const blockedMoveRef = useRef<BlockedMoveState | null>(null);
+  const waitingPressRef = useRef<WaitingPressState | null>(null);
   const suppressNextBoxClickRef = useRef(false);
   const snapGuidesRef = useRef<SnapGuidesState | null>(null);
   const rafPausedRef = useRef(false);
@@ -283,6 +285,7 @@ export const DomEditOverlay = memo(function DomEditOverlay({
     gestureRef,
     groupGestureRef,
     blockedMoveRef,
+    waitingPressRef,
     rafPausedRef,
     suppressNextBoxClickRef,
     setOverlayRect,
