@@ -47,6 +47,16 @@ const CHECK_COMMAND_ARGS = {
     description: "Number of midpoint samples across the duration (default: 9)",
     default: "9",
   },
+  range: {
+    type: "string",
+    description:
+      "Runtime sample interval in global seconds: start,end. Static lint remains project-wide.",
+  },
+  components: {
+    type: "string",
+    description:
+      "CSS selector list: filter findings involving these components or descendants; preserve full-check status.",
+  },
   at: {
     type: "string",
     description: "Comma-separated timestamps in seconds (e.g., --at 1.5,4,7.25)",
@@ -180,6 +190,8 @@ function parseCheckOptions(args: Record<string, unknown>): CheckOptions {
   const maxTransitionSamples = positiveInteger(args["max-transition-samples"], 0);
   return {
     samples: positiveInteger(args.samples, DEFAULT_CHECK_OPTIONS.samples),
+    range: parseCheckRange(args.range),
+    components: typeof args.components === "string" ? [args.components] : undefined,
     at: parseAt(args.at),
     atTransitions: args["at-transitions"] === true,
     maxTransitionSamples: maxTransitionSamples > 0 ? maxTransitionSamples : undefined,
@@ -196,6 +208,23 @@ function parseCheckOptions(args: Record<string, unknown>): CheckOptions {
     autoProxy: args.proxy as boolean | undefined,
     browserGpuMode: resolveLocalBrowserGpuMode(args["browser-gpu"] as boolean | undefined),
   };
+}
+
+export function parseCheckRange(value: unknown): [number, number] | undefined {
+  if (value === undefined) return undefined;
+  const parts = String(value).split(",");
+  const start = Number(parts[0]),
+    end = Number(parts[1]);
+  if (
+    parts.length !== 2 ||
+    parts.some((p) => !p.trim()) ||
+    !Number.isFinite(start) ||
+    !Number.isFinite(end) ||
+    start < 0 ||
+    end <= start
+  )
+    throw new Error("Invalid --range: use non-negative start,end with end > start");
+  return [start, end];
 }
 
 const CAPTION_ZONE_FIELDS = new Set(["x0", "y0", "x1", "y1", "severity", "seek"]);
@@ -404,6 +433,12 @@ function nonNegativeNumber(value: unknown, fallback: number): number {
 }
 
 function printHumanReport(report: CheckReport): void {
+  if (report.scope) {
+    console.log(
+      `Scope: ${report.scope.range ? report.scope.range.join("–") + "s" : "full timeline"}; ${report.scope.hiddenFindings} findings hidden by component filter. Counts/status include hidden findings.`,
+    );
+    for (const note of report.scope.notes) console.log(note);
+  }
   printSection("Lint", report.lint);
   if (report.browserSkipped) {
     console.log();
@@ -421,10 +456,17 @@ function printHumanReport(report: CheckReport): void {
   console.log(`${report.ok ? c.success("◇") : c.error("◇")}  ${label}`);
 }
 
+function isEmptySection(section: CheckSection): boolean {
+  return (
+    section.findings.length === 0 &&
+    section.errorCount + section.warningCount + section.infoCount === 0
+  );
+}
+
 function printSection(title: string, section: CheckSection): void {
   console.log();
   console.log(c.bold(title));
-  if (section.findings.length === 0) {
+  if (isEmptySection(section)) {
     console.log(`  ${c.success("◇")} 0 errors, 0 warnings`);
     return;
   }
@@ -435,7 +477,7 @@ function printSection(title: string, section: CheckSection): void {
 function printLayoutSection(title: string, section: CheckReport["layout"]): void {
   console.log();
   console.log(c.bold(title));
-  if (section.findings.length === 0) {
+  if (isEmptySection(section)) {
     console.log(`  ${c.success("◇")} 0 issues across ${section.samples.length} sample(s)`);
   } else {
     for (const finding of section.findings) {
@@ -459,7 +501,7 @@ function printContrastSection(report: CheckReport): void {
     console.log(`  ${c.dim("◇")} skipped`);
     return;
   }
-  if (section.findings.length === 0) {
+  if (isEmptySection(section)) {
     console.log(
       `  ${c.success("◇")} ${section.passed}/${section.checked} text checks pass WCAG AA`,
     );

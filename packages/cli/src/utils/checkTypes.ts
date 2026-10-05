@@ -8,6 +8,8 @@ import type { HdrAutoPromotion } from "@hyperframes/engine";
 
 export interface CheckOptions {
   samples: number;
+  range?: [number, number];
+  components?: string[];
   at?: number[];
   atTransitions: boolean;
   maxTransitionSamples?: number;
@@ -63,6 +65,7 @@ export interface CheckAnchor {
   sourceFile: string;
   bbox: CheckBbox;
   time: number;
+  componentMatch?: boolean;
 }
 
 export interface CheckFinding extends CheckAnchor {
@@ -179,6 +182,7 @@ export type MotionSpecResolution =
 
 export interface CheckAuditDriver {
   initialize(contrast: boolean): Promise<void>;
+  matchComponents?(components: string[], findings: CheckFinding[]): Promise<boolean[]>;
   getDuration(): Promise<number>;
   /** True when the root composition explicitly declares that it is intentionally timeline-free. */
   hasNoTimelineDeclaration(): Promise<boolean>;
@@ -263,6 +267,12 @@ export interface CheckSection<T extends CheckFinding = CheckFinding> {
 }
 
 export interface CheckReport {
+  scope?: {
+    range?: [number, number];
+    components?: string[];
+    hiddenFindings: number;
+    notes: string[];
+  };
   ok: boolean;
   strict: boolean;
   browserSkipped: boolean;

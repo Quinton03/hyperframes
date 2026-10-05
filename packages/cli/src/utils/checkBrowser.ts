@@ -399,6 +399,8 @@ function wireNetworkListeners(page: Page, drafts: RuntimeDraft[], currentTime: (
 function createPageDriver(page: Page, setTime: (time: number) => void): CheckAuditDriver {
   return {
     initialize: (contrast) => injectAuditScripts(page, contrast),
+    matchComponents: (components, findings) =>
+      page.evaluate(matchComponentFindings, { components, findings }),
     getDuration: () => getCompositionDuration(page),
     hasNoTimelineDeclaration: () => hasNoTimelineDeclaration(page),
     getTransitionBoundaries: () => collectTweenBoundaries(page),
@@ -1300,4 +1302,35 @@ function urlPath(url: string): string {
   } catch {
     return url;
   }
+}
+
+export function matchComponentFindings({
+  components,
+  findings,
+}: {
+  components: string[];
+  findings: CheckFinding[];
+}): boolean[] {
+  const roots = components.flatMap((selector) => {
+    const matches = [...document.querySelectorAll(selector)];
+    if (!matches.length) throw new Error(`Component selector matched nothing: ${selector}`);
+    return matches;
+  });
+  function matchesSelector(selector: string): boolean | null {
+    try {
+      const elements = [...document.querySelectorAll(selector)];
+      if (!elements.length) return null;
+      return elements.some((el) => roots.some((root) => root.contains(el)));
+    } catch {
+      return null;
+    }
+  }
+  return findings.map((finding) => {
+    if (!finding.selector || finding.selector === "[data-composition-id]") return true;
+    const container = Reflect.get(finding, "containerSelector");
+    return (
+      matchesSelector(finding.selector) !== false ||
+      (typeof container === "string" && matchesSelector(container) !== false)
+    );
+  });
 }
