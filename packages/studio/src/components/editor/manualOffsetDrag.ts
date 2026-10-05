@@ -7,6 +7,7 @@ import {
   captureStudioPathOffset,
   clearStudioPathOffset,
   endStudioManualEditGesture,
+  isStudioManualEditGestureCurrent,
   readAppliedStudioPathOffset,
   restoreStudioPathOffset,
   type StudioPathOffsetSnapshot,
@@ -531,6 +532,7 @@ function settleDraftTranslate(element: HTMLElement, gsapOwnsPosition: boolean): 
 /** Teardown after a COMMITTED drag. */
 export function endManualOffsetDragMembers(members: ManualOffsetDragMember[]): void {
   for (const member of members) {
+    if (!isStudioManualEditGestureCurrent(member.element, member.gestureToken)) continue;
     endStudioManualEditGesture(member.element, member.gestureToken);
     member.element.removeAttribute("data-hf-drag-initial-offset-x");
     member.element.removeAttribute("data-hf-drag-initial-offset-y");
