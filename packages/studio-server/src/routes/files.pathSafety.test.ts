@@ -695,3 +695,38 @@ describe("rename reference updates", () => {
     },
   );
 });
+
+describe("the desktop app link's private files", () => {
+  it("are never read, written or deleted through the file routes, however the path is spelled", async (context) => {
+    const { app, project } = fixture();
+    mkdirSync(join(project, ".hyperframes"));
+    writeFileSync(join(project, ".hyperframes", "agent-link.json"), '{"relay":{"token":"secret"}}');
+    writeFileSync(join(project, ".hyperframes", "app-tools.json"), '{"token":"secret"}');
+    for (const path of [
+      ".hyperframes/agent-link.json",
+      ".hyperframes/app-tools.json",
+      ".HyperFrames/Agent-Link.json",
+    ]) {
+      const res = await app.request(`/projects/p/files/${path}`);
+      expect([403, 404]).toContain(res.status);
+      expect(await res.text()).not.toContain("secret");
+    }
+    const put = await app.request("/projects/p/files/.hyperframes/agent-link.json", {
+      method: "PUT",
+      body: "{}",
+    });
+    expect(put.status).toBe(403);
+    const del = await app.request("/projects/p/files/.hyperframes/app-tools.json", {
+      method: "DELETE",
+    });
+    expect(del.status).toBe(403);
+    linkOrSkip(
+      context,
+      join(project, ".hyperframes", "agent-link.json"),
+      join(project, "link.json"),
+      "file",
+    );
+    const viaLink = await app.request("/projects/p/files/link.json");
+    expect(await viaLink.text()).not.toContain("secret");
+  });
+});

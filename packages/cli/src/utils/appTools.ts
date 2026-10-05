@@ -1,4 +1,12 @@
-import { lstatSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { VERSION } from "../version.js";
@@ -24,12 +32,15 @@ const isAppRoute = (url: string): boolean => {
 };
 
 export function readAppTools(dir: string): AppToolsEndpoint | null {
-  const file = join(dir, APP_TOOLS_FILE);
+  let fd: number | undefined;
   try {
-    const info = lstatSync(file);
+    // One open, then checks on what was opened: the file can't be swapped between the check and the read.
+    fd = openSync(join(dir, APP_TOOLS_FILE), constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const info = fstatSync(fd);
     const own = process.getuid === undefined || info.uid === process.getuid();
-    if (!info.isFile() || (info.mode & 0o077) !== 0 || !own) return null;
-    const found: unknown = JSON.parse(readFileSync(file, "utf8"));
+    const privateMode = process.platform === "win32" || (info.mode & 0o077) === 0;
+    if (!info.isFile() || !privateMode || !own) return null;
+    const found: unknown = JSON.parse(readFileSync(fd, "utf8"));
     if (typeof found !== "object" || found === null) return null;
     const { url, token } = found as Record<string, unknown>;
     return typeof url === "string" && typeof token === "string" && isAppRoute(url)
@@ -37,6 +48,8 @@ export function readAppTools(dir: string): AppToolsEndpoint | null {
       : null;
   } catch {
     return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 

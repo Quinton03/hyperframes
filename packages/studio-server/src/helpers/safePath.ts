@@ -25,6 +25,21 @@ export function realFilePath(filePath: string): string {
   }
 }
 
+// The desktop app link's token and the app tools' token (packages/cli agentLink.ts, appTools.ts): owner-only on
+// disk, so no route serves or changes them for whoever reaches the preview port.
+const PRIVATE_PROJECT_FILES = new Set([
+  ".hyperframes/agent-link.json",
+  ".hyperframes/app-tools.json",
+]);
+
+export function isPrivateProjectFile(projectDir: string, filePath: string): boolean {
+  const rel = (from: string, to: string) => relative(from, to).split(sep).join("/").toLowerCase();
+  return (
+    PRIVATE_PROJECT_FILES.has(rel(projectDir, filePath)) ||
+    PRIVATE_PROJECT_FILES.has(rel(realFilePath(projectDir), realFilePath(filePath)))
+  );
+}
+
 /**
  * `resolveWithinProject` with every link inside the project resolved now, so a write to the result lands on the
  * file checked here even if a link on the way is retargeted before the write.

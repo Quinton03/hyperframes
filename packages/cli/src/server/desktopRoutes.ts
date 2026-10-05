@@ -11,7 +11,7 @@ import {
   relayAuthorized,
   type AgentRelay,
 } from "../utils/agentLink.js";
-import { identityAllowed } from "./telemetryIdentity.js";
+import { identityAllowed, isLoopbackHost } from "./telemetryIdentity.js";
 
 const RELAY_MAX_CHARS = 200_000;
 
@@ -33,7 +33,9 @@ export function relayFor(
   env: NodeJS.ProcessEnv = process.env,
 ): AgentRelay | undefined {
   const inbox = env.CLAUDE_CODE_MESSAGING_SOCKET;
-  return token && inbox ? { url: `http://${host}${AGENT_RELAY_PATH}`, token, inbox } : undefined;
+  const bound = env.HYPERFRAMES_PREVIEW_HOST?.trim();
+  if (!token || !inbox || (bound && !isLoopbackHost(bound))) return undefined;
+  return { url: `http://${host}${AGENT_RELAY_PATH}`, token, inbox };
 }
 
 /** Edit with Framey's route: whether to show it, where to download, and whether the app takes the project. */

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import { desktopDownloadUrl, type DesktopOpenResult } from "../utils/desktopApp.js";
-import { mountDesktopRoutes, sameOriginPost } from "./desktopRoutes.js";
+import { mountDesktopRoutes, relayFor, sameOriginPost } from "./desktopRoutes.js";
 
 const STUDIO = {
   host: "localhost:3002",
@@ -148,5 +148,21 @@ describe("sameOriginPost", () => {
     expect(sameOriginPost({ host: "localhost:3002", origin: "http://localhost:3003" })).toBe(false);
     expect(sameOriginPost({ host: "localhost:3002", fetchSite: "same-site" })).toBe(false);
     expect(sameOriginPost({})).toBe(false);
+  });
+});
+
+describe("relayFor", () => {
+  it("offers a relay only from a preview bound to this machine", () => {
+    const env = { CLAUDE_CODE_MESSAGING_SOCKET: "/tmp/cc-socks/1.sock" };
+    expect(relayFor("localhost:3002", "t", env)?.url).toBe(
+      "http://localhost:3002/api/agent-link/message",
+    );
+    expect(
+      relayFor("localhost:3002", "t", { ...env, HYPERFRAMES_PREVIEW_HOST: "127.0.0.1" }),
+    ).toBeDefined();
+    expect(
+      relayFor("localhost:3002", "t", { ...env, HYPERFRAMES_PREVIEW_HOST: "0.0.0.0" }),
+    ).toBeUndefined();
+    expect(relayFor("localhost:3002", "t", {})).toBeUndefined();
   });
 });

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { walkDir } from "./safePath";
+import { isPrivateProjectFile, walkDir } from "./safePath";
 
 const hooks = vi.hoisted(() => ({ unreadable: new Map<string, string>() }));
 vi.mock("node:fs", async (importOriginal) => {
@@ -80,5 +80,14 @@ describe("walkDir", () => {
     hooks.unreadable.set(projectDir, "EACCES");
 
     expect(() => walkDir(projectDir)).toThrow("EACCES");
+  });
+});
+
+describe("isPrivateProjectFile", () => {
+  it("names the desktop app link's token files, in any case", () => {
+    expect(isPrivateProjectFile("/p", "/p/.hyperframes/agent-link.json")).toBe(true);
+    expect(isPrivateProjectFile("/p", "/p/.HyperFrames/App-Tools.json")).toBe(true);
+    expect(isPrivateProjectFile("/p", "/p/.hyperframes/history.json")).toBe(false);
+    expect(isPrivateProjectFile("/p", "/p/agent-link.json")).toBe(false);
   });
 });
