@@ -13,7 +13,6 @@ import {
 } from "../utils/agentLink.js";
 import { identityAllowed } from "./telemetryIdentity.js";
 
-/** The longest message the relay forwards; Claude Code itself refuses near a million characters. */
 const RELAY_MAX_CHARS = 200_000;
 
 /** A bodiless POST is a simple request, so any page can send one to localhost: it has to come from this Studio. */
@@ -28,7 +27,6 @@ export function sameOriginPost(headers: {
   return origin === undefined || origin === `http://${host}`;
 }
 
-/** The relay this preview is, as the link records it; none outside a Claude Code session. */
 export function relayFor(
   host: string,
   token: string | undefined,
@@ -38,8 +36,7 @@ export function relayFor(
   return token && inbox ? { url: `http://${host}${AGENT_RELAY_PATH}`, token, inbox } : undefined;
 }
 
-/** Edit with Framey's route: whether to show it, where to download, and whether the app takes the project. With a
- * relay token, the desktop app's messages to the session that started this preview go through it. */
+/** Edit with Framey's route: whether to show it, where to download, and whether the app takes the project. */
 export function mountDesktopRoutes(
   app: Hono,
   projectDir: string,
@@ -96,7 +93,6 @@ export function mountDesktopRoutes(
   });
 }
 
-/** The text a relay request carries; null when there is none to forward. */
 function relayText(body: unknown): string | null {
   const text = typeof body === "object" && body !== null && "text" in body ? body.text : null;
   return typeof text === "string" && text && text.length <= RELAY_MAX_CHARS ? text : null;

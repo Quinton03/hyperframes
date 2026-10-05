@@ -348,7 +348,6 @@ export interface StudioServerOptions {
   browserGpuMode?: BrowserGpuMode;
   /** Where project histories are kept; defaults to ~/.cache/hyperframes/history. */
   historyRoot?: string;
-  /** Lets the desktop app post to the Claude Code session that started this preview (agentLink.ts). */
   relayToken?: string;
 }
 
