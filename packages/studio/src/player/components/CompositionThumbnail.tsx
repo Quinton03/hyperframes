@@ -255,7 +255,7 @@ function useThumbnailLeases(
       if (held.has(identity)) continue;
       held.set(identity, current);
       const now = thumbnailScheduler.getSnapshot(request);
-      if (now !== read && showable(now)) rerender();
+      if (now !== read && (showable(now) || showable(read))) rerender();
     }
     for (const [identity, { lease }] of held) {
       if (wanted.has(identity)) continue;
@@ -354,11 +354,11 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
   );
   const posterCell = useMemo(
     () => ({
-      request: compositionThumbnailRequest(url, projectId, { sessionEpoch, priority, rich: true }),
+      request: compositionThumbnailRequest(url, projectId, { sessionEpoch, rich: true }),
       frame: 0,
       frames: 1,
     }),
-    [priority, projectId, sessionEpoch, url],
+    [projectId, sessionEpoch, url],
   );
   const shownCellOf = useMemo(() => {
     if (!grid) return null;
@@ -371,7 +371,7 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
         request = compositionThumbnailRequest(
           buildCompositionThumbnailUrl({ ...urlOptions, times }),
           projectId,
-          { sessionEpoch, priority, rich: true },
+          { sessionEpoch, rich: true },
           times.length,
         );
         requests.set(chunk, request);
@@ -387,7 +387,7 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
       }
       return shown;
     };
-  }, [grid, priority, projectId, sessionEpoch, urlOptions]);
+  }, [grid, projectId, sessionEpoch, urlOptions]);
   const cellOfTile = grid?.cellOfTile(tileSeconds);
   const cellAt = (index: number): ShownCell | null => {
     if (!cellOfTile || !shownCellOf) return sourceRangeDuration > 0 ? null : posterCell;

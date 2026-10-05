@@ -310,6 +310,33 @@ describe("ThumbnailScheduler", () => {
     vi.useRealTimers();
   });
 
+  it("still loads for the new lease when the old one lets go during the retry notice", async () => {
+    vi.useFakeTimers();
+    const scheduler = new ThumbnailScheduler(
+      resolveTimelineViewportBudgets({ metadataFailureTtlMs: 10 }),
+    );
+    const load = vi
+      .fn<ThumbnailRequest["load"]>()
+      .mockRejectedValueOnce(new Error("temporary"))
+      .mockResolvedValue(result("recovered"));
+    const failed = request("retry", load);
+    let releaseOnNotify = false;
+    const firstLease = scheduler.acquire(failed, () => {
+      if (releaseOnNotify) firstLease.release();
+    });
+    await flush();
+    vi.advanceTimersByTime(11);
+    releaseOnNotify = true;
+
+    const outerLease = scheduler.acquire(failed, vi.fn());
+    await flush();
+
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(scheduler.getSnapshot(failed)).toMatchObject({ status: "ready" });
+    outerLease.release();
+    vi.useRealTimers();
+  });
+
   it("lets every lease on an expired failure see its retry's result", async () => {
     vi.useFakeTimers();
     try {
