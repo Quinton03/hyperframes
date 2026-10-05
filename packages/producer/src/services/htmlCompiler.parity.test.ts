@@ -15,6 +15,23 @@ import { loadExternalCompositions } from "../../../core/src/runtime/compositionL
 import { compileForRender } from "./htmlCompiler.js";
 import { getVerifiedHyperframeRuntimeSource } from "./hyperframeRuntimeLoader.js";
 
+vi.mock("../utils/urlDownloader.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../utils/urlDownloader.js")>()),
+  fetchPublicHttpsText: async () => {
+    throw new Error("offline test");
+  },
+}));
+Object.assign(
+  (
+    window as unknown as {
+      happyDOM: {
+        settings: { disableCSSFileLoading: boolean; disableJavaScriptFileLoading: boolean };
+      };
+    }
+  ).happyDOM.settings,
+  { disableCSSFileLoading: true, disableJavaScriptFileLoading: true },
+);
+
 const tempDirs: string[] = [];
 
 beforeAll(() => {
