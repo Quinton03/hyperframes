@@ -2,10 +2,14 @@
   "studio-open": {
     "browser": "154",
     "counts": {
-      "thumbnailRenders": 14,
+      "thumbnailRenders": 25,
       "total.frameNavigations": 7,
       "total.requests.document": 2,
-      "total.requests.thumbnail": 15
+      "total.requests.thumbnail": 26
+    },
+    "raised": {
+      "thumbnailRenders": "timeline composition clips show their own frames: one strip per clip beside the sidebar poster",
+      "total.requests.thumbnail": "timeline composition clips show their own frames: one strip per clip beside the sidebar poster"
     }
   }
 }

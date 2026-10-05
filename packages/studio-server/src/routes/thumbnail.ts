@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import type { StudioApiAdapter } from "../types.js";
+import type { StudioApiAdapter, ThumbnailRenderOptions } from "../types.js";
 import { STUDIO_MANUAL_EDITS_PATH } from "../helpers/manualEditsRenderScript.js";
 import { compositionInputSignature } from "../helpers/compositionInputs.js";
 import { createProjectSignature, resolveProjectAndSignature } from "../helpers/projectSignature.js";
@@ -44,6 +44,24 @@ export function parseStripTimes(raw: string): number[] | null {
     return null;
   }
   return [...new Set(times)].sort((a, b) => a - b);
+}
+
+/** From one page load when the adapter can; otherwise ascending in one turn, for a forward-only warm page. */
+async function renderStripFrames(
+  adapter: StudioApiAdapter,
+  options: ThumbnailRenderOptions,
+  times: number[],
+): Promise<Buffer[] | null> {
+  if (adapter.generateThumbnailFrames) {
+    return adapter.generateThumbnailFrames({ ...options, seekTimes: times });
+  }
+  const frames: Buffer[] = [];
+  for (const seekTime of times) {
+    const frame = await adapter.generateThumbnail!({ ...options, seekTime });
+    if (!frame) return null;
+    frames.push(frame);
+  }
+  return frames;
 }
 
 async function composeStrip(frames: Buffer[], format: "jpeg" | "png"): Promise<Buffer> {
@@ -261,32 +279,26 @@ export function registerThumbnailRoutes(api: Hono, adapter: StudioApiAdapter): v
         c.req.raw.signal,
         async (signal) => {
           const previewCopiesAtStart = proxyActivityMark(project.dir);
-          const render = (time: number) =>
-            adapter.generateThumbnail!({
-              project,
-              compPath,
-              seekTime: time,
-              width: compW,
-              height: compH,
-              outputWidth,
-              outputHeight,
-              previewUrl,
-              selector,
-              format,
-              selectorIndex,
-              signal,
-            });
-          // In one coordinator turn, ascending, so the adapter's forward-only page serves every frame.
-          const renderStrip = async (times: number[]) => {
-            const frames: Buffer[] = [];
-            for (const time of times) {
-              const frame = await render(time);
-              if (!frame) return null;
-              frames.push(frame);
-            }
-            return composeStrip(frames, format);
+          const renderOptions: ThumbnailRenderOptions = {
+            project,
+            compPath,
+            width: compW,
+            height: compH,
+            outputWidth,
+            outputHeight,
+            previewUrl,
+            selector,
+            format,
+            selectorIndex,
+            signal,
           };
-          const generated = await (stripTimes ? renderStrip(stripTimes) : render(seekTime));
+          const renderStrip = async (times: number[]) => {
+            const frames = await renderStripFrames(adapter, renderOptions, times);
+            return frames && composeStrip(frames, format);
+          };
+          const generated = await (stripTimes
+            ? renderStrip(stripTimes)
+            : adapter.generateThumbnail!({ ...renderOptions, seekTime }));
           if (!generated) return null;
           const previewCopiesAtEnd = proxyActivityMark(project.dir);
           const afterGeneration = await resolveProjectAndSignature(adapter, project.id);

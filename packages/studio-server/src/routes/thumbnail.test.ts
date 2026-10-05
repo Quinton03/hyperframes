@@ -88,17 +88,36 @@ describe("parseStripTimes", () => {
   });
 });
 
+const requestStrip = (adapter: StudioApiAdapter) => {
+  const app = new Hono();
+  registerThumbnailRoutes(app, adapter);
+  return app.request("http://localhost/projects/demo/thumbnail/index.html?times=3,1,2");
+};
+
 describe("registerThumbnailRoutes", () => {
+  it("asks an adapter that can for all of a strip's frames from one page load", async () => {
+    const adapter = createAdapter();
+    const frames = await Promise.all(COLOURS.map(solidJpeg));
+    adapter.generateThumbnail = vi.fn(async () => null);
+    adapter.generateThumbnailFrames = vi.fn(async ({ seekTimes }) =>
+      seekTimes.map((time) => frames[time - 1]!),
+    );
+
+    const response = await requestStrip(adapter);
+
+    expect(response.status).toBe(200);
+    expect(
+      vi.mocked(adapter.generateThumbnailFrames!).mock.calls.map(([o]) => o.seekTimes),
+    ).toEqual([[1, 2, 3]]);
+    expect(adapter.generateThumbnail).not.toHaveBeenCalled();
+  });
+
   it("renders a strip's times in order on one page and returns them side by side", async () => {
     const adapter = createAdapter();
     const frames = await Promise.all(COLOURS.map(solidJpeg));
     adapter.generateThumbnail = vi.fn(async ({ seekTime }) => frames[seekTime - 1]!);
-    const app = new Hono();
-    registerThumbnailRoutes(app, adapter);
 
-    const response = await app.request(
-      "http://localhost/projects/demo/thumbnail/index.html?times=3,1,2",
-    );
+    const response = await requestStrip(adapter);
 
     expect(response.status).toBe(200);
     expect(vi.mocked(adapter.generateThumbnail!).mock.calls.map(([o]) => o.seekTime)).toEqual([
