@@ -158,9 +158,10 @@ export function extendCompositionDurationIfNeeded(source: string, requiredEnd: n
 export function setCompositionDurationToContent(
   source: string,
   contentEnd: number,
-  rootDur: number | null = readRootCompositionDuration(source),
+  rootDuration?: number | null,
 ): string {
   if (!Number.isFinite(contentEnd) || contentEnd <= 0) return source;
+  const rootDur = rootDuration === undefined ? readRootCompositionDuration(source) : rootDuration;
   if (rootDur == null) return source;
   const next = roundToCenti(contentEnd);
   if (rootDur === next) return source;
