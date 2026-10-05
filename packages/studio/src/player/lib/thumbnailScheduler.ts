@@ -215,9 +215,7 @@ export class ThumbnailScheduler {
     };
   }
 
-  getSnapshot(
-    request: Pick<ThumbnailRequest, "key" | "projectId" | "sessionEpoch" | "kind" | "rich">,
-  ): ThumbnailSnapshot {
+  getSnapshot(request: RequestIdentityFields): ThumbnailSnapshot {
     const entry = this.entries.get(createThumbnailRequestIdentity(request));
     if (!entry) return EMPTY_SNAPSHOT;
     return entry.snapshot;
