@@ -34,6 +34,9 @@ export type ThumbnailSnapshot =
   | { status: "ready"; value: ThumbnailValue }
   | { status: "error"; error: Error };
 
+export const readyImage = (snapshot: ThumbnailSnapshot) =>
+  snapshot.status === "ready" && snapshot.value.kind === "image" ? snapshot.value : null;
+
 export interface ThumbnailLease {
   updatePriority(priority: ThumbnailPriority): void;
   release(): void;

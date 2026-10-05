@@ -292,12 +292,10 @@ export function registerThumbnailRoutes(api: Hono, adapter: StudioApiAdapter): v
             selectorIndex,
             signal,
           };
-          const renderStrip = async (times: number[]) => {
-            const frames = await renderStripFrames(adapter, renderOptions, times);
-            return frames && composeStrip(frames, format);
-          };
           const generated = await (stripTimes
-            ? renderStrip(stripTimes)
+            ? renderStripFrames(adapter, renderOptions, stripTimes).then(
+                (frames) => frames && composeStrip(frames, format),
+              )
             : adapter.generateThumbnail!({ ...renderOptions, seekTime }));
           if (!generated) return null;
           const previewCopiesAtEnd = proxyActivityMark(project.dir);

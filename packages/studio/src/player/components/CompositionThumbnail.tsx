@@ -5,7 +5,7 @@ import {
   createThumbnailKey,
   type ThumbnailPriority,
   type ThumbnailRequest,
-  type ThumbnailSnapshot,
+  readyImage,
 } from "../lib/thumbnailScheduler";
 import { TIMELINE_VIEWPORT_BUDGETS } from "../lib/timelineViewportBudgets";
 import { ThumbnailTiles } from "./ThumbnailTiles";
@@ -56,6 +56,7 @@ export function buildCompositionThumbnailUrl({
   origin,
   output,
   contentRevision = 0,
+  times,
 }: {
   previewUrl: string;
   seekTime?: number;
@@ -70,12 +71,14 @@ export function buildCompositionThumbnailUrl({
    */
   output?: "source";
   contentRevision?: number;
+  times?: readonly number[];
 }): string {
   const thumbnailBase = previewUrl
     .replace("/preview/comp/", "/thumbnail/")
     .replace(/\/preview$/, "/thumbnail/index.html");
   const thumbnailUrl = new URL(thumbnailBase, origin);
-  thumbnailUrl.searchParams.set("t", (seekTime + duration / 2).toFixed(2));
+  if (times) thumbnailUrl.searchParams.set("times", times.map((t) => t.toFixed(3)).join(","));
+  else thumbnailUrl.searchParams.set("t", (seekTime + duration / 2).toFixed(2));
   thumbnailUrl.searchParams.set("v", THUMBNAIL_URL_VERSION);
   thumbnailUrl.searchParams.set("revision", String(contentRevision));
   if (output) thumbnailUrl.searchParams.set("output", output);
@@ -125,11 +128,18 @@ export function planCompositionStrip(
   };
 }
 
-function buildCompositionStripUrl(posterUrl: string, times: readonly number[]): string {
-  const url = new URL(posterUrl);
-  url.searchParams.delete("t");
-  url.searchParams.set("times", times.map((t) => t.toFixed(3)).join(","));
-  return url.toString();
+function stripUrls(
+  plan: ReturnType<typeof planCompositionStrip>,
+  options: Parameters<typeof buildCompositionThumbnailUrl>[0],
+) {
+  const urls = new Map<number, string>();
+  return (chunk: number) => {
+    const known = urls.get(chunk);
+    if (known) return known;
+    const built = buildCompositionThumbnailUrl({ ...options, times: plan.times(chunk) });
+    urls.set(chunk, built);
+    return built;
+  };
 }
 
 /** The composition a preview URL renders: `/preview/comp/<path>`, or the root for `/preview`. */
@@ -192,9 +202,6 @@ interface CompositionTileProps extends TileImage {
   priority: ThumbnailPriority;
   onAspect: (frameAspect: number) => void;
 }
-
-const readyImage = (snapshot: ThumbnailSnapshot) =>
-  snapshot.status === "ready" && snapshot.value.kind === "image" ? snapshot.value : null;
 
 function useReadyImage(request: ThumbnailRequest | null) {
   return readyImage(useThumbnailLease(request));
@@ -297,15 +304,19 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
   sourceRangeDuration = 0,
 }: CompositionThumbnailProps) {
   const [container, setContainerRef, watchGap] = useThumbnailStripSize();
-  const url = buildCompositionThumbnailUrl({
-    previewUrl,
-    seekTime,
-    duration,
-    selector,
-    selectorIndex,
-    origin: window.location.origin,
-    contentRevision,
-  });
+  const urlOptions = useMemo(
+    () => ({
+      previewUrl,
+      seekTime,
+      duration,
+      selector,
+      selectorIndex,
+      origin: window.location.origin,
+      contentRevision,
+    }),
+    [contentRevision, duration, previewUrl, seekTime, selector, selectorIndex],
+  );
+  const url = useMemo(() => buildCompositionThumbnailUrl(urlOptions), [urlOptions]);
   const [learned, setLearned] = useState<{ url: string; aspect: number } | null>(null);
   const aspect = learned?.url === url ? learned.aspect : null;
   const learnAspectOncePerRevision = useCallback(
@@ -330,10 +341,11 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
         : null,
     [container.width, frameW, sourceRangeDuration, sourceStart],
   );
+  const stripUrlOf = useMemo(() => plan && stripUrls(plan, urlOptions), [plan, urlOptions]);
   const imageOf = (index: number): TileImage | null => {
-    if (!plan) return sourceRangeDuration > 0 ? null : { url, frame: 0, frames: 1 };
+    if (!plan || !stripUrlOf) return sourceRangeDuration > 0 ? null : { url, frame: 0, frames: 1 };
     const { chunk, frame, frames } = plan.tile(index);
-    return { url: buildCompositionStripUrl(url, plan.times(chunk)), frame, frames };
+    return { url: stripUrlOf(chunk), frame, frames };
   };
 
   return (
