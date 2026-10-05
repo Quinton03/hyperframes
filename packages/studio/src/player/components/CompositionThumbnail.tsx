@@ -211,20 +211,44 @@ function useShownStrip(cell: TileCell, posterCell: TileCell) {
   const snapshot = useThumbnailLease(cell.request);
   const next = readyImage(snapshot);
   const [last, setLast] = useState<TileCell | null>(null);
-  const failedBare = !next && !last && snapshot.status === "error";
-  const fallbackCell = next ? null : failedBare ? posterCell : last;
-  const fallback = readyImage(useThumbnailLease(fallbackCell && fallbackCell.request));
-  if (next && last?.request !== cell.request) setLast(cell);
-  else if (failedBare && fallback) setLast(posterCell);
-  const source = next ? cell : fallbackCell;
-  const strip = next ?? fallback;
+  const fallbackCell = fallbackFor(next, last, snapshot.status === "error", posterCell);
+  const fallback = readyImage(useThumbnailLease(fallbackCell ? fallbackCell.request : null));
+  const view = viewOf(cell, next, fallbackCell, fallback, posterCell);
+  if (view.remember && view.remember.request !== last?.request) setLast(view.remember);
+  return view;
+}
+
+function fallbackFor(
+  next: StripImage | null,
+  last: TileCell | null,
+  failed: boolean,
+  posterCell: TileCell,
+) {
+  if (next) return null;
+  return last ?? (failed ? posterCell : null);
+}
+
+const NOTHING_SHOWN = { shown: null, freshAspect: null, remember: null };
+
+function viewOf(
+  cell: TileCell,
+  next: StripImage | null,
+  fallbackCell: TileCell | null,
+  fallback: StripImage | null,
+  posterCell: TileCell,
+) {
+  if (next)
+    return {
+      shown: { ...cell, strip: next },
+      freshAspect: next.aspect / cell.frames,
+      remember: cell,
+    };
+  if (!fallback || !fallbackCell) return NOTHING_SHOWN;
+  const current = fallbackCell === posterCell;
   return {
-    shown: strip && source && { ...source, strip },
-    freshAspect: next
-      ? next.aspect / cell.frames
-      : source === posterCell && fallback
-        ? fallback.aspect
-        : null,
+    shown: { ...fallbackCell, strip: fallback },
+    freshAspect: current ? fallback.aspect : null,
+    remember: current ? posterCell : null,
   };
 }
 
