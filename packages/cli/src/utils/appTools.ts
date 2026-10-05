@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { VERSION } from "../version.js";
@@ -13,12 +13,28 @@ export interface AppToolsEndpoint {
   token: string;
 }
 
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
+/** Only the app's own route on this machine: a copied project's file must not send calls, or take answers, elsewhere. */
+const isAppRoute = (url: string): boolean => {
+  const at = URL.parse(url);
+  return (
+    at?.protocol === "http:" && LOOPBACK.has(at.hostname) && at.pathname.startsWith("/mcp/image/")
+  );
+};
+
 export function readAppTools(dir: string): AppToolsEndpoint | null {
+  const file = join(dir, APP_TOOLS_FILE);
   try {
-    const found: unknown = JSON.parse(readFileSync(join(dir, APP_TOOLS_FILE), "utf8"));
+    const info = lstatSync(file);
+    const own = process.getuid === undefined || info.uid === process.getuid();
+    if (!info.isFile() || (info.mode & 0o077) !== 0 || !own) return null;
+    const found: unknown = JSON.parse(readFileSync(file, "utf8"));
     if (typeof found !== "object" || found === null) return null;
     const { url, token } = found as Record<string, unknown>;
-    return typeof url === "string" && typeof token === "string" ? { url, token } : null;
+    return typeof url === "string" && typeof token === "string" && isAppRoute(url)
+      ? { url, token }
+      : null;
   } catch {
     return null;
   }

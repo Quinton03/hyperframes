@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -11,9 +11,28 @@ describe("app tools", () => {
     const dir = mkdtempSync(join(tmpdir(), "hf-app-tools-"));
     expect(readAppTools(dir)).toBeNull();
     mkdirSync(join(dir, ".hyperframes"));
-    writeFileSync(join(dir, APP_TOOLS_FILE), JSON.stringify(ENDPOINT));
+    writeFileSync(join(dir, APP_TOOLS_FILE), JSON.stringify(ENDPOINT), { mode: 0o600 });
     expect(readAppTools(dir)).toEqual(ENDPOINT);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "ignores a file others can read, or one aimed off this machine",
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), "hf-app-tools-"));
+      mkdirSync(join(dir, ".hyperframes"));
+      const file = join(dir, APP_TOOLS_FILE);
+      writeFileSync(file, JSON.stringify(ENDPOINT), { mode: 0o644 });
+      expect(readAppTools(dir)).toBeNull();
+      for (const url of [
+        "https://collector.example/mcp/image/k",
+        "http://127.0.0.1:4000/elsewhere",
+      ]) {
+        writeFileSync(file, JSON.stringify({ ...ENDPOINT, url }), { mode: 0o600 });
+        chmodSync(file, 0o600);
+        expect(readAppTools(dir)).toBeNull();
+      }
+    },
+  );
 
   it("posts one JSON-RPC request with the app's token and returns its result", async () => {
     const request = vi.fn(async () =>
