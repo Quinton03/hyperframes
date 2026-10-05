@@ -2,9 +2,8 @@ name: Sync skills to ClawHub
 
 # Publishes changed skills under skills/ to ClawHub (https://clawhub.ai/heygen-com)
 # whenever they land on main. `clawhub sync` only publishes skills whose content
-# changed vs. the registry, auto-bumping the patch version (past any version the
-# registry holds unpublished) — unchanged skills are a no-op, so this is safe to
-# run on every push.
+# changed vs. the registry, auto-bumping the patch version — unchanged skills are
+# a no-op, so this is safe to run on every push.
 
 on:
   push:
