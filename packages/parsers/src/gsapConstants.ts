@@ -147,7 +147,7 @@ export interface HoldScope {
 const tweenSignature = (a: GsapAnimation) =>
   JSON.stringify([a.targetSelector, a.method, a.position, a.duration, a.properties, a.keyframes]);
 
-/** The tweens an edit touched (not in `previous`; none without it), and what the script's holds already pin. */
+/** The tweens an edit touched (not in `previous`; all without it), and what the script's holds already pin. */
 export function holdScope(
   before: readonly GsapAnimation[],
   previous: readonly GsapAnimation[] | null,
@@ -160,14 +160,14 @@ export function holdScope(
     held.set(a.targetSelector, props);
   }
   return {
-    touched: (a) => previous !== null && !kept.has(tweenSignature(a)),
+    touched: (a) => previous === null || !kept.has(tweenSignature(a)),
     held: (selector) => held.get(selector) ?? new Map(),
   };
 }
 
 /**
- * What a Studio hold pins from t=0: a keyframed tween's 0% position props before a later start, and the position and
- * size of a lone key (GSAP renders none) only where this edit made it or a hold already pins it, minus earlier tweens.
+ * What a Studio hold pins from t=0, only for a tween this edit touched or a hold already pins: the 0% position props
+ * before a later start, and the position and size of a lone key (GSAP renders none), minus earlier tweens.
  */
 export function keyframeHoldForAnimation(
   animation: GsapAnimation,
@@ -197,8 +197,8 @@ export function keyframeHoldForAnimation(
   const kept = (property: string, value: unknown) =>
     touched ? pinned.has(property) : pinned.get(property) === value;
   const pins = (group: PropertyGroupName, property: string, value: unknown) =>
-    (group === "position" && start > 0.001) ||
-    ((group === "position" || group === "size") && ((lone && touched) || kept(property, value)));
+    (group === "position" || group === "size") &&
+    (((lone || (group === "position" && start > 0.001)) && touched) || kept(property, value));
   const hold: Record<string, number> = {};
   for (const [property, value] of Object.entries(atStart.properties)) {
     if (!pins(classifyPropertyGroup(property), property, value) || typeof value !== "number")
