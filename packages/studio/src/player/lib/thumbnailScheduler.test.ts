@@ -274,7 +274,7 @@ describe("ThumbnailScheduler", () => {
     });
   });
 
-  it("preserves a synchronous re-acquire when an expired failure is replaced", async () => {
+  it("preserves a synchronous re-acquire when an expired failure is retried", async () => {
     vi.useFakeTimers();
     const scheduler = new ThumbnailScheduler(
       resolveTimelineViewportBudgets({ metadataFailureTtlMs: 10 }),

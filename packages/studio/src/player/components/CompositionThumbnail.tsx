@@ -1,4 +1,4 @@
-import { memo, useCallback, useLayoutEffect, useMemo, useState, type CSSProperties } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useThumbnailLease } from "../../hooks/useThumbnailLease";
 import { useThumbnailStripSize } from "../../hooks/useThumbnailStripSize";
 import {
@@ -203,25 +203,28 @@ interface CompositionTileProps extends TileImage {
   onAspect: (frameAspect: number) => void;
 }
 
-function useReadyImage(request: ThumbnailRequest | null) {
-  return readyImage(useThumbnailLease(request));
-}
-
 type StripImage = NonNullable<ReturnType<typeof readyImage>>;
+type TileCell = { request: ThumbnailRequest; frame: number; frames: number };
 
-/** The tile's strip once ready; until then the one it showed last, kept leased so it stays decoded. */
-function useShownStrip(cell: { request: ThumbnailRequest; frame: number; frames: number }) {
+/** The tile's strip once ready; until then what it showed last (kept leased), or the poster if it never had one. */
+function useShownStrip(cell: TileCell, posterCell: TileCell) {
   const snapshot = useThumbnailLease(cell.request);
   const next = readyImage(snapshot);
-  const [last, setLast] = useState<typeof cell | null>(null);
-  if (next && last !== cell) setLast(cell);
-  const held = useReadyImage(last && last.request);
-  const source = next ? cell : last;
-  const strip = next ?? held;
+  const [last, setLast] = useState<TileCell | null>(null);
+  const failedBare = !next && !last && snapshot.status === "error";
+  const fallbackCell = next ? null : failedBare ? posterCell : last;
+  const fallback = readyImage(useThumbnailLease(fallbackCell && fallbackCell.request));
+  if (next && last?.request !== cell.request) setLast(cell);
+  else if (failedBare && fallback) setLast(posterCell);
+  const source = next ? cell : fallbackCell;
+  const strip = next ?? fallback;
   return {
     shown: strip && source && { ...source, strip },
-    freshAspect: next && next.aspect / cell.frames,
-    failed: snapshot.status === "error",
+    freshAspect: next
+      ? next.aspect / cell.frames
+      : source === posterCell && fallback
+        ? fallback.aspect
+        : null,
   };
 }
 
@@ -270,20 +273,22 @@ const CompositionTile = memo(function CompositionTile({
     [frames, priority, projectId, sessionEpoch, url],
   );
   const cell = useMemo(() => ({ request, frame, frames }), [frame, frames, request]);
-  const { shown, freshAspect, failed } = useShownStrip(cell);
-  const posterWhenStripFails = useMemo(
-    () =>
-      failed
-        ? compositionThumbnailRequest(posterUrl, projectId, { sessionEpoch, priority, rich: true })
-        : null,
-    [failed, posterUrl, priority, projectId, sessionEpoch],
+  const posterCell = useMemo(
+    () => ({
+      request: compositionThumbnailRequest(posterUrl, projectId, {
+        sessionEpoch,
+        priority,
+        rich: true,
+      }),
+      frame: 0,
+      frames: 1,
+    }),
+    [posterUrl, priority, projectId, sessionEpoch],
   );
-  const poster = useReadyImage(posterWhenStripFails);
-  const learned = poster ? poster.aspect : freshAspect;
-  useLayoutEffect(() => {
-    if (learned) onAspect(learned);
-  }, [learned, onAspect]);
-  if (poster) return <StripSlice strip={poster} frame={0} frames={1} letterbox={letterbox} />;
+  const { shown, freshAspect } = useShownStrip(cell, posterCell);
+  useEffect(() => {
+    if (freshAspect) onAspect(freshAspect);
+  }, [freshAspect, onAspect]);
   return shown ? <StripSlice {...shown} letterbox={letterbox} /> : null;
 });
 
@@ -318,12 +323,11 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
   );
   const url = useMemo(() => buildCompositionThumbnailUrl(urlOptions), [urlOptions]);
   const [learned, setLearned] = useState<{ url: string; aspect: number } | null>(null);
-  const aspect = learned?.url === url ? learned.aspect : null;
   const learnAspectOncePerRevision = useCallback(
     (next: number) => setLearned((known) => (known?.url === url ? known : { url, aspect: next })),
     [url],
   );
-  const frameAspect = aspect ?? learned?.aspect ?? 16 / 9;
+  const frameAspect = learned?.aspect ?? 16 / 9;
   const { frameW, frameCount } = computeThumbnailStrip(
     container.width,
     frameAspect,
@@ -389,7 +393,7 @@ export const CompositionThumbnail = memo(function CompositionThumbnail({
             className="block max-w-full truncate text-[10px] font-semibold leading-none"
             style={{
               color: labelColor,
-              textShadow: aspect ? "0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.6)" : "none",
+              textShadow: learned ? "0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.6)" : "none",
             }}
           >
             {label}

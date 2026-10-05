@@ -390,7 +390,7 @@ describe("CompositionThumbnail", () => {
 
   it("keeps a portrait clip's tile width while an edit's frames load", async () => {
     sizeHost(384, 40);
-    const tileWidth = () => slices()[0]?.parentElement?.parentElement?.style.width;
+    const tileWidth = () => slices()[0]?.closest<HTMLElement>(".shrink-0")?.style.width;
     await renderThumbnail({ ...eightSeconds, contentRevision: 0 });
     await loadImage(0, 8 * 76, 135);
     expect(tileWidth()).toBe("48px");
