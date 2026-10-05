@@ -1,6 +1,6 @@
 // Real Chrome: the box GSAP and a stylesheet translate produce together is what no DOM emulation computes.
 import { mkdtempSync, readFileSync } from "node:fs";
-import { builtinModules, createRequire } from "node:module";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,12 +18,12 @@ let browser: Browser;
 let undoBundle: string;
 let softReloadBundle: string;
 
-// What a browser build of a Node built-in is: an empty module, as Vite's browser builds make it.
+// recast imports these, and its code that uses them is dropped from the bundle. A new
+// built-in fails the build instead of turning into an empty module the way Vite makes it.
 const emptyNodeBuiltins: Plugin = {
   name: "empty-node-builtins",
   setup(build) {
-    const builtin = new RegExp(`^(node:)?(${builtinModules.join("|")})$`);
-    build.onResolve({ filter: builtin }, ({ path }) => ({ path, namespace: "empty" }));
+    build.onResolve({ filter: /^(node:)?(fs|os)$/ }, ({ path }) => ({ path, namespace: "empty" }));
     build.onLoad({ filter: /.*/, namespace: "empty" }, () => ({ contents: "module.exports = {}" }));
   },
 };
@@ -38,7 +38,7 @@ async function bundle(file: string, name: string): Promise<string> {
     globalName: name,
     alias: { canvas: fileURLToPath(new URL("../shims/canvasBrowserStub.js", import.meta.url)) },
     plugins: [emptyNodeBuiltins],
-    logLevel: "silent",
+    define: { "import.meta.env": "{}" },
   });
   return out.outputFiles[0]!.text;
 }
