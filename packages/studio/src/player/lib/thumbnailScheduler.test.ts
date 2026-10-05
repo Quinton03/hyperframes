@@ -251,7 +251,6 @@ describe("ThumbnailScheduler", () => {
     lease.release();
     const nextLoad = vi.fn(async () => result("next"));
     scheduler.acquire(request("next", nextLoad, "visible", { kind: "video" }), vi.fn());
-    await flush();
     expect(nextLoad).toHaveBeenCalledTimes(1);
   });
 
