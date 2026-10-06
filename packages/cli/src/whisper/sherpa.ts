@@ -20,10 +20,16 @@ import {
   mergeWindowsToWords,
   SHERPA_ERROR_PREFIX,
   SHERPA_RESULT_PREFIX,
+  PARAKEET_MODEL_LABEL,
   writeParakeetTranscript,
   type SherpaWindow,
 } from "./parakeet.js";
-import { getPreparedWavDurationSeconds, prepareWav, type TranscribeResult } from "./transcribe.js";
+import {
+  getPreparedWavDurationSeconds,
+  prepareWav,
+  type TranscribeProgress,
+  type TranscribeResult,
+} from "./transcribe.js";
 
 const RUNTIME = "sherpa-onnx-node";
 const RUNTIME_VERSION = PINNED_PACKAGES[RUNTIME];
@@ -440,9 +446,16 @@ export async function transcribeWithSherpa(
     onProgress?: (message: string) => void;
     runtimeDir?: string;
     cliUrl?: string;
+    onEvent?: (event: TranscribeProgress) => void;
   },
 ): Promise<TranscribeResult> {
   options.onProgress?.("Transcribing with Parakeet...");
+  options.onEvent?.({
+    type: "progress",
+    phase: "transcription",
+    model: PARAKEET_MODEL_LABEL,
+    status: "started",
+  });
   if (options.signal.aborted) throw new DecodeCancelled("Transcription cancelled");
   const selected = await selectRuntime(
     options.runtimeDir ?? SHERPA_RUNTIME_DIR,
@@ -456,5 +469,12 @@ export async function transcribeWithSherpa(
     );
   }
   const windows = await decode(wavPath, selected.path, options.signal);
-  return writeParakeetTranscript(dir, mergeWindowsToWords(windows));
+  const result = writeParakeetTranscript(dir, mergeWindowsToWords(windows));
+  options.onEvent?.({
+    type: "progress",
+    phase: "transcription",
+    model: result.model,
+    status: "completed",
+  });
+  return result;
 }

@@ -216,13 +216,20 @@ module.exports = {
   async function transcript(cache: string, cliUrl: string) {
     const out = join(root, "out");
     mkdirSync(out, { recursive: true });
+    const onEvent = vi.fn();
     await transcribeWithSherpa(join(root, "speech.wav"), out, {
       signal: new AbortController().signal,
       runtimeDir: cache,
       cliUrl,
+      onEvent,
     });
     const result = JSON.parse(readFileSync(join(out, "transcript.json"), "utf-8"));
     expect(result).toEqual([{ text: "hello", start: 0, end: 1 }]);
+    const event = { type: "progress", phase: "transcription", model: "parakeet-tdt-0.6b-v3" };
+    expect(onEvent.mock.calls).toEqual([
+      [{ ...event, status: "started" }],
+      [{ ...event, status: "completed" }],
+    ]);
     expect(existsSync(join(root, "loaded-in-parent"))).toBe(false);
   }
 
