@@ -9,6 +9,34 @@ import { buildElementAgentPrompt, type DomEditSelection } from "../components/ed
 import { usePlayerStore } from "../player";
 import { studioApiFetch } from "../utils/studioApiFetch";
 
+// ── Agent hand-off (Modified by Quinton03; see studio-server routes/agent.ts) ──
+
+type AgentSendResult =
+  | { status: "off" }
+  | { status: "sent"; label: string }
+  | { status: "failed"; error: string };
+
+async function sendToAgent(
+  projectId: string | null,
+  body: Record<string, unknown>,
+): Promise<AgentSendResult> {
+  if (!projectId) return { status: "off" };
+  try {
+    const response = await studioApiFetch(buildProjectApiPath(projectId, "/agent"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (response.status === 404) return { status: "off" };
+    const data = (await response.json().catch(() => ({}))) as { label?: string; error?: string };
+    if (!response.ok)
+      return { status: "failed", error: `Could not send: ${data.error ?? response.status}.` };
+    return { status: "sent", label: data.label || "agent" };
+  } catch {
+    return { status: "failed", error: "Could not reach the agent." };
+  }
+}
+
 // ── Types ──
 
 export interface UseAskAgentModalParams {
@@ -104,7 +132,28 @@ export function useAskAgentModal({
       });
 
       const copied = await copyTextToClipboard(prompt);
-      if (!copied) {
+      // Modified by Quinton03: also hand the request to the configured agent
+      // (studio-server routes/agent.ts). 404 = none configured: clipboard only.
+      const sent = await sendToAgent(projectIdRef.current, {
+        instruction: userInstruction,
+        prompt,
+        selection: {
+          label: domEditSelection.label,
+          tagName: domEditSelection.tagName,
+          id: domEditSelection.id,
+          selector: domEditSelection.selector,
+          sourceFile: targetPath,
+          compositionPath: domEditSelection.compositionPath,
+        },
+        currentTime: usePlayerStore.getState().currentTime,
+        studioUrl: typeof window === "undefined" ? null : window.location.href,
+      });
+      if (sent.status === "sent") {
+        showToast(`Sent to ${sent.label}.`, "info");
+      } else if (sent.status === "failed") {
+        showToast(copied ? `${sent.error} The prompt is on the clipboard.` : sent.error, "error");
+        if (!copied) return;
+      } else if (!copied) {
         showToast("Could not copy prompt to clipboard.", "error");
         return;
       }
@@ -122,6 +171,7 @@ export function useAskAgentModal({
       agentPromptTagSnippet,
       domEditSelection,
       projectDir,
+      projectIdRef,
       showToast,
     ],
   );
